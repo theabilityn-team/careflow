@@ -48,3 +48,14 @@ The **Log communication** dialog now states the exact system behavior: save time
 The Leads table now shows both email and phone when present, each with a compact accessible copy action. The former Next follow-up column is now **Follow-up reminder** and clearly displays **No reminder — Set from Log contact or Edit lead** for empty values. Copy button clicks stop row navigation so users remain on the list.
 
 Final verification reports 17 passing unit tests, a successful TypeScript check and production build, healthy runtime status, and no production test strings. The existing non-blocking Vite bundle-size notice remains unchanged.
+
+
+## Image-only Lead Flow, Explicit Status, and Duplicate Protection QA
+
+The navigation and dashboard now present one clear intake path: **Add lead from images**. The screen accepts only JPG, PNG, and WebP images for one person, explains mandatory human review, and contains no CSV or Excel import interface. The review action performs a visible duplicate check before creation.
+
+The new **System guide** documents image intake, identity matching, communication logging, follow-up scheduling, manual status changes, permissions, audit history, and exports. The guide includes definitions for all 14 statuses and states that contact activity and follow-up dates do not change status.
+
+The existing lead profile was inspected without modifying data. **Business status**, **Interest signal**, **Most recent contact**, and **Scheduled follow-up** are visibly separate. The Log communication dialog explicitly states that saving contact updates contact time, may add a reminder, never changes status, and preserves an existing reminder when no new date is entered. No communication or status change was saved during QA.
+
+The database migration created unique lead identity keys. Existing leads were backfilled and the authenticated duplicate-check endpoint matched an existing lead using three identity signals without creating or changing any lead record.

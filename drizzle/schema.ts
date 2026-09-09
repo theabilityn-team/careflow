@@ -6,6 +6,7 @@ import {
   mysqlTable,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/mysql-core";
 
@@ -112,6 +113,17 @@ export const leads = mysqlTable("leads", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
+export const leadIdentityKeys = mysqlTable("lead_identity_keys", {
+  id: int("id").autoincrement().primaryKey(),
+  leadId: int("leadId").notNull(),
+  keyType: mysqlEnum("keyType", ["email", "phone", "profile"]).notNull(),
+  keyHash: varchar("keyHash", { length: 64 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  uniqueIdentity: uniqueIndex("lead_identity_keys_keyHash_unique").on(table.keyHash),
+  leadKeyType: uniqueIndex("lead_identity_keys_leadId_keyType_unique").on(table.leadId, table.keyType),
+}));
 
 export const leadDocuments = mysqlTable("lead_documents", {
   id: int("id").autoincrement().primaryKey(),

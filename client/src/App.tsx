@@ -8,6 +8,7 @@ import Leads from "@/pages/Leads";
 import NotFound from "@/pages/NotFound";
 import Scanner from "@/pages/Scanner";
 import Staff from "@/pages/Staff";
+import SystemGuide from "@/pages/SystemGuide";
 import { Route, Switch } from "wouter";
 import DashboardLayout from "./components/DashboardLayout";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -25,6 +26,7 @@ function Router() {
     <Route path="/leads/:id"><DashboardPage><LeadDetail /></DashboardPage></Route>
     <Route path="/scan"><DashboardPage><Scanner /></DashboardPage></Route>
     <Route path="/follow-ups"><DashboardPage><FollowUps /></DashboardPage></Route>
+    <Route path="/guide"><DashboardPage><SystemGuide /></DashboardPage></Route>
     <Route path="/staff"><DashboardPage><Staff /></DashboardPage></Route>
     <Route path="/404" component={NotFound} />
     <Route component={NotFound} />

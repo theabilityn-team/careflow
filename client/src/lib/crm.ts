@@ -15,6 +15,23 @@ export const STATUS_OPTIONS = [
   ["archived", "Archived"],
 ] as const;
 
+export const STATUS_DESCRIPTIONS: Record<(typeof STATUS_OPTIONS)[number][0], string> = {
+  new: "Created but not yet reviewed or worked.",
+  pending_review: "Information needs human verification before outreach.",
+  verified: "The profile has been reviewed and is ready for work.",
+  to_contact: "The team should make the first outreach attempt.",
+  contacted: "At least one outreach or conversation has been completed.",
+  follow_up: "A future conversation or action is required.",
+  interested: "The lead has expressed general interest.",
+  highly_interested: "The lead has strong intent and should be prioritized.",
+  qualified: "The lead meets the team's purchasing or service criteria.",
+  customer: "The person has entered the active customer relationship stage.",
+  buyer: "A purchase has been completed.",
+  not_interested: "The person explicitly declined or is not currently interested.",
+  unable_to_reach: "Repeated outreach attempts did not reach the person.",
+  archived: "The record is inactive and retained only for history.",
+};
+
 export const INTEREST_OPTIONS = [
   ["unknown", "Unknown"],
   ["cold", "Cold"],
@@ -26,7 +43,7 @@ export const PERMISSION_LABELS = {
   viewLeads: ["View leads", "Access lead profiles and search"],
   createLeads: ["Create leads", "Confirm new records after review"],
   editLeads: ["Edit lead details", "Correct and maintain profile information"],
-  scanDocuments: ["Scan documents", "Use AI extraction on uploaded images"],
+  scanDocuments: ["Add leads from images", "Use AI extraction on uploaded document images"],
   viewClinical: ["View clinical data", "Access diagnoses and medical notes"],
   manageContacts: ["Manage communications", "Log calls, messages, and follow-ups"],
   changeStatus: ["Change status", "Move leads through the lifecycle"],

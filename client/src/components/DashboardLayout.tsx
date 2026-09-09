@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
-import { ClipboardCheck, ContactRound, LayoutDashboard, LogOut, PanelLeft, ScanLine, ShieldCheck, UsersRound } from "lucide-react";
+import { BookOpenCheck, ClipboardCheck, ContactRound, LayoutDashboard, LogOut, PanelLeft, ScanLine, ShieldCheck, UsersRound } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -42,8 +42,9 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/", show: true },
     { icon: ContactRound, label: "Leads", path: "/leads", show: access?.permissions.viewLeads ?? true },
-    { icon: ScanLine, label: "Scan documents", path: "/scan", show: (access?.permissions.scanDocuments && access?.permissions.viewClinical) ?? false },
+    { icon: ScanLine, label: "Add lead from images", path: "/scan", show: (access?.permissions.scanDocuments && access?.permissions.viewClinical) ?? false },
     { icon: ClipboardCheck, label: "Follow-ups", path: "/follow-ups", show: access?.permissions.viewLeads ?? true },
+    { icon: BookOpenCheck, label: "System guide", path: "/guide", show: true },
     { icon: UsersRound, label: "Staff & access", path: "/staff", show: access?.role === "super_admin" },
   ].filter(item => item.show);
   const active = menuItems.find(item => item.path === "/" ? location === "/" : location.startsWith(item.path));

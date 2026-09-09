@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, like, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   authSessions,
@@ -8,6 +8,7 @@ import {
   InsertUser,
   Lead,
   leadDocuments,
+  leadIdentityKeys,
   leads,
   localCredentials,
   staffInvites,
@@ -16,6 +17,8 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { leadChanges, leadSnapshot, serializeAudit } from "./leadAudit";
+import { buildLeadIdentityKeys, identityMatchLabels, type LeadIdentityInput } from "./leadIdentity";
+import { communicationLeadUpdate } from "./leadWorkflow";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -385,11 +388,58 @@ export async function getLead(leadId: number) {
   return { lead, documents, communications: contactHistory, auditEvents: auditHistory };
 }
 
+export async function findDuplicateLead(input: LeadIdentityInput, excludeLeadId?: number) {
+  const db = await requireDb();
+  const keys = buildLeadIdentityKeys(input);
+  if (!keys.length) return null;
+  const conditions = [inArray(leadIdentityKeys.keyHash, keys.map(key => key.keyHash))];
+  if (excludeLeadId) conditions.push(ne(leadIdentityKeys.leadId, excludeLeadId));
+  const matches = await db
+    .select({ leadId: leads.id, firstName: leads.firstName, lastName: leads.lastName, keyType: leadIdentityKeys.keyType })
+    .from(leadIdentityKeys)
+    .innerJoin(leads, eq(leadIdentityKeys.leadId, leads.id))
+    .where(and(...conditions))
+    .limit(3);
+  if (!matches.length) return null;
+  const first = matches[0];
+  return {
+    leadId: first.leadId,
+    firstName: first.firstName,
+    lastName: first.lastName,
+    matchedBy: identityMatchLabels(keys.filter(key => matches.some(match => match.keyType === key.keyType))),
+  };
+}
+
+async function replaceLeadIdentityKeys(tx: any, leadId: number, input: Partial<InsertLead>) {
+  const keys = buildLeadIdentityKeys(input);
+  await tx.delete(leadIdentityKeys).where(eq(leadIdentityKeys.leadId, leadId));
+  if (keys.length) await tx.insert(leadIdentityKeys).values(keys.map(key => ({ leadId, ...key })));
+}
+
+export async function backfillLeadIdentityKeys() {
+  const db = await requireDb();
+  const existingKeyCount = await db.select({ count: sql<number>`count(*)` }).from(leadIdentityKeys);
+  if (Number(existingKeyCount[0]?.count ?? 0) > 0) return;
+  const existingLeads = await db.select().from(leads).orderBy(asc(leads.id));
+  for (const lead of existingLeads) {
+    const keys = buildLeadIdentityKeys(lead);
+    for (const key of keys) {
+      await db.insert(leadIdentityKeys).values({ leadId: lead.id, ...key }).onDuplicateKeyUpdate({ set: { keyHash: key.keyHash } });
+    }
+  }
+}
+
 export async function createLeadWithAudit(input: InsertLead, audit: { actorId: number; source: string; detail: string }) {
   const db = await requireDb();
   return db.transaction(async tx => {
+    const keys = buildLeadIdentityKeys(input);
+    if (keys.length) {
+      const duplicate = await tx.select({ leadId: leadIdentityKeys.leadId }).from(leadIdentityKeys).where(inArray(leadIdentityKeys.keyHash, keys.map(key => key.keyHash))).limit(1);
+      if (duplicate[0]) throw Object.assign(new Error("Duplicate lead"), { code: "LEAD_DUPLICATE", leadId: duplicate[0].leadId });
+    }
     const result = await tx.insert(leads).values(input);
     const leadId = Number(result[0].insertId);
+    if (keys.length) await tx.insert(leadIdentityKeys).values(keys.map(key => ({ leadId, ...key })));
     const created = (await tx.select().from(leads).where(eq(leads.id, leadId)).limit(1))[0];
     const changes = leadChanges({}, created);
     await tx.insert(auditEvents).values({
@@ -419,7 +469,13 @@ export async function updateLeadWithAudit(
     const after = { ...before, ...values } as Lead;
     const changes = leadChanges(before, after);
     if (!changes.length) return { lead: before, changes };
+    const keys = buildLeadIdentityKeys(after);
+    if (keys.length) {
+      const duplicate = await tx.select({ leadId: leadIdentityKeys.leadId }).from(leadIdentityKeys).where(and(inArray(leadIdentityKeys.keyHash, keys.map(key => key.keyHash)), ne(leadIdentityKeys.leadId, leadId))).limit(1);
+      if (duplicate[0]) throw Object.assign(new Error("Duplicate lead"), { code: "LEAD_DUPLICATE", leadId: duplicate[0].leadId });
+    }
     await tx.update(leads).set(values).where(eq(leads.id, leadId));
+    await replaceLeadIdentityKeys(tx, leadId, after);
     await tx.insert(auditEvents).values({
       leadId,
       actorId: audit.actorId,
@@ -445,12 +501,7 @@ export async function addCommunicationWithAudit(input: typeof communications.$in
   return db.transaction(async tx => {
     const before = (await tx.select().from(leads).where(eq(leads.id, input.leadId)).limit(1).for("update"))[0];
     if (!before) return null;
-    const status = input.nextFollowUpAt ? "follow_up" : "contacted";
-    const leadUpdate = {
-      lastContactAt: input.contactedAt,
-      nextFollowUpAt: input.nextFollowUpAt ?? null,
-      status,
-    } as const;
+    const leadUpdate = communicationLeadUpdate(input);
     const after = { ...before, ...leadUpdate } as Lead;
     await tx.insert(communications).values(input);
     await tx.update(leads).set(leadUpdate).where(eq(leads.id, input.leadId));

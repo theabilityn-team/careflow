@@ -42,9 +42,11 @@ export default function Scanner() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [result, setResult] = useState<Extraction | null>(null);
+  const [duplicate, setDuplicate] = useState<{ leadId: number; firstName: string; lastName: string; matchedBy: string[] } | null>(null);
   const [status, setStatus] = useState("verified");
   const [interestLevel, setInterestLevel] = useState("unknown");
   const extract = trpc.scanner.extract.useMutation();
+  const duplicateCheck = trpc.leads.duplicateCheck.useMutation();
   const create = trpc.leads.create.useMutation();
   const confidence = useMemo(() => Math.round((result?.overallConfidence ?? 0) * 100), [result]);
 
@@ -61,6 +63,7 @@ export default function Scanner() {
     try {
       const data = await extract.mutateAsync({ files: files.map(({ name, mimeType, dataUrl }) => ({ name, mimeType, dataUrl })) });
       setResult({ ...empty, ...(data as Extraction) });
+      setDuplicate(null);
       toast.success("Extraction complete. Review every field before saving.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The documents could not be scanned.");
@@ -70,6 +73,13 @@ export default function Scanner() {
   async function saveLead() {
     if (!result?.firstName.trim() || !result.lastName.trim()) return toast.error("First and last name are required.");
     try {
+      const checked = await duplicateCheck.mutateAsync({ firstName: result.firstName, lastName: result.lastName, email: result.email || null, phone: result.phone || null, dateOfBirth: result.dateOfBirth || null, address: result.address || null, postalCode: result.postalCode || null });
+      if (checked.duplicate) {
+        setDuplicate(checked.duplicate);
+        toast.error(`Duplicate detected: Lead #${checked.duplicate.leadId}.`);
+        return;
+      }
+      setDuplicate(null);
       const saved = await create.mutateAsync({
         lead: {
           firstName: result.firstName, lastName: result.lastName, email: result.email || null,
@@ -88,10 +98,10 @@ export default function Scanner() {
     }
   }
 
-  const update = (key: keyof Extraction, value: string) => setResult(current => current ? { ...current, [key]: value } : current);
+  const update = (key: keyof Extraction, value: string) => { setDuplicate(null); setResult(current => current ? { ...current, [key]: value } : current); };
 
   return <div className="mx-auto max-w-[1380px]">
-    <PageHeader eyebrow="Document intelligence" title={result ? "Review extracted information" : "Scan customer documents"} description={result ? "Confirm every value, correct any uncertainty, and save only when the record is accurate." : "Upload up to six images for one person. CareFlow will combine visible information into a single draft record."} />
+    <PageHeader eyebrow="Document intelligence" title={result ? "Review extracted information" : "Add lead from images"} description={result ? "Confirm every value, correct any uncertainty, and save only when the record is accurate. Duplicate protection runs before creation." : "Upload up to six images for one person. CareFlow combines visible information into one reviewed lead draft."} />
 
     {!result ? <div className="grid gap-6 lg:grid-cols-[1.4fr_.6fr]">
       <Card className="rounded-[1.5rem] border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="p-6 sm:p-8">
@@ -116,7 +126,7 @@ export default function Scanner() {
           <section className="border-t border-slate-100 pt-8"><div className="mb-5 flex items-center gap-2"><LockKeyhole className="h-4 w-4 text-rose-600" /><h2 className="text-lg font-semibold tracking-tight">Protected clinical information</h2></div><div className="space-y-5"><div className="space-y-2"><Label>Diagnosis</Label><Textarea value={result.diagnosis} onChange={e => update("diagnosis", e.target.value)} rows={3} /></div><div className="space-y-2"><Label>Clinical notes</Label><Textarea value={result.clinicalNotes} onChange={e => update("clinicalNotes", e.target.value)} rows={4} /></div></div></section>
           {result.additionalInformation.length > 0 && <section className="border-t border-slate-100 pt-8"><h2 className="mb-5 text-lg font-semibold tracking-tight">Additional extracted information</h2><div className="grid gap-4 sm:grid-cols-2">{result.additionalInformation.map((item, index) => <div key={`${item.label}-${index}`} className="rounded-xl bg-slate-50 p-4"><div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{item.label}</span><span className="text-xs text-slate-400">{Math.round(item.confidence * 100)}%</span></div><Input value={item.value} onChange={e => setResult(current => current ? { ...current, additionalInformation: current.additionalInformation.map((field, i) => i === index ? { ...field, value: e.target.value } : field) } : current)} className="mt-2 border-0 bg-white" /></div>)}</div></section>}
         </CardContent></Card>
-        <div className="space-y-5"><Card className="sticky top-6 rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="space-y-5 p-6"><div><h3 className="font-semibold">Confirm record</h3><p className="mt-1 text-sm leading-6 text-slate-500">Your confirmation records the reviewed values and attaches all source images.</p></div><div className="space-y-2"><Label>Initial status</Label><Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUS_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Interest level</Label><Select value={interestLevel} onValueChange={setInterestLevel}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div><Button onClick={saveLead} disabled={create.isPending} className="w-full bg-teal-700 hover:bg-teal-800">{create.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Confirm and create lead</Button><Button variant="outline" className="w-full" onClick={() => setResult(null)}><ArrowLeft className="mr-2 h-4 w-4" />Back to documents</Button></CardContent></Card></div>
+        <div className="space-y-5"><Card className="sticky top-6 rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="space-y-5 p-6"><div><h3 className="font-semibold">Confirm record</h3><p className="mt-1 text-sm leading-6 text-slate-500">CareFlow first checks email, phone, and profile identity for duplicates. If unique, it records the reviewed values and attaches all source images.</p></div>{duplicate && <Alert className="border-amber-200 bg-amber-50"><AlertTriangle className="h-4 w-4 text-amber-700" /><AlertTitle>Possible duplicate blocked</AlertTitle><AlertDescription className="leading-6">Matches Lead #{duplicate.leadId} — {duplicate.firstName} {duplicate.lastName} by {duplicate.matchedBy.join(", ")}.<Button variant="link" className="mt-1 h-auto p-0 text-amber-900" onClick={() => navigate(`/leads/${duplicate.leadId}`)}>Open existing lead</Button></AlertDescription></Alert>}<div className="space-y-2"><Label>Initial business status</Label><Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUS_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select><p className="text-xs leading-5 text-slate-500">This is the only status set during creation. Later status changes are always manual and audited.</p></div><div className="space-y-2"><Label>Interest level</Label><Select value={interestLevel} onValueChange={setInterestLevel}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div><Button onClick={saveLead} disabled={create.isPending || duplicateCheck.isPending} className="w-full bg-teal-700 hover:bg-teal-800">{create.isPending || duplicateCheck.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Check duplicates and create lead</Button><Button variant="outline" className="w-full" onClick={() => { setDuplicate(null); setResult(null); }}><ArrowLeft className="mr-2 h-4 w-4" />Back to images</Button></CardContent></Card></div>
       </div>
     </div>}
   </div>;

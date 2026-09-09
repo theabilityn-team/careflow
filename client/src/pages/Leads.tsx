@@ -28,7 +28,7 @@ export default function Leads() {
       description="Search, qualify, and advance leads while preserving a complete operational history."
       actions={<>
         {access?.permissions.exportData && <ExportLeadsDialog currentStatus={status} />}
-        {access?.permissions.scanDocuments && access.permissions.viewClinical && <Button onClick={() => navigate("/scan")} className="bg-teal-700 hover:bg-teal-800"><Plus className="mr-2 h-4 w-4" />New lead</Button>}
+        {access?.permissions.scanDocuments && access.permissions.viewClinical && <Button onClick={() => navigate("/scan")} className="bg-teal-700 hover:bg-teal-800"><Plus className="mr-2 h-4 w-4" />Add lead from images</Button>}
       </>}
     />
     <Card className="rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]">
@@ -37,7 +37,7 @@ export default function Leads() {
           <div className="relative flex-1"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input value={search} onChange={event => setSearch(event.target.value)} className="h-11 border-slate-200 pl-10" placeholder="Search by name, email, or phone…" /></div>
           <Select value={status} onValueChange={setStatus}><SelectTrigger className="h-11 w-full sm:w-[210px]"><SelectValue placeholder="All statuses" /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{STATUS_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
         </div>
-        {isLoading ? <div className="p-6"><PageLoading /></div> : error ? <div className="m-6 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error.message}</div> : !data?.length ? <div className="p-6"><EmptyState title="No matching leads" description="Try another filter or scan documents to create a new reviewed record." action={access?.permissions.scanDocuments && access.permissions.viewClinical ? <Button onClick={() => navigate("/scan")} variant="outline">Scan documents</Button> : undefined} /></div> : <div className="overflow-x-auto">
+        {isLoading ? <div className="p-6"><PageLoading /></div> : error ? <div className="m-6 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error.message}</div> : !data?.length ? <div className="p-6"><EmptyState title="No matching leads" description="Try another filter or add a reviewed lead from document images." action={access?.permissions.scanDocuments && access.permissions.viewClinical ? <Button onClick={() => navigate("/scan")} variant="outline">Add lead from images</Button> : undefined} /></div> : <div className="overflow-x-auto">
           <Table>
             <TableHeader><TableRow className="border-slate-100 hover:bg-transparent"><TableHead className="pl-6">Lead</TableHead><TableHead>Status</TableHead><TableHead>Interest</TableHead><TableHead>Contact — click to copy</TableHead><TableHead>Follow-up reminder</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
             <TableBody>{data.map(lead => {
