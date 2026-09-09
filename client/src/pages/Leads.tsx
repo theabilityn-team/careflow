@@ -1,4 +1,5 @@
 import { EmptyState, PageHeader, PageLoading, StatusPill } from "@/components/crm/CrmUi";
+import ExportLeadsDialog from "@/components/crm/ExportLeadsDialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,7 +20,7 @@ export default function Leads() {
   const { data, isLoading, error } = trpc.leads.list.useQuery({ search: search || undefined, status });
 
   return <div className="mx-auto max-w-[1500px]">
-    <PageHeader eyebrow="Lead management" title="Every relationship, one clear record." description="Search, qualify, and advance leads while preserving a complete operational history." actions={access?.permissions.scanDocuments && access.permissions.viewClinical ? <Button onClick={() => navigate("/scan")} className="bg-teal-700 hover:bg-teal-800"><Plus className="mr-2 h-4 w-4" />New lead</Button> : undefined} />
+    <PageHeader eyebrow="Lead management" title="Every relationship, one clear record." description="Search, qualify, and advance leads while preserving a complete operational history." actions={<>{access?.permissions.exportData && <ExportLeadsDialog currentStatus={status} />}{access?.permissions.scanDocuments && access.permissions.viewClinical && <Button onClick={() => navigate("/scan")} className="bg-teal-700 hover:bg-teal-800"><Plus className="mr-2 h-4 w-4" />New lead</Button>}</>} />
     <Card className="rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]">
       <CardContent className="p-0">
         <div className="flex flex-col gap-3 border-b border-slate-100 p-5 sm:flex-row">

@@ -3,6 +3,7 @@ import { z } from "zod";
 import * as db from "../db";
 import { assertPermission } from "../permissions";
 import { prepareAuditEvents } from "../leadAudit";
+import { createLeadExport, LEAD_STATUS_LABELS } from "../leadExport";
 import { storagePut } from "../storage";
 import { protectedProcedure, router } from "../_core/trpc";
 
@@ -49,6 +50,40 @@ export const leadsRouter = router({
       const access = await assertPermission(ctx.user, "viewLeads");
       const rows = await db.listLeads(input);
       return access.permissions.viewClinical ? rows : rows.map(hideClinical);
+    }),
+
+  exportSummary: protectedProcedure.query(async ({ ctx }) => {
+    await assertPermission(ctx.user, "exportData");
+    const counts = await db.getLeadStatusCounts();
+    return {
+      total: counts.reduce((sum, item) => sum + Number(item.count), 0),
+      counts: Object.fromEntries(counts.map(item => [item.status, Number(item.count)])),
+      limit: 5000,
+    };
+  }),
+
+  export: protectedProcedure
+    .input(z.object({ statuses: z.array(statusEnum).min(1).max(14), format: z.enum(["csv", "xlsx", "pdf"]) }))
+    .mutation(async ({ ctx, input }) => {
+      await assertPermission(ctx.user, "exportData");
+      const rows = await db.getLeadExportRows(input.statuses);
+      if (!rows.length) throw new TRPCError({ code: "NOT_FOUND", message: "No leads match the selected statuses." });
+      const file = await createLeadExport(input.format, rows, input.statuses);
+      const timestamp = new Date().toISOString().replaceAll(":", "-").replace(".000Z", "Z");
+      await db.addAuditEvent({
+        leadId: null,
+        actorId: ctx.user.id,
+        action: "leads.exported",
+        source: "export",
+        detail: `${rows.length} lead(s) · ${input.format.toUpperCase()} · ${input.statuses.map(status => LEAD_STATUS_LABELS[status]).join(", ")}`,
+        occurredAt: Date.now(),
+      });
+      return {
+        fileName: `careflow-leads-${timestamp}.${file.extension}`,
+        mimeType: file.mimeType,
+        dataBase64: file.buffer.toString("base64"),
+        count: rows.length,
+      };
     }),
 
   get: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {

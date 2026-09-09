@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, like, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   authSessions,
@@ -304,6 +304,49 @@ export async function listLeads(input: { search?: string; status?: string; assig
   if (input.status && input.status !== "all") filters.push(eq(leads.status, input.status as typeof leads.status.enumValues[number]));
   if (input.assignedTo) filters.push(eq(leads.assignedTo, input.assignedTo));
   return db.select().from(leads).where(filters.length ? and(...filters) : undefined).orderBy(desc(leads.updatedAt));
+}
+
+export async function getLeadStatusCounts() {
+  const db = await requireDb();
+  return db
+    .select({ status: leads.status, count: sql<number>`count(*)` })
+    .from(leads)
+    .groupBy(leads.status)
+    .orderBy(asc(leads.status));
+}
+
+export async function getLeadExportRows(statuses: Array<typeof leads.status.enumValues[number]>) {
+  const db = await requireDb();
+  const [rows, staff] = await Promise.all([
+    db.select({
+      id: leads.id,
+      firstName: leads.firstName,
+      lastName: leads.lastName,
+      email: leads.email,
+      phone: leads.phone,
+      address: leads.address,
+      city: leads.city,
+      stateProvince: leads.stateProvince,
+      postalCode: leads.postalCode,
+      country: leads.country,
+      status: leads.status,
+      interestLevel: leads.interestLevel,
+      assignedTo: leads.assignedTo,
+      nextFollowUpAt: leads.nextFollowUpAt,
+      createdAt: leads.createdAt,
+      updatedAt: leads.updatedAt,
+    })
+      .from(leads)
+      .where(inArray(leads.status, statuses))
+      .orderBy(asc(leads.status), asc(leads.lastName), asc(leads.firstName))
+      .limit(5000),
+    db.select({ id: users.id, name: users.name, email: users.email }).from(users),
+  ]);
+  const staffNames = new Map(staff.map(member => [member.id, member.name || member.email || `Staff #${member.id}`]));
+  return rows.map(({ assignedTo, ...row }) => ({
+    ...row,
+    assignedStaff: assignedTo ? staffNames.get(assignedTo) ?? `Staff #${assignedTo}` : null,
+  }));
 }
 
 export async function listAssignableStaff() {

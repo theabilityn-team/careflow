@@ -22,3 +22,16 @@ After the non-destructive migration, the existing lead now reports two audit ent
 The refreshed profile confirms the audit count increased from one legacy event to two entries after the baseline migration, while all lead values and timestamps remained unchanged.
 
 Final runtime verification reports a healthy development server, no TypeScript or language-service errors, nine passing unit tests, and a successful production build. The production UI scan found no test-lead labels, QA-only controls, dummy data, or test buttons.
+
+
+## Lead Export Update QA
+
+The permission-aware **Export leads** action renders beside **New lead** on the English Leads page without disturbing the existing filters or table layout. No lead record was created or modified during this read-only visual check.
+
+The export dialog correctly displays all 14 lead statuses with live record counts, defaults to all statuses when the list filter is set to All, and offers CSV, Excel, and PDF. The summary confirms the matching lead count, 5,000-row limit, status column, and explicit exclusion of clinical data and source documents. No export was triggered during browser QA.
+
+Status-selection interaction was verified read-only: **Clear all** produced zero matching leads and disabled the export action; selecting only **Verified** restored the correct count of one; selecting PDF changed the primary action to **Export PDF**. The dialog was then closed without generating a file, so no export audit event or download was created during UI QA.
+
+Temporary local sample files used for binary validation were deleted. The CSV was identified as UTF-8 with BOM, the XLSX passed ZIP integrity checks and contained a Status column, and the PDF was identified as a valid single-page A4 landscape document containing the report title, selected status, lead row, and assigned staff.
+
+Final verification reports 13 passing unit tests across authentication, permissions, auditing, and exports; a successful TypeScript check and production build; healthy runtime status; and no production test strings or temporary export files. The only build notice is the existing non-blocking Vite bundle-size advisory.
