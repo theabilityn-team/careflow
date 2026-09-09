@@ -5,3 +5,20 @@ Desktop verification at 1440×1000 confirmed that the dashboard, scanner, leads,
 The authentication update was verified on desktop and mobile. The application now opens on a private English credential screen with separate **Staff email** and **Super Admin** modes. The mobile layout is legible without horizontal overflow, inactive tabs retain sufficient contrast, and invalid invitation links display a clear recovery action.
 
 The complete local Super Admin flow was tested end to end: login returned HTTP 200, the authenticated session resolved to a local administrator, and logout returned HTTP 200. Final TypeScript checks, five unit tests, and the production build pass.
+
+
+## Lead Audit Update QA
+
+The updated login screen remains visually stable after the audit implementation. The CareFlow authentication page loads successfully in the stateful browser and exposes the separate Staff email and Super Admin login modes without layout regressions.
+
+The Super Admin browser login succeeded with the configured local credentials and opened the live dashboard. An existing lead record was present; it was treated as real data and was not modified. No test leads, test controls, or QA messages will be left in the application. Automated Vitest files remain development-only and are not exposed in the production interface.
+
+The existing lead profile was opened read-only for visual verification. The updated navigation now separates **Communications** and **Audit trail**, shows the audit event count, and exposes the expanded **Edit lead** action without altering the record. The real lead data remained unchanged.
+
+The expanded **Edit lead** dialog was opened and closed without saving. It correctly exposes pipeline status, interest, assigned staff, next follow-up, all contact and identity fields, diagnosis, clinical notes, and structured additional information. The modal is scrollable and preserves the existing record when dismissed.
+
+After the non-destructive migration, the existing lead now reports two audit entries: its legacy creation event and a clearly labeled current-state audit baseline. The lead itself was not edited. The updated page, tabs, and profile cards remain visually stable after the production build.
+
+The refreshed profile confirms the audit count increased from one legacy event to two entries after the baseline migration, while all lead values and timestamps remained unchanged.
+
+Final runtime verification reports a healthy development server, no TypeScript or language-service errors, nine passing unit tests, and a successful production build. The production UI scan found no test-lead labels, QA-only controls, dummy data, or test buttons.

@@ -6,6 +6,7 @@ import {
   communications,
   InsertLead,
   InsertUser,
+  Lead,
   leadDocuments,
   leads,
   localCredentials,
@@ -14,6 +15,7 @@ import {
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { leadChanges, leadSnapshot, serializeAudit } from "./leadAudit";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -304,6 +306,17 @@ export async function listLeads(input: { search?: string; status?: string; assig
   return db.select().from(leads).where(filters.length ? and(...filters) : undefined).orderBy(desc(leads.updatedAt));
 }
 
+export async function listAssignableStaff() {
+  const db = await requireDb();
+  return db
+    .select({ id: users.id, name: users.name, email: users.email, role: users.role, jobTitle: staffPermissions.jobTitle })
+    .from(users)
+    .innerJoin(localCredentials, eq(users.id, localCredentials.userId))
+    .leftJoin(staffPermissions, eq(users.id, staffPermissions.userId))
+    .where(or(eq(users.role, "admin"), eq(staffPermissions.isActive, true)))
+    .orderBy(asc(users.name));
+}
+
 export async function getLead(leadId: number) {
   const db = await requireDb();
   const lead = (await db.select().from(leads).where(eq(leads.id, leadId)).limit(1))[0];
@@ -311,20 +324,72 @@ export async function getLead(leadId: number) {
   const [documents, contactHistory, auditHistory] = await Promise.all([
     db.select().from(leadDocuments).where(eq(leadDocuments.leadId, leadId)).orderBy(desc(leadDocuments.createdAt)),
     db.select().from(communications).where(eq(communications.leadId, leadId)).orderBy(desc(communications.contactedAt)),
-    db.select().from(auditEvents).where(eq(auditEvents.leadId, leadId)).orderBy(desc(auditEvents.occurredAt)),
+    db.select({
+      id: auditEvents.id,
+      leadId: auditEvents.leadId,
+      actorId: auditEvents.actorId,
+      actorName: users.name,
+      actorEmail: users.email,
+      action: auditEvents.action,
+      source: auditEvents.source,
+      detail: auditEvents.detail,
+      changes: auditEvents.changes,
+      snapshotBefore: auditEvents.snapshotBefore,
+      snapshotAfter: auditEvents.snapshotAfter,
+      occurredAt: auditEvents.occurredAt,
+    }).from(auditEvents).leftJoin(users, eq(auditEvents.actorId, users.id)).where(eq(auditEvents.leadId, leadId)).orderBy(desc(auditEvents.occurredAt)),
   ]);
   return { lead, documents, communications: contactHistory, auditEvents: auditHistory };
 }
 
-export async function createLead(input: InsertLead) {
+export async function createLeadWithAudit(input: InsertLead, audit: { actorId: number; source: string; detail: string }) {
   const db = await requireDb();
-  const result = await db.insert(leads).values(input);
-  return Number(result[0].insertId);
+  return db.transaction(async tx => {
+    const result = await tx.insert(leads).values(input);
+    const leadId = Number(result[0].insertId);
+    const created = (await tx.select().from(leads).where(eq(leads.id, leadId)).limit(1))[0];
+    const changes = leadChanges({}, created);
+    await tx.insert(auditEvents).values({
+      leadId,
+      actorId: audit.actorId,
+      action: "lead.created",
+      source: audit.source,
+      detail: audit.detail,
+      changes: serializeAudit(changes),
+      snapshotBefore: null,
+      snapshotAfter: serializeAudit(leadSnapshot(created)),
+      occurredAt: Date.now(),
+    });
+    return leadId;
+  });
 }
 
-export async function updateLead(leadId: number, values: Partial<InsertLead>) {
+export async function updateLeadWithAudit(
+  leadId: number,
+  values: Partial<InsertLead>,
+  audit: { actorId: number; action: string; source: string; detail: string },
+) {
   const db = await requireDb();
-  await db.update(leads).set(values).where(eq(leads.id, leadId));
+  return db.transaction(async tx => {
+    const before = (await tx.select().from(leads).where(eq(leads.id, leadId)).limit(1).for("update"))[0];
+    if (!before) return null;
+    const after = { ...before, ...values } as Lead;
+    const changes = leadChanges(before, after);
+    if (!changes.length) return { lead: before, changes };
+    await tx.update(leads).set(values).where(eq(leads.id, leadId));
+    await tx.insert(auditEvents).values({
+      leadId,
+      actorId: audit.actorId,
+      action: audit.action,
+      source: audit.source,
+      detail: audit.detail,
+      changes: serializeAudit(changes),
+      snapshotBefore: serializeAudit(leadSnapshot(before)),
+      snapshotAfter: serializeAudit(leadSnapshot(after)),
+      occurredAt: Date.now(),
+    });
+    return { lead: after, changes };
+  });
 }
 
 export async function addLeadDocument(input: typeof leadDocuments.$inferInsert) {
@@ -332,15 +397,32 @@ export async function addLeadDocument(input: typeof leadDocuments.$inferInsert) 
   await db.insert(leadDocuments).values(input);
 }
 
-export async function addCommunication(input: typeof communications.$inferInsert) {
+export async function addCommunicationWithAudit(input: typeof communications.$inferInsert) {
   const db = await requireDb();
-  await db.transaction(async tx => {
-    await tx.insert(communications).values(input);
-    await tx.update(leads).set({
+  return db.transaction(async tx => {
+    const before = (await tx.select().from(leads).where(eq(leads.id, input.leadId)).limit(1).for("update"))[0];
+    if (!before) return null;
+    const status = input.nextFollowUpAt ? "follow_up" : "contacted";
+    const leadUpdate = {
       lastContactAt: input.contactedAt,
       nextFollowUpAt: input.nextFollowUpAt ?? null,
-      status: input.nextFollowUpAt ? "follow_up" : "contacted",
-    }).where(eq(leads.id, input.leadId));
+      status,
+    } as const;
+    const after = { ...before, ...leadUpdate } as Lead;
+    await tx.insert(communications).values(input);
+    await tx.update(leads).set(leadUpdate).where(eq(leads.id, input.leadId));
+    await tx.insert(auditEvents).values({
+      leadId: input.leadId,
+      actorId: input.createdBy,
+      action: "communication.logged",
+      source: "communication",
+      detail: `${input.method}: ${input.outcome}`,
+      changes: serializeAudit(leadChanges(before, after)),
+      snapshotBefore: serializeAudit(leadSnapshot(before)),
+      snapshotAfter: serializeAudit(leadSnapshot(after)),
+      occurredAt: Date.now(),
+    });
+    return after;
   });
 }
 

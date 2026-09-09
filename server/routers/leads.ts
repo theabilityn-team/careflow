@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "../db";
 import { assertPermission } from "../permissions";
+import { prepareAuditEvents } from "../leadAudit";
 import { storagePut } from "../storage";
 import { protectedProcedure, router } from "../_core/trpc";
 
@@ -29,6 +30,7 @@ const leadFields = z.object({
   status: statusEnum.default("new"),
   interestLevel: interestEnum.default("unknown"),
   assignedTo: z.number().int().positive().optional().nullable(),
+  nextFollowUpAt: z.number().int().positive().optional().nullable(),
 });
 const documentSchema = z.object({
   name: z.string().min(1).max(255),
@@ -53,9 +55,15 @@ export const leadsRouter = router({
     const access = await assertPermission(ctx.user, "viewLeads");
     const result = await db.getLead(input.id);
     if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
+    const auditEvents = prepareAuditEvents(result.auditEvents, access.permissions.viewClinical);
     return access.permissions.viewClinical
-      ? result
-      : { ...result, lead: hideClinical(result.lead), documents: [] };
+      ? { ...result, auditEvents }
+      : { ...result, lead: hideClinical(result.lead), documents: [], auditEvents };
+  }),
+
+  assignees: protectedProcedure.query(async ({ ctx }) => {
+    await assertPermission(ctx.user, "viewLeads");
+    return db.listAssignableStaff();
   }),
 
   create: protectedProcedure
@@ -69,7 +77,10 @@ export const leadsRouter = router({
       if (input.lead.diagnosis || input.lead.clinicalNotes || input.lead.additionalInformation) {
         await assertPermission(ctx.user, "viewClinical");
       }
-      const leadId = await db.createLead({ ...input.lead, createdBy: ctx.user.id });
+      const leadId = await db.createLeadWithAudit(
+        { ...input.lead, createdBy: ctx.user.id },
+        { actorId: ctx.user.id, source: "reviewed_scan", detail: `Initial reviewed state · ${input.documents.length} source document(s)` },
+      );
 
       for (const file of input.documents) {
         const match = file.dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
@@ -80,7 +91,6 @@ export const leadsRouter = router({
         const stored = await storagePut(`leads/${leadId}/${safeName}`, bytes, file.mimeType);
         await db.addLeadDocument({ leadId, fileName: file.name, mimeType: file.mimeType, fileKey: stored.key, fileUrl: stored.url, uploadedBy: ctx.user.id });
       }
-      await db.addAuditEvent({ leadId, actorId: ctx.user.id, action: "lead.created", detail: `${input.documents.length} document(s) attached`, occurredAt: Date.now() });
       return { id: leadId };
     }),
 
@@ -93,9 +103,24 @@ export const leadsRouter = router({
       if (input.lead.diagnosis !== undefined || input.lead.clinicalNotes !== undefined || input.lead.additionalInformation !== undefined) {
         await assertPermission(ctx.user, "viewClinical");
       }
-      await db.updateLead(input.id, input.lead);
-      await db.addAuditEvent({ leadId: input.id, actorId: ctx.user.id, action: "lead.updated", detail: `Updated: ${Object.keys(input.lead).join(", ")}`, occurredAt: Date.now() });
-      return { success: true };
+      if (input.lead.assignedTo) {
+        const assignees = await db.listAssignableStaff();
+        if (!assignees.some(staff => staff.id === input.lead.assignedTo)) throw new TRPCError({ code: "BAD_REQUEST", message: "Select an active staff member." });
+      }
+      const fields = Object.keys(input.lead);
+      const action = fields.length === 1 && fields[0] === "status"
+        ? "lead.status_changed"
+        : fields.length === 1 && fields[0] === "interestLevel"
+          ? "lead.interest_changed"
+          : "lead.updated";
+      const result = await db.updateLeadWithAudit(input.id, input.lead, {
+        actorId: ctx.user.id,
+        action,
+        source: action === "lead.updated" ? "profile_edit" : "quick_action",
+        detail: `Updated ${fields.length} field${fields.length === 1 ? "" : "s"}`,
+      });
+      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
+      return { success: true, changed: result.changes.length > 0 };
     }),
 
   addCommunication: protectedProcedure
@@ -110,8 +135,8 @@ export const leadsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertPermission(ctx.user, "manageContacts");
-      await db.addCommunication({ ...input, createdBy: ctx.user.id });
-      await db.addAuditEvent({ leadId: input.leadId, actorId: ctx.user.id, action: "communication.logged", detail: `${input.method}: ${input.outcome}`, occurredAt: Date.now() });
+      const result = await db.addCommunicationWithAudit({ ...input, createdBy: ctx.user.id });
+      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
       return { success: true };
     }),
 });

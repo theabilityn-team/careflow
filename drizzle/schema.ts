@@ -142,7 +142,11 @@ export const auditEvents = mysqlTable("audit_events", {
   leadId: int("leadId"),
   actorId: int("actorId").notNull(),
   action: varchar("action", { length: 120 }).notNull(),
+  source: varchar("source", { length: 60 }).default("system").notNull(),
   detail: text("detail"),
+  changes: text("changes"),
+  snapshotBefore: text("snapshotBefore"),
+  snapshotAfter: text("snapshotAfter"),
   occurredAt: bigint("occurredAt", { mode: "number" }).notNull(),
 });
 
