@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { INTEREST_OPTIONS, STATUS_OPTIONS } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
-import { AlertTriangle, ArrowLeft, Check, FileImage, Loader2, LockKeyhole, ScanLine, ShieldCheck, Sparkles, Trash2, UploadCloud } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, FileImage, Files, Loader2, LockKeyhole, ScanLine, ShieldCheck, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -101,7 +101,7 @@ export default function Scanner() {
   const update = (key: keyof Extraction, value: string) => { setDuplicate(null); setResult(current => current ? { ...current, [key]: value } : current); };
 
   return <div className="mx-auto max-w-[1380px]">
-    <PageHeader eyebrow="Document intelligence" title={result ? "Review extracted information" : "Add lead from images"} description={result ? "Confirm every value, correct any uncertainty, and save only when the record is accurate. Duplicate protection runs before creation." : "Upload up to six images for one person. CareFlow combines visible information into one reviewed lead draft."} />
+    <PageHeader eyebrow="Document intelligence" title={result ? "Review extracted information" : "Add lead from images"} description={result ? "Confirm every value, correct any uncertainty, and save only when the record is accurate. Duplicate protection runs before creation." : "Upload up to six images for one person. CareFlow combines visible information into one reviewed lead draft."} actions={!result ? <Button variant="outline" className="bg-white" onClick={() => navigate("/bulk-import")}><Files className="mr-2 h-4 w-4" />Bulk image import</Button> : undefined} />
 
     {!result ? <div className="grid gap-6 lg:grid-cols-[1.4fr_.6fr]">
       <Card className="rounded-[1.5rem] border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="p-6 sm:p-8">

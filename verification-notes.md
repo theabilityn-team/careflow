@@ -59,3 +59,10 @@ The new **System guide** documents image intake, identity matching, communicatio
 The existing lead profile was inspected without modifying data. **Business status**, **Interest signal**, **Most recent contact**, and **Scheduled follow-up** are visibly separate. The Log communication dialog explicitly states that saving contact updates contact time, may add a reminder, never changes status, and preserves an existing reminder when no new date is entered. No communication or status change was saved during QA.
 
 The database migration created unique lead identity keys. Existing leads were backfilled and the authenticated duplicate-check endpoint matched an existing lead using three identity signals without creating or changing any lead record.
+
+
+## Bulk Image Import and Lead List Filtering QA
+
+The application now includes a dedicated **Bulk image import** route and navigation item. Each person is represented by a separate lead group, and each group accepts one to six JPG, PNG, or WebP source images. The batch is bounded to ten lead groups and twenty total images. Processing is sequential, every extracted draft requires explicit human approval, and the final action checks both existing-record duplicates and duplicates between groups before creating unique approved leads. Adding a second empty lead group was verified in the browser; no files were uploaded and no lead records were created during QA.
+
+The Leads page now performs filtering, sorting, totals, and pagination on the server. Available filters are Status, Interest, Assigned staff (including Unassigned), Follow-up state, Contact history, Created from/to dates, and free-text search across name, email, phone, city, and address. Sorting supports recently updated, newest created, name A–Z/Z–A, and next follow-up. Page sizes are 10, 25, 50, or 100. A read-only browser check filtered to **No reminder** and correctly reduced the result count from two to one. A direct authenticated API check confirmed paged metadata and in-batch duplicate detection without modifying data.

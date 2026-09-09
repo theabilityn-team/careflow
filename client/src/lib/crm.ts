@@ -43,7 +43,7 @@ export const PERMISSION_LABELS = {
   viewLeads: ["View leads", "Access lead profiles and search"],
   createLeads: ["Create leads", "Confirm new records after review"],
   editLeads: ["Edit lead details", "Correct and maintain profile information"],
-  scanDocuments: ["Add leads from images", "Use AI extraction on uploaded document images"],
+  scanDocuments: ["Add leads from images", "Use single or bulk AI extraction on uploaded document images"],
   viewClinical: ["View clinical data", "Access diagnoses and medical notes"],
   manageContacts: ["Manage communications", "Log calls, messages, and follow-ups"],
   changeStatus: ["Change status", "Move leads through the lifecycle"],

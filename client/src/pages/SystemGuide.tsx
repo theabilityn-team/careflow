@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { STATUS_DESCRIPTIONS, STATUS_OPTIONS } from "@/lib/crm";
-import { ArrowRight, CheckCircle2, ClipboardCheck, Download, FileSearch, History, MessageSquarePlus, ScanLine, ShieldCheck, UserCog } from "lucide-react";
+import { ArrowRight, CheckCircle2, ClipboardCheck, Download, Files, FileSearch, History, MessageSquarePlus, ScanLine, ShieldCheck, UserCog } from "lucide-react";
 import { useLocation } from "wouter";
 
 const flows = [
@@ -14,22 +14,27 @@ const flows = [
     result: "One lead is created, all source images are attached, and the initial reviewed state is written to the Audit trail.",
   },
   {
-    number: "02", icon: FileSearch, title: "Duplicate protection before saving", action: "Open Add lead", path: "/scan",
-    steps: ["Upload images and review the extracted draft.", "CareFlow normalizes email and phone values before comparison.", "It also creates a strong profile identity from name + date of birth, or name + address + postal code.", "Confirm the lead only after the reviewed identity is correct.", "If any identity matches an existing lead, creation is blocked and the existing Lead number is shown."],
-    result: "The same person is not silently inserted twice. Existing records remain unchanged and can be opened for review.",
+    number: "02", icon: Files, title: "Bulk import multiple leads from images", action: "Open Bulk image import", path: "/bulk-import",
+    steps: ["Create one lead group for each person.", "Attach one to six images belonging to that person; never mix people inside one group.", "Process all groups. CareFlow extracts each group separately and sequentially.", "Review every field and explicitly approve each lead.", "Select Check duplicates and import. Unique approved groups are created; existing and in-batch duplicates are blocked."],
+    result: "Multiple reviewed leads are created from one operation, with every source image attached to the correct person and a separate audit trail for each lead.",
   },
   {
-    number: "03", icon: MessageSquarePlus, title: "Record a call, email, SMS, or meeting", action: "Open Leads", path: "/leads",
+    number: "03", icon: FileSearch, title: "Duplicate protection before saving", action: "Open Bulk image import", path: "/bulk-import",
+    steps: ["Upload images and review the extracted draft.", "CareFlow normalizes email and phone values before comparison.", "It also creates a strong profile identity from name + date of birth, or name + address + postal code.", "Confirm the lead only after the reviewed identity is correct.", "If any identity matches an existing lead, creation is blocked and the existing Lead number is shown."],
+    result: "The same person is not silently inserted twice. Bulk import checks both existing records and duplicates between groups in the current batch.",
+  },
+  {
+    number: "04", icon: MessageSquarePlus, title: "Record a call, email, SMS, or meeting", action: "Open Leads", path: "/leads",
     steps: ["Open a lead and select Log contact.", "Choose method and direction, then write the outcome and optional notes.", "Optionally schedule the next follow-up date.", "Save the communication."],
     result: "Most recent contact and Communication history are updated. A new reminder is scheduled only when a date is entered. Status is never changed automatically.",
   },
   {
-    number: "04", icon: ClipboardCheck, title: "Plan and complete follow-ups", action: "Open Follow-ups", path: "/follow-ups",
+    number: "05", icon: ClipboardCheck, title: "Plan and complete follow-ups", action: "Open Follow-ups", path: "/follow-ups",
     steps: ["A reminder is created from Log contact or Edit lead.", "Upcoming reminders appear in Upcoming; passed dates appear in Overdue.", "Open the lead, perform the contact, and log the result.", "Set a new reminder if another action is needed, or clear it from Edit lead."],
     result: "The queue is driven only by Scheduled follow-up dates, not by Status.",
   },
   {
-    number: "05", icon: History, title: "Change status and preserve history", action: "Open Leads", path: "/leads",
+    number: "06", icon: History, title: "Change status and preserve history", action: "Open Leads", path: "/leads",
     steps: ["Open a lead.", "Change Status from the top Status control or Edit lead.", "Choose the stage that reflects the current business reality.", "The change is saved immediately with before/after values."],
     result: "Status changes only when an authorized person changes it. Scanning, logging contact, and scheduling reminders do not silently overwrite it.",
   },

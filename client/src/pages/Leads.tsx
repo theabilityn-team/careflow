@@ -2,45 +2,116 @@ import { CopyContactButton } from "@/components/crm/CopyContactButton";
 import { EmptyState, PageHeader, PageLoading, StatusPill } from "@/components/crm/CrmUi";
 import ExportLeadsDialog from "@/components/crm/ExportLeadsDialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getFollowUpTiming } from "@/lib/contactTracking";
 import { INTEREST_OPTIONS, STATUS_OPTIONS, formatDate, initials } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
-import { ChevronRight, Flame, Mail, Phone, Plus, Search } from "lucide-react";
-import { useState } from "react";
+import { ChevronLeft, ChevronRight, Files, Flame, Mail, Phone, Plus, Search, SlidersHorizontal, X } from "lucide-react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useLocation } from "wouter";
+
+const sortOptions = [
+  ["updated_desc", "Recently updated"],
+  ["created_desc", "Newest created"],
+  ["name_asc", "Name A–Z"],
+  ["name_desc", "Name Z–A"],
+  ["follow_up_asc", "Next follow-up first"],
+] as const;
+
+function pageNumbers(page: number, totalPages: number) {
+  const start = Math.max(1, Math.min(page - 2, totalPages - 4));
+  return Array.from({ length: Math.min(5, totalPages) }, (_, index) => Math.max(1, start) + index);
+}
 
 export default function Leads() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search.trim());
   const [status, setStatus] = useState("all");
+  const [interest, setInterest] = useState("all");
+  const [assigned, setAssigned] = useState("all");
+  const [followUp, setFollowUp] = useState("all");
+  const [contact, setContact] = useState("all");
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
+  const [sort, setSort] = useState<(typeof sortOptions)[number][0]>("updated_desc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [showFilters, setShowFilters] = useState(false);
   const { data: access } = trpc.dashboard.access.useQuery();
-  const { data, isLoading, error } = trpc.leads.list.useQuery({ search: search || undefined, status });
+  const { data: assignees = [] } = trpc.leads.assignees.useQuery();
+
+  const queryInput = useMemo(() => ({
+    search: deferredSearch || undefined,
+    status,
+    interestLevel: interest === "all" ? undefined : interest as "unknown" | "cold" | "warm" | "hot",
+    assignedTo: assigned === "all" ? undefined : assigned === "unassigned" ? "unassigned" as const : Number(assigned),
+    followUpState: followUp === "all" ? undefined : followUp as "overdue" | "upcoming" | "none",
+    contactState: contact === "all" ? undefined : contact as "contacted" | "not_contacted",
+    createdFrom: createdFrom ? new Date(`${createdFrom}T00:00:00`).getTime() : undefined,
+    createdTo: createdTo ? new Date(`${createdTo}T23:59:59.999`).getTime() : undefined,
+    sort,
+    page,
+    pageSize,
+  }), [deferredSearch, status, interest, assigned, followUp, contact, createdFrom, createdTo, sort, page, pageSize]);
+  const { data, isLoading, error, isFetching } = trpc.leads.list.useQuery(queryInput, { placeholderData: previous => previous });
+
+  const activeFilterCount = [status !== "all", interest !== "all", assigned !== "all", followUp !== "all", contact !== "all", Boolean(createdFrom), Boolean(createdTo)].filter(Boolean).length;
+  const hasAnyFilter = Boolean(search) || activeFilterCount > 0;
+  const setFilter = (setter: (value: string) => void) => (value: string) => { setter(value); setPage(1); };
+  function resetFilters() {
+    setSearch(""); setStatus("all"); setInterest("all"); setAssigned("all"); setFollowUp("all"); setContact("all"); setCreatedFrom(""); setCreatedTo(""); setSort("updated_desc"); setPage(1);
+  }
+
+  const items = data?.items ?? [];
+  const firstResult = data?.total ? (data.page - 1) * data.pageSize + 1 : 0;
+  const lastResult = data?.total ? Math.min(data.page * data.pageSize, data.total) : 0;
 
   return <div className="mx-auto max-w-[1500px]">
     <PageHeader
       eyebrow="Lead management"
       title="Every relationship, one clear record."
-      description="Search, qualify, and advance leads while preserving a complete operational history."
+      description="Search, filter, sort, and page through the complete lead pipeline."
       actions={<>
         {access?.permissions.exportData && <ExportLeadsDialog currentStatus={status} />}
+        {access?.permissions.scanDocuments && access.permissions.viewClinical && <Button variant="outline" className="bg-white" onClick={() => navigate("/bulk-import")}><Files className="mr-2 h-4 w-4" />Bulk image import</Button>}
         {access?.permissions.scanDocuments && access.permissions.viewClinical && <Button onClick={() => navigate("/scan")} className="bg-teal-700 hover:bg-teal-800"><Plus className="mr-2 h-4 w-4" />Add lead from images</Button>}
       </>}
     />
+
     <Card className="rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]">
       <CardContent className="p-0">
-        <div className="flex flex-col gap-3 border-b border-slate-100 p-5 sm:flex-row">
-          <div className="relative flex-1"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input value={search} onChange={event => setSearch(event.target.value)} className="h-11 border-slate-200 pl-10" placeholder="Search by name, email, or phone…" /></div>
-          <Select value={status} onValueChange={setStatus}><SelectTrigger className="h-11 w-full sm:w-[210px]"><SelectValue placeholder="All statuses" /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{STATUS_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+        <div className="border-b border-slate-100 p-5">
+          <div className="flex flex-col gap-3 lg:flex-row">
+            <div className="relative flex-1"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} className="h-11 border-slate-200 pl-10" placeholder="Search name, email, phone, city, or address…" /></div>
+            <Select value={status} onValueChange={setFilter(setStatus)}><SelectTrigger className="h-11 w-full lg:w-[220px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{STATUS_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+            <Button variant="outline" className="h-11 justify-between bg-white lg:min-w-40" onClick={() => setShowFilters(value => !value)}><span className="flex items-center"><SlidersHorizontal className="mr-2 h-4 w-4" />More filters</span>{activeFilterCount > 0 && <Badge className="ml-3 bg-teal-700 text-white hover:bg-teal-700">{activeFilterCount}</Badge>}</Button>
+            {hasAnyFilter && <Button variant="ghost" className="h-11 text-slate-500" onClick={resetFilters}><X className="mr-2 h-4 w-4" />Clear</Button>}
+          </div>
+
+          {showFilters && <div className="mt-4 grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+            <div className="space-y-2"><Label>Interest</Label><Select value={interest} onValueChange={setFilter(setInterest)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All interest levels</SelectItem>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Assigned staff</Label><Select value={assigned} onValueChange={setFilter(setAssigned)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All assignees</SelectItem><SelectItem value="unassigned">Unassigned</SelectItem>{assignees.map(member => <SelectItem key={member.id} value={String(member.id)}>{member.name || member.email || `Staff #${member.id}`}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Follow-up</Label><Select value={followUp} onValueChange={setFilter(setFollowUp)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Any follow-up</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="upcoming">Upcoming</SelectItem><SelectItem value="none">No reminder</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>Contact history</Label><Select value={contact} onValueChange={setFilter(setContact)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Any contact state</SelectItem><SelectItem value="contacted">Contact logged</SelectItem><SelectItem value="not_contacted">Never contacted</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>Created from</Label><Input type="date" value={createdFrom} max={createdTo || undefined} onChange={event => { setCreatedFrom(event.target.value); setPage(1); }} className="bg-white" /></div>
+            <div className="space-y-2"><Label>Created to</Label><Input type="date" value={createdTo} min={createdFrom || undefined} onChange={event => { setCreatedTo(event.target.value); setPage(1); }} className="bg-white" /></div>
+            <div className="space-y-2"><Label>Sort by</Label><Select value={sort} onValueChange={value => { setSort(value as typeof sort); setPage(1); }}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent>{sortOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+          </div>}
+
+          <div className="mt-4 flex flex-col gap-2 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between"><p><strong className="text-slate-800">{data?.total ?? 0}</strong> matching lead{data?.total === 1 ? "" : "s"}{isFetching && !isLoading ? " · Updating…" : ""}</p><p>Filters and sorting are applied before paging.</p></div>
         </div>
-        {isLoading ? <div className="p-6"><PageLoading /></div> : error ? <div className="m-6 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error.message}</div> : !data?.length ? <div className="p-6"><EmptyState title="No matching leads" description="Try another filter or add a reviewed lead from document images." action={access?.permissions.scanDocuments && access.permissions.viewClinical ? <Button onClick={() => navigate("/scan")} variant="outline">Add lead from images</Button> : undefined} /></div> : <div className="overflow-x-auto">
+
+        {isLoading ? <div className="p-6"><PageLoading /></div> : error ? <div className="m-6 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error.message}</div> : !items.length ? <div className="p-6"><EmptyState title="No matching leads" description={hasAnyFilter ? "Clear or adjust filters to widen the result set." : "Add a reviewed lead from images or use Bulk image import."} action={hasAnyFilter ? <Button variant="outline" onClick={resetFilters}>Clear all filters</Button> : access?.permissions.scanDocuments && access.permissions.viewClinical ? <Button onClick={() => navigate("/bulk-import")} variant="outline">Bulk image import</Button> : undefined} /></div> : <div className="overflow-x-auto">
           <Table>
             <TableHeader><TableRow className="border-slate-100 hover:bg-transparent"><TableHead className="pl-6">Lead</TableHead><TableHead>Status</TableHead><TableHead>Interest</TableHead><TableHead>Contact — click to copy</TableHead><TableHead>Follow-up reminder</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
-            <TableBody>{data.map(lead => {
+            <TableBody>{items.map(lead => {
               const timing = getFollowUpTiming(lead.nextFollowUpAt);
               return <TableRow key={lead.id} onClick={() => navigate(`/leads/${lead.id}`)} className="cursor-pointer border-slate-100">
                 <TableCell className="py-4 pl-6"><div className="flex items-center gap-3"><Avatar className="h-10 w-10"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{initials(lead.firstName, lead.lastName)}</AvatarFallback></Avatar><div><p className="font-semibold text-slate-900">{lead.firstName} {lead.lastName}</p><p className="text-xs text-slate-400">Added {formatDate(lead.createdAt)}</p></div></div></TableCell>
@@ -53,6 +124,8 @@ export default function Leads() {
             })}</TableBody>
           </Table>
         </div>}
+
+        {data && data.total > 0 && <div className="flex flex-col gap-4 border-t border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3 text-sm text-slate-500"><span>Showing {firstResult}–{lastResult} of {data.total}</span><Select value={String(pageSize)} onValueChange={value => { setPageSize(Number(value)); setPage(1); }}><SelectTrigger className="h-9 w-[110px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="10">10 / page</SelectItem><SelectItem value="25">25 / page</SelectItem><SelectItem value="50">50 / page</SelectItem><SelectItem value="100">100 / page</SelectItem></SelectContent></Select></div><div className="flex items-center gap-1"><Button variant="outline" size="sm" disabled={data.page <= 1} onClick={() => setPage(value => Math.max(1, value - 1))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button>{pageNumbers(data.page, data.totalPages).map(pageNumber => <Button key={pageNumber} variant={pageNumber === data.page ? "default" : "ghost"} size="icon" className={pageNumber === data.page ? "bg-teal-700 hover:bg-teal-800" : ""} onClick={() => setPage(pageNumber)}>{pageNumber}</Button>)}<Button variant="outline" size="sm" disabled={data.page >= data.totalPages} onClick={() => setPage(value => Math.min(data.totalPages, value + 1))}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>}
       </CardContent>
     </Card>
   </div>;

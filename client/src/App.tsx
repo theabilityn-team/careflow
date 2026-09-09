@@ -1,5 +1,6 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import BulkImageImport from "@/pages/BulkImageImport";
 import FollowUps from "@/pages/FollowUps";
 import Home from "@/pages/Home";
 import Invite from "@/pages/Invite";
@@ -25,6 +26,7 @@ function Router() {
     <Route path="/leads"><DashboardPage><Leads /></DashboardPage></Route>
     <Route path="/leads/:id"><DashboardPage><LeadDetail /></DashboardPage></Route>
     <Route path="/scan"><DashboardPage><Scanner /></DashboardPage></Route>
+    <Route path="/bulk-import"><DashboardPage><BulkImageImport /></DashboardPage></Route>
     <Route path="/follow-ups"><DashboardPage><FollowUps /></DashboardPage></Route>
     <Route path="/guide"><DashboardPage><SystemGuide /></DashboardPage></Route>
     <Route path="/staff"><DashboardPage><Staff /></DashboardPage></Route>

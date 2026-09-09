@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "../db";
+import { analyzeBulkLeadDuplicates, MAX_BULK_LEADS } from "../bulkLeadImport";
 import { prepareAuditEvents } from "../leadAudit";
 import { createLeadExport, LEAD_STATUS_LABELS } from "../leadExport";
 import { isDuplicateKeyError, isLeadDuplicateError } from "../leadIdentity";
@@ -52,11 +53,23 @@ function throwDuplicate(error: unknown): never {
 
 export const leadsRouter = router({
   list: protectedProcedure
-    .input(z.object({ search: z.string().max(120).optional(), status: z.string().max(40).optional(), assignedTo: z.number().int().positive().optional() }))
+    .input(z.object({
+      search: z.string().max(120).optional(),
+      status: z.string().max(40).optional(),
+      interestLevel: interestEnum.optional(),
+      assignedTo: z.union([z.number().int().positive(), z.literal("unassigned")]).optional(),
+      followUpState: z.enum(["overdue", "upcoming", "none"]).optional(),
+      contactState: z.enum(["contacted", "not_contacted"]).optional(),
+      createdFrom: z.number().int().positive().optional(),
+      createdTo: z.number().int().positive().optional(),
+      sort: z.enum(["updated_desc", "created_desc", "name_asc", "name_desc", "follow_up_asc"]).default("updated_desc"),
+      page: z.number().int().min(1).default(1),
+      pageSize: z.number().int().min(10).max(100).default(25),
+    }))
     .query(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "viewLeads");
-      const rows = await db.listLeads(input);
-      return access.permissions.viewClinical ? rows : rows.map(hideClinical);
+      const result = await db.listLeads(input);
+      return access.permissions.viewClinical ? result : { ...result, items: result.items.map(hideClinical) };
     }),
 
   exportSummary: protectedProcedure.query(async ({ ctx }) => {
@@ -103,6 +116,22 @@ export const leadsRouter = router({
     .mutation(async ({ ctx, input }) => {
       await assertPermission(ctx.user, "createLeads");
       return { duplicate: await db.findDuplicateLead(input) };
+    }),
+
+  bulkDuplicateCheck: protectedProcedure
+    .input(z.object({ leads: z.array(z.object({
+      firstName: z.string().max(120).optional().nullable(),
+      lastName: z.string().max(120).optional().nullable(),
+      email: z.string().max(320).optional().nullable(),
+      phone: z.string().max(80).optional().nullable(),
+      dateOfBirth: z.string().max(80).optional().nullable(),
+      address: z.string().max(20_000).optional().nullable(),
+      postalCode: z.string().max(40).optional().nullable(),
+    })).min(1).max(MAX_BULK_LEADS) }))
+    .mutation(async ({ ctx, input }) => {
+      await assertPermission(ctx.user, "createLeads");
+      const existing = await db.findExistingLeadIdentityMatches(input.leads);
+      return analyzeBulkLeadDuplicates(input.leads, existing);
     }),
 
   create: protectedProcedure

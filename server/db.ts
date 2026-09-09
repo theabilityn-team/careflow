@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, like, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   authSessions,
@@ -18,6 +18,7 @@ import {
 import { ENV } from "./_core/env";
 import { leadChanges, leadSnapshot, serializeAudit } from "./leadAudit";
 import { buildLeadIdentityKeys, identityMatchLabels, type LeadIdentityInput } from "./leadIdentity";
+import { normalizeLeadPagination } from "./leadList";
 import { communicationLeadUpdate } from "./leadWorkflow";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -297,16 +298,50 @@ export async function createInvitedStaff(input: {
   });
 }
 
-export async function listLeads(input: { search?: string; status?: string; assignedTo?: number }) {
+export type LeadListInput = {
+  search?: string;
+  status?: string;
+  interestLevel?: "unknown" | "cold" | "warm" | "hot";
+  assignedTo?: number | "unassigned";
+  followUpState?: "overdue" | "upcoming" | "none";
+  contactState?: "contacted" | "not_contacted";
+  createdFrom?: number;
+  createdTo?: number;
+  sort?: "updated_desc" | "created_desc" | "name_asc" | "name_desc" | "follow_up_asc";
+  page: number;
+  pageSize: number;
+};
+
+export async function listLeads(input: LeadListInput) {
   const db = await requireDb();
   const filters = [];
   if (input.search) {
     const term = `%${input.search}%`;
-    filters.push(or(like(leads.firstName, term), like(leads.lastName, term), like(leads.email, term), like(leads.phone, term))!);
+    filters.push(or(like(leads.firstName, term), like(leads.lastName, term), like(leads.email, term), like(leads.phone, term), like(leads.address, term), like(leads.city, term))!);
   }
   if (input.status && input.status !== "all") filters.push(eq(leads.status, input.status as typeof leads.status.enumValues[number]));
-  if (input.assignedTo) filters.push(eq(leads.assignedTo, input.assignedTo));
-  return db.select().from(leads).where(filters.length ? and(...filters) : undefined).orderBy(desc(leads.updatedAt));
+  if (input.interestLevel) filters.push(eq(leads.interestLevel, input.interestLevel));
+  if (input.assignedTo === "unassigned") filters.push(isNull(leads.assignedTo));
+  else if (input.assignedTo) filters.push(eq(leads.assignedTo, input.assignedTo));
+  const now = Date.now();
+  if (input.followUpState === "overdue") filters.push(and(isNotNull(leads.nextFollowUpAt), lt(leads.nextFollowUpAt, now))!);
+  if (input.followUpState === "upcoming") filters.push(gte(leads.nextFollowUpAt, now));
+  if (input.followUpState === "none") filters.push(isNull(leads.nextFollowUpAt));
+  if (input.contactState === "contacted") filters.push(isNotNull(leads.lastContactAt));
+  if (input.contactState === "not_contacted") filters.push(isNull(leads.lastContactAt));
+  if (input.createdFrom) filters.push(gte(leads.createdAt, new Date(input.createdFrom)));
+  if (input.createdTo) filters.push(lte(leads.createdAt, new Date(input.createdTo)));
+
+  const where = filters.length ? and(...filters) : undefined;
+  const countRows = await db.select({ count: sql<number>`count(*)` }).from(leads).where(where);
+  const pagination = normalizeLeadPagination(Number(countRows[0]?.count ?? 0), input.page, input.pageSize);
+  const orderBy = input.sort === "created_desc" ? [desc(leads.createdAt)]
+    : input.sort === "name_asc" ? [asc(leads.lastName), asc(leads.firstName)]
+      : input.sort === "name_desc" ? [desc(leads.lastName), desc(leads.firstName)]
+        : input.sort === "follow_up_asc" ? [sql`${leads.nextFollowUpAt} is null`, asc(leads.nextFollowUpAt), desc(leads.updatedAt)]
+          : [desc(leads.updatedAt)];
+  const items = await db.select().from(leads).where(where).orderBy(...orderBy).limit(pagination.pageSize).offset(pagination.offset);
+  return { items, total: pagination.total, page: pagination.page, pageSize: pagination.pageSize, totalPages: pagination.totalPages };
 }
 
 export async function getLeadStatusCounts() {
@@ -408,6 +443,23 @@ export async function findDuplicateLead(input: LeadIdentityInput, excludeLeadId?
     lastName: first.lastName,
     matchedBy: identityMatchLabels(keys.filter(key => matches.some(match => match.keyType === key.keyType))),
   };
+}
+
+export async function findExistingLeadIdentityMatches(inputs: LeadIdentityInput[]) {
+  const db = await requireDb();
+  const hashes = Array.from(new Set(inputs.flatMap(input => buildLeadIdentityKeys(input).map(key => key.keyHash))));
+  if (!hashes.length) return [];
+  return db
+    .select({
+      leadId: leads.id,
+      firstName: leads.firstName,
+      lastName: leads.lastName,
+      keyType: leadIdentityKeys.keyType,
+      keyHash: leadIdentityKeys.keyHash,
+    })
+    .from(leadIdentityKeys)
+    .innerJoin(leads, eq(leadIdentityKeys.leadId, leads.id))
+    .where(inArray(leadIdentityKeys.keyHash, hashes));
 }
 
 async function replaceLeadIdentityKeys(tx: any, leadId: number, input: Partial<InsertLead>) {
