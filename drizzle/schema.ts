@@ -21,6 +21,27 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
+export const localCredentials = mysqlTable("local_credentials", {
+  userId: int("userId").primaryKey(),
+  identifier: varchar("identifier", { length: 320 }).notNull().unique(),
+  passwordHash: varchar("passwordHash", { length: 128 }).notNull(),
+  passwordSalt: varchar("passwordSalt", { length: 64 }).notNull(),
+  failedLoginCount: int("failedLoginCount").default(0).notNull(),
+  lockedUntil: bigint("lockedUntil", { mode: "number" }),
+  passwordUpdatedAt: bigint("passwordUpdatedAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const authSessions = mysqlTable("auth_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  tokenHash: varchar("tokenHash", { length: 64 }).notNull().unique(),
+  userId: int("userId").notNull(),
+  expiresAt: bigint("expiresAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  lastUsedAt: bigint("lastUsedAt", { mode: "number" }).notNull(),
+});
+
 export const staffPermissions = mysqlTable("staff_permissions", {
   userId: int("userId").primaryKey(),
   jobTitle: varchar("jobTitle", { length: 120 }).default("Technical Staff").notNull(),

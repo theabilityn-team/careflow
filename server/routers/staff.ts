@@ -4,6 +4,7 @@ import { z } from "zod";
 import * as db from "../db";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import { DEFAULT_TECHNICAL_PERMISSIONS, normalizePermissions, PERMISSION_KEYS } from "../permissions";
+import { createLoginSession, hashPassword } from "../auth";
 
 const permissionShape = Object.fromEntries(PERMISSION_KEYS.map(key => [key, z.boolean()])) as Record<(typeof PERMISSION_KEYS)[number], z.ZodBoolean>;
 const permissionsSchema = z.object(permissionShape);
@@ -59,14 +60,27 @@ export const staffRouter = router({
     return { fullName: invite.fullName, email: invite.email, jobTitle: invite.jobTitle, expiresAt: invite.expiresAt };
   }),
 
-  acceptInvite: protectedProcedure.input(z.object({ token: z.string().length(48) })).mutation(async ({ ctx, input }) => {
+  acceptInvite: publicProcedure.input(z.object({
+    token: z.string().length(48),
+    password: z.string().min(10).max(200).regex(/[A-Z]/, "Add an uppercase letter").regex(/[a-z]/, "Add a lowercase letter").regex(/[0-9]/, "Add a number"),
+  })).mutation(async ({ ctx, input }) => {
     const invite = await db.getInviteByHash(tokenHash(input.token));
     if (!invite || invite.status !== "pending") throw new TRPCError({ code: "NOT_FOUND", message: "This invitation is no longer available." });
     if (invite.expiresAt < Date.now()) throw new TRPCError({ code: "BAD_REQUEST", message: "This invitation has expired." });
-    if (!ctx.user.email || ctx.user.email.toLowerCase() !== invite.email.toLowerCase()) {
-      throw new TRPCError({ code: "FORBIDDEN", message: `Sign in with ${invite.email} to accept this invitation.` });
-    }
-    await db.acceptInvite(invite.id, ctx.user.id, invite.jobTitle, invite.permissions);
+    if (await db.getLocalCredential(invite.email)) throw new TRPCError({ code: "CONFLICT", message: "An account already exists for this email." });
+    const { salt, hash } = await hashPassword(input.password);
+    const userId = await db.createInvitedStaff({
+      inviteId: invite.id,
+      openId: `local:${randomBytes(16).toString("hex")}`,
+      name: invite.fullName,
+      email: invite.email,
+      identifier: invite.email,
+      passwordHash: hash,
+      passwordSalt: salt,
+      jobTitle: invite.jobTitle,
+      permissions: invite.permissions,
+    });
+    await createLoginSession(ctx.res, ctx.req, userId);
     return { success: true };
   }),
 });

@@ -7,13 +7,13 @@ import {
   Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
-import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
 import { ClipboardCheck, ContactRound, LayoutDashboard, LogOut, PanelLeft, ScanLine, ShieldCheck, UsersRound } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+import LoginScreen from "./LoginScreen";
 
 const SIDEBAR_WIDTH_KEY = "careflow-sidebar-width";
 const DEFAULT_WIDTH = 272;
@@ -26,31 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)), [sidebarWidth]);
 
   if (loading) return <DashboardLayoutSkeleton />;
-  if (!user) {
-    return (
-      <div className="min-h-screen overflow-hidden bg-[#f4f7f6] text-slate-950">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_15%,rgba(15,118,110,.15),transparent_28%),radial-gradient(circle_at_82%_76%,rgba(14,165,233,.11),transparent_30%)]" />
-        <div className="relative mx-auto grid min-h-screen max-w-6xl items-center gap-12 px-6 py-16 lg:grid-cols-[1.15fr_.85fr]">
-          <div>
-            <div className="mb-8 inline-flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200/70">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-teal-700 text-white"><ShieldCheck className="h-5 w-5" /></div>
-              <span className="font-semibold tracking-tight">CareFlow CRM</span>
-            </div>
-            <p className="mb-4 text-xs font-semibold uppercase tracking-[.24em] text-teal-700">Secure lead operations</p>
-            <h1 className="max-w-2xl text-5xl font-semibold leading-[1.06] tracking-[-.045em] sm:text-6xl">Turn documents into trusted customer records.</h1>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">Scan multiple document images, review every extracted field, and manage the complete journey from new lead to buyer.</p>
-          </div>
-          <div className="rounded-[2rem] bg-slate-950 p-8 text-white shadow-2xl shadow-slate-900/15">
-            <div className="mb-8 flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-400/15 text-teal-300"><ScanLine /></div>
-            <h2 className="text-2xl font-semibold tracking-tight">Authorized staff access</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-300">Sign in with your approved account. Clinical information is protected by role-based permissions and activity logging.</p>
-            <Button onClick={() => startLogin()} size="lg" className="mt-8 w-full bg-teal-500 text-slate-950 hover:bg-teal-400">Sign in securely</Button>
-            <p className="mt-5 text-center text-xs text-slate-500">Protected workspace · Staff review required</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (!user) return <LoginScreen />;
   return <SidebarProvider style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}><DashboardShell setSidebarWidth={setSidebarWidth}>{children}</DashboardShell></SidebarProvider>;
 }
 

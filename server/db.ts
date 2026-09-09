@@ -1,12 +1,14 @@
 import { and, asc, desc, eq, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
+  authSessions,
   auditEvents,
   communications,
   InsertLead,
   InsertUser,
   leadDocuments,
   leads,
+  localCredentials,
   staffInvites,
   staffPermissions,
   users,
@@ -62,6 +64,125 @@ export async function getUserByOpenId(openId: string) {
   return result[0];
 }
 
+export async function getUserById(userId: number) {
+  const db = await requireDb();
+  const result = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  return result[0];
+}
+
+export async function getLocalCredential(identifier: string) {
+  const db = await requireDb();
+  const result = await db
+    .select({ credential: localCredentials, user: users })
+    .from(localCredentials)
+    .innerJoin(users, eq(users.id, localCredentials.userId))
+    .where(eq(localCredentials.identifier, identifier.toLowerCase()))
+    .limit(1);
+  return result[0];
+}
+
+export async function createLocalUser(input: {
+  openId: string;
+  name: string;
+  email: string | null;
+  role: "user" | "admin";
+  identifier: string;
+  passwordHash: string;
+  passwordSalt: string;
+}) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const result = await tx.insert(users).values({
+      openId: input.openId,
+      name: input.name,
+      email: input.email,
+      loginMethod: "local",
+      role: input.role,
+      lastSignedIn: new Date(),
+    });
+    const userId = Number(result[0].insertId);
+    await tx.insert(localCredentials).values({
+      userId,
+      identifier: input.identifier.toLowerCase(),
+      passwordHash: input.passwordHash,
+      passwordSalt: input.passwordSalt,
+      passwordUpdatedAt: Date.now(),
+    });
+    return userId;
+  });
+}
+
+export async function createCredentialForUser(input: {
+  userId: number;
+  identifier: string;
+  passwordHash: string;
+  passwordSalt: string;
+}) {
+  const db = await requireDb();
+  await db.insert(localCredentials).values({
+    userId: input.userId,
+    identifier: input.identifier.toLowerCase(),
+    passwordHash: input.passwordHash,
+    passwordSalt: input.passwordSalt,
+    passwordUpdatedAt: Date.now(),
+  });
+}
+
+export async function updateLoginFailure(userId: number, failedLoginCount: number, lockedUntil: number | null) {
+  const db = await requireDb();
+  await db.update(localCredentials).set({ failedLoginCount, lockedUntil }).where(eq(localCredentials.userId, userId));
+}
+
+export async function updateLocalPassword(userId: number, passwordHash: string, passwordSalt: string) {
+  const db = await requireDb();
+  await db.update(localCredentials).set({
+    passwordHash,
+    passwordSalt,
+    passwordUpdatedAt: Date.now(),
+    failedLoginCount: 0,
+    lockedUntil: null,
+  }).where(eq(localCredentials.userId, userId));
+}
+
+export async function recordSuccessfulLogin(userId: number) {
+  const db = await requireDb();
+  await db.transaction(async tx => {
+    await tx.update(localCredentials).set({ failedLoginCount: 0, lockedUntil: null }).where(eq(localCredentials.userId, userId));
+    await tx.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, userId));
+  });
+}
+
+export async function createAuthSession(input: { tokenHash: string; userId: number; expiresAt: number }) {
+  const db = await requireDb();
+  await db.insert(authSessions).values({ ...input, lastUsedAt: Date.now() });
+}
+
+export async function getAuthSession(tokenHash: string) {
+  const db = await requireDb();
+  const result = await db
+    .select({ session: authSessions, user: users })
+    .from(authSessions)
+    .innerJoin(users, eq(users.id, authSessions.userId))
+    .where(eq(authSessions.tokenHash, tokenHash))
+    .limit(1);
+  return result[0];
+}
+
+export async function touchAuthSession(sessionId: number) {
+  const db = await requireDb();
+  await db.update(authSessions).set({ lastUsedAt: Date.now() }).where(eq(authSessions.id, sessionId));
+}
+
+export async function deleteAuthSession(tokenHash: string) {
+  const db = await requireDb();
+  await db.delete(authSessions).where(eq(authSessions.tokenHash, tokenHash));
+}
+
+export async function deleteExpiredSessions() {
+  const db = await requireDb();
+  await db.delete(authSessions).where(sql`${authSessions.expiresAt} < ${Date.now()}`);
+}
+
 export async function getStaffPermissionRecord(userId: number) {
   const db = await requireDb();
   const result = await db.select().from(staffPermissions).where(eq(staffPermissions.userId, userId)).limit(1);
@@ -76,12 +197,14 @@ export async function listStaff() {
       name: users.name,
       email: users.email,
       role: users.role,
+      loginIdentifier: localCredentials.identifier,
       lastSignedIn: users.lastSignedIn,
       jobTitle: staffPermissions.jobTitle,
       isActive: staffPermissions.isActive,
       permissions: staffPermissions.permissions,
     })
     .from(users)
+    .innerJoin(localCredentials, eq(users.id, localCredentials.userId))
     .leftJoin(staffPermissions, eq(users.id, staffPermissions.userId))
     .orderBy(desc(users.lastSignedIn));
 }
@@ -122,6 +245,50 @@ export async function acceptInvite(inviteId: number, userId: number, jobTitle: s
       set: { jobTitle, permissions, isActive: true },
     });
     await tx.update(staffInvites).set({ status: "accepted", acceptedBy: userId, acceptedAt: Date.now() }).where(eq(staffInvites.id, inviteId));
+  });
+}
+
+export async function createInvitedStaff(input: {
+  inviteId: number;
+  openId: string;
+  name: string;
+  email: string;
+  identifier: string;
+  passwordHash: string;
+  passwordSalt: string;
+  jobTitle: string;
+  permissions: string;
+}) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const userResult = await tx.insert(users).values({
+      openId: input.openId,
+      name: input.name,
+      email: input.email.toLowerCase(),
+      loginMethod: "local",
+      role: "user",
+      lastSignedIn: new Date(),
+    });
+    const userId = Number(userResult[0].insertId);
+    await tx.insert(localCredentials).values({
+      userId,
+      identifier: input.identifier.toLowerCase(),
+      passwordHash: input.passwordHash,
+      passwordSalt: input.passwordSalt,
+      passwordUpdatedAt: Date.now(),
+    });
+    await tx.insert(staffPermissions).values({
+      userId,
+      jobTitle: input.jobTitle,
+      permissions: input.permissions,
+      isActive: true,
+    });
+    await tx.update(staffInvites).set({
+      status: "accepted",
+      acceptedBy: userId,
+      acceptedAt: Date.now(),
+    }).where(eq(staffInvites.id, input.inviteId));
+    return userId;
   });
 }
 
