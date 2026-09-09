@@ -35,3 +35,16 @@ Status-selection interaction was verified read-only: **Clear all** produced zero
 Temporary local sample files used for binary validation were deleted. The CSV was identified as UTF-8 with BOM, the XLSX passed ZIP integrity checks and contained a Status column, and the PDF was identified as a valid single-page A4 landscape document containing the report title, selected status, lead row, and assigned staff.
 
 Final verification reports 13 passing unit tests across authentication, permissions, auditing, and exports; a successful TypeScript check and production build; healthy runtime status; and no production test strings or temporary export files. The only build notice is the existing non-blocking Vite bundle-size advisory.
+
+
+## Contact Copy and Tracking Clarity QA
+
+The existing lead profile now presents **Most recent contact** and **Scheduled follow-up** with clear empty states and an English explanation of how each field is populated. Email and phone each have a visible Copy action with accessible labels. The layout remains balanced at desktop width, and no lead data was edited during this read-only inspection.
+
+The profile **Copy email** control was exercised successfully in the browser and displayed the confirmation toast **Email address copied.** This action only touched the local clipboard and did not create or change any application record.
+
+The **Log communication** dialog now states the exact system behavior: save time becomes Most recent contact; a scheduled date sets Follow-up required; leaving it blank sets Contacted and clears an existing reminder. The dialog was opened read-only and no communication was saved.
+
+The Leads table now shows both email and phone when present, each with a compact accessible copy action. The former Next follow-up column is now **Follow-up reminder** and clearly displays **No reminder — Set from Log contact or Edit lead** for empty values. Copy button clicks stop row navigation so users remain on the list.
+
+Final verification reports 17 passing unit tests, a successful TypeScript check and production build, healthy runtime status, and no production test strings. The existing non-blocking Vite bundle-size notice remains unchanged.
