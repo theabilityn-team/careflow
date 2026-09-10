@@ -43,6 +43,28 @@ export const authSessions = mysqlTable("auth_sessions", {
   lastUsedAt: bigint("lastUsedAt", { mode: "number" }).notNull(),
 });
 
+export const systemAdminCredentials = mysqlTable("system_admin_credentials", {
+  id: int("id").primaryKey(),
+  identifier: varchar("identifier", { length: 320 }).notNull().unique(),
+  name: varchar("name", { length: 160 }).default("Super Administrator").notNull(),
+  passwordHash: varchar("passwordHash", { length: 128 }).notNull(),
+  passwordSalt: varchar("passwordSalt", { length: 64 }).notNull(),
+  failedLoginCount: int("failedLoginCount").default(0).notNull(),
+  lockedUntil: bigint("lockedUntil", { mode: "number" }),
+  passwordUpdatedAt: bigint("passwordUpdatedAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+});
+
+export const systemAdminSessions = mysqlTable("system_admin_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  tokenHash: varchar("tokenHash", { length: 64 }).notNull().unique(),
+  expiresAt: bigint("expiresAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  lastUsedAt: bigint("lastUsedAt", { mode: "number" }).notNull(),
+});
+
 export const staffPermissions = mysqlTable("staff_permissions", {
   userId: int("userId").primaryKey(),
   jobTitle: varchar("jobTitle", { length: 120 }).default("Technical Staff").notNull(),

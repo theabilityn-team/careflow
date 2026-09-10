@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
 import {
   authSessions,
   auditEvents,
@@ -13,6 +14,8 @@ import {
   localCredentials,
   staffInvites,
   staffPermissions,
+  systemAdminCredentials,
+  systemAdminSessions,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -158,6 +161,59 @@ export async function recordSuccessfulLogin(userId: number) {
   });
 }
 
+export async function getSystemAdminCredential() {
+  const db = await requireDb();
+  return (await db.select().from(systemAdminCredentials).where(eq(systemAdminCredentials.id, 1)).limit(1))[0];
+}
+
+export async function upsertSystemAdminCredential(input: { passwordHash: string; passwordSalt: string }) {
+  const db = await requireDb();
+  await db.insert(systemAdminCredentials).values({
+    id: 1,
+    identifier: "admin",
+    name: "Super Administrator",
+    passwordHash: input.passwordHash,
+    passwordSalt: input.passwordSalt,
+    passwordUpdatedAt: Date.now(),
+  }).onDuplicateKeyUpdate({ set: {
+    passwordHash: input.passwordHash,
+    passwordSalt: input.passwordSalt,
+    passwordUpdatedAt: Date.now(),
+    failedLoginCount: 0,
+    lockedUntil: null,
+  } });
+}
+
+export async function updateSystemAdminLoginFailure(failedLoginCount: number, lockedUntil: number | null) {
+  const db = await requireDb();
+  await db.update(systemAdminCredentials).set({ failedLoginCount, lockedUntil }).where(eq(systemAdminCredentials.id, 1));
+}
+
+export async function recordSuccessfulSystemAdminLogin() {
+  const db = await requireDb();
+  await db.update(systemAdminCredentials).set({ failedLoginCount: 0, lockedUntil: null, lastSignedIn: new Date() }).where(eq(systemAdminCredentials.id, 1));
+}
+
+export async function createSystemAdminSession(input: { tokenHash: string; expiresAt: number }) {
+  const db = await requireDb();
+  await db.insert(systemAdminSessions).values({ ...input, lastUsedAt: Date.now() });
+}
+
+export async function getSystemAdminSession(tokenHash: string) {
+  const db = await requireDb();
+  return (await db.select().from(systemAdminSessions).where(eq(systemAdminSessions.tokenHash, tokenHash)).limit(1))[0];
+}
+
+export async function touchSystemAdminSession(sessionId: number) {
+  const db = await requireDb();
+  await db.update(systemAdminSessions).set({ lastUsedAt: Date.now() }).where(eq(systemAdminSessions.id, sessionId));
+}
+
+export async function deleteSystemAdminSession(tokenHash: string) {
+  const db = await requireDb();
+  await db.delete(systemAdminSessions).where(eq(systemAdminSessions.tokenHash, tokenHash));
+}
+
 export async function createAuthSession(input: { tokenHash: string; userId: number; expiresAt: number }) {
   const db = await requireDb();
   await db.insert(authSessions).values({ ...input, lastUsedAt: Date.now() });
@@ -186,7 +242,10 @@ export async function deleteAuthSession(tokenHash: string) {
 
 export async function deleteExpiredSessions() {
   const db = await requireDb();
-  await db.delete(authSessions).where(sql`${authSessions.expiresAt} < ${Date.now()}`);
+  await Promise.all([
+    db.delete(authSessions).where(sql`${authSessions.expiresAt} < ${Date.now()}`),
+    db.delete(systemAdminSessions).where(sql`${systemAdminSessions.expiresAt} < ${Date.now()}`),
+  ]);
 }
 
 export async function getStaffPermissionRecord(userId: number) {
@@ -212,6 +271,7 @@ export async function listStaff() {
     .from(users)
     .innerJoin(localCredentials, eq(users.id, localCredentials.userId))
     .leftJoin(staffPermissions, eq(users.id, staffPermissions.userId))
+    .where(eq(users.role, "user"))
     .orderBy(desc(users.lastSignedIn));
 }
 
@@ -420,7 +480,14 @@ export async function getLead(leadId: number) {
       occurredAt: auditEvents.occurredAt,
     }).from(auditEvents).leftJoin(users, eq(auditEvents.actorId, users.id)).where(eq(auditEvents.leadId, leadId)).orderBy(desc(auditEvents.occurredAt)),
   ]);
-  return { lead, documents, communications: contactHistory, auditEvents: auditHistory };
+  return {
+    lead,
+    documents,
+    communications: contactHistory,
+    auditEvents: auditHistory.map(event => event.actorId === SYSTEM_ADMIN_ACTOR_ID
+      ? { ...event, actorName: "Super Administrator", actorEmail: null }
+      : event),
+  };
 }
 
 export async function findDuplicateLead(input: LeadIdentityInput, excludeLeadId?: number) {
