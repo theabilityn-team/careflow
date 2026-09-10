@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
+import { SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
 import {
   authSessions,
   auditEvents,
@@ -170,18 +170,29 @@ export async function upsertSystemAdminCredential(input: { passwordHash: string;
   const db = await requireDb();
   await db.insert(systemAdminCredentials).values({
     id: 1,
-    identifier: "admin",
+    identifier: SUPER_ADMIN_EMAIL,
     name: "Super Administrator",
     passwordHash: input.passwordHash,
     passwordSalt: input.passwordSalt,
     passwordUpdatedAt: Date.now(),
   }).onDuplicateKeyUpdate({ set: {
+    identifier: SUPER_ADMIN_EMAIL,
+    name: "Super Administrator",
     passwordHash: input.passwordHash,
     passwordSalt: input.passwordSalt,
     passwordUpdatedAt: Date.now(),
     failedLoginCount: 0,
     lockedUntil: null,
   } });
+}
+
+export async function updateSystemAdminIdentifier() {
+  const db = await requireDb();
+  await db.update(systemAdminCredentials).set({
+    identifier: SUPER_ADMIN_EMAIL,
+    failedLoginCount: 0,
+    lockedUntil: null,
+  }).where(eq(systemAdminCredentials.id, 1));
 }
 
 export async function updateSystemAdminLoginFailure(failedLoginCount: number, lockedUntil: number | null) {

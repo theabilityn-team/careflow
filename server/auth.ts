@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import type { Request, Response } from "express";
 import { parse as parseCookieHeader } from "cookie";
 import type { User } from "../drizzle/schema";
-import { COOKIE_NAME, SYSTEM_ADMIN_ACTOR_ID } from "@shared/const";
+import { COOKIE_NAME, SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "@shared/const";
 import * as db from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 
@@ -11,7 +11,6 @@ const scrypt = promisify(nodeScrypt);
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const LOCK_THRESHOLD = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000;
-const ADMIN_IDENTIFIER = "admin";
 
 export const normalizeIdentifier = (value: string) => value.trim().toLowerCase();
 export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
@@ -32,7 +31,7 @@ function systemAdminPrincipal(lastSignedIn = new Date()): User {
     id: SYSTEM_ADMIN_ACTOR_ID,
     openId: "system:super-admin",
     name: "Super Administrator",
-    email: null,
+    email: SUPER_ADMIN_EMAIL,
     loginMethod: "system",
     role: "admin",
     createdAt: lastSignedIn,
@@ -48,6 +47,7 @@ export async function ensureSuperAdmin() {
   }
   const existing = await db.getSystemAdminCredential();
   if (existing) {
+    if (existing.identifier !== SUPER_ADMIN_EMAIL) await db.updateSystemAdminIdentifier();
     const current = await verifyPassword(adminPassword, existing.passwordSalt, existing.passwordHash);
     if (!current) {
       const replacement = await hashPassword(adminPassword);
@@ -78,7 +78,8 @@ export async function authenticateStaffCredentials(identifier: string, password:
   return { ok: true as const, user: record.user };
 }
 
-export async function authenticateSystemAdmin(password: string) {
+export async function authenticateSystemAdmin(identifier: string, password: string) {
+  if (normalizeIdentifier(identifier) !== SUPER_ADMIN_EMAIL) return { ok: false as const, reason: "invalid" as const };
   const credential = await db.getSystemAdminCredential();
   if (!credential) return { ok: false as const, reason: "invalid" as const };
   if (credential.lockedUntil && credential.lockedUntil > Date.now()) {

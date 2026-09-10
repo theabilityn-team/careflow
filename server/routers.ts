@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { SUPER_ADMIN_EMAIL } from "@shared/const";
 import { z } from "zod";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
@@ -15,11 +16,11 @@ export const appRouter = router({
     login: publicProcedure
       .input(z.discriminatedUnion("mode", [
         z.object({ mode: z.literal("staff"), identifier: z.string().trim().email().max(320), password: z.string().min(8).max(200) }),
-        z.object({ mode: z.literal("super_admin"), password: z.string().min(8).max(200) }),
+        z.object({ mode: z.literal("super_admin"), identifier: z.literal(SUPER_ADMIN_EMAIL), password: z.string().min(8).max(200) }),
       ]))
       .mutation(async ({ ctx, input }) => {
         const result = input.mode === "super_admin"
-          ? await authenticateSystemAdmin(input.password)
+          ? await authenticateSystemAdmin(input.identifier, input.password)
           : await authenticateStaffCredentials(input.identifier, input.password);
         if (!result.ok) {
           if (result.reason === "locked") {

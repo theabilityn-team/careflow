@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SUPER_ADMIN_EMAIL } from "../shared/const";
 import { hashPassword, normalizeIdentifier, verifyPassword } from "./auth";
 
 describe("local authentication", () => {
@@ -13,7 +14,8 @@ describe("local authentication", () => {
   });
 
   it("normalizes staff email and Super Admin identifiers", () => {
-    expect(normalizeIdentifier("  ADMIN ")).toBe("admin");
+    expect(SUPER_ADMIN_EMAIL).toBe("admin@admin.com");
+    expect(normalizeIdentifier("  ADMIN@ADMIN.COM ")).toBe(SUPER_ADMIN_EMAIL);
     expect(normalizeIdentifier(" Staff@Example.COM ")).toBe("staff@example.com");
   });
 });

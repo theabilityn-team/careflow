@@ -1,5 +1,6 @@
 export const COOKIE_NAME = "app_session_id";
 export const SYSTEM_ADMIN_ACTOR_ID = 30_001;
+export const SUPER_ADMIN_EMAIL = "admin@admin.com" as const;
 export const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365;
 export const AXIOS_TIMEOUT_MS = 30_000;
 export const UNAUTHED_ERR_MSG = 'Please login (10001)';
