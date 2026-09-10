@@ -48,6 +48,13 @@ export const DIAGNOSIS_CATEGORY_OPTIONS = [
   ["hematology", "Hematology"],
 ] as const;
 
+export const DOCUMENT_TYPE_OPTIONS = [
+  ["referral_order", "Referral order"],
+  ["referral_form", "Referral form"],
+  ["medical_record", "Medical record"],
+  ["other", "Other document"],
+] as const;
+
 export const LANGUAGE_OPTIONS = [
   ["en", "English"],
   ["es", "Spanish"],
@@ -59,6 +66,10 @@ export function stateLabel(value?: string | null) {
 
 export function diagnosisCategoryLabel(value?: string | null) {
   return DIAGNOSIS_CATEGORY_OPTIONS.find(([key]) => key === value)?.[1] ?? value ?? "Diagnosis group not set";
+}
+
+export function documentTypeLabel(value?: string | null) {
+  return DOCUMENT_TYPE_OPTIONS.find(([key]) => key === value)?.[1] ?? value ?? "Document type not classified";
 }
 
 export const PERMISSION_LABELS = {

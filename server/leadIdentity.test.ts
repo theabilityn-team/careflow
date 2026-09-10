@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLeadIdentityKeys, normalizeEmail, normalizePhone } from "./leadIdentity";
+import { buildLeadIdentityKeys, identityMatchLabels, normalizeEmail, normalizePhone } from "./leadIdentity";
 import { communicationLeadUpdate } from "./leadWorkflow";
 
 describe("lead duplicate identities", () => {
@@ -19,6 +19,8 @@ describe("lead duplicate identities", () => {
     const first = buildLeadIdentityKeys({ firstName: "José", lastName: "Stone", dateOfBirth: "1980-05-02" });
     const second = buildLeadIdentityKeys({ firstName: "jose", lastName: " STONE ", dateOfBirth: "May 2, 1980" });
     expect(first.find(key => key.keyType === "profile")?.keyHash).toBe(second.find(key => key.keyType === "profile")?.keyHash);
+    expect(identityMatchLabels(first, { firstName: "José", lastName: "Stone", dateOfBirth: "1980-05-02" })).toContain("first name + last name + date of birth");
+    expect(first.find(key => key.keyType === "profile")?.keyHash).not.toBe(buildLeadIdentityKeys({ firstName: "Jose", lastName: "Stone", dateOfBirth: "1981-05-02" }).find(key => key.keyType === "profile")?.keyHash);
     expect(buildLeadIdentityKeys({ firstName: "John", lastName: "Smith" })).toHaveLength(0);
   });
 });

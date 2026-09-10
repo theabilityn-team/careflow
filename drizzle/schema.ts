@@ -127,6 +127,7 @@ export const leads = mysqlTable("leads", {
   stateCode: varchar("stateCode", { length: 2 }),
   clinicalNotes: text("clinicalNotes"),
   additionalInformation: text("additionalInformation"),
+  sourceDocumentType: varchar("sourceDocumentType", { length: 80 }),
   status: mysqlEnum("status", [
     "new",
     "pending_review",

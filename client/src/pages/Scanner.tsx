@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/crm/CrmUi";
+import { ReferralReview } from "@/components/crm/ReferralReview";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,21 +12,22 @@ import { Textarea } from "@/components/ui/textarea";
 import { DIAGNOSIS_CATEGORY_OPTIONS, INTEREST_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
 import { inferSupportedStateCode } from "@shared/leadClassification";
+import { buildReferralAdditionalInformation, EMPTY_REFERRAL_DATA, isReferralDocument, type ReferralData } from "@shared/referralDocuments";
 import { AlertTriangle, ArrowLeft, Check, FileImage, Files, Loader2, LockKeyhole, ScanLine, ShieldCheck, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
 type UploadFile = { name: string; mimeType: "image/jpeg" | "image/png" | "image/webp"; dataUrl: string; size: number };
-type ExtraField = { label: string; value: string; confidence: number };
+type ExtraField = { section: string; label: string; value: string; confidence: number };
 type Extraction = {
-  firstName: string; lastName: string; email: string; phone: string; dateOfBirth: string;
+  firstName: string; lastName: string; email: string; phone: string; dateOfBirth: string; sex: string; medicalRecordNumber: string;
   address: string; city: string; stateProvince: string; stateCode: string; postalCode: string; country: string;
-  diagnosis: string; clinicalNotes: string; documentTypes: string[]; additionalInformation: ExtraField[];
+  diagnosis: string; diagnosisCategory: string; clinicalNotes: string; documentCategory: string; referral: ReferralData; documentTypes: string[]; additionalInformation: ExtraField[];
   overallConfidence: number; reviewWarnings: string[];
 };
 
-const empty: Extraction = { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", address: "", city: "", stateProvince: "", stateCode: "", postalCode: "", country: "", diagnosis: "", clinicalNotes: "", documentTypes: [], additionalInformation: [], overallConfidence: 0, reviewWarnings: [] };
+const empty: Extraction = { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", sex: "", medicalRecordNumber: "", address: "", city: "", stateProvince: "", stateCode: "", postalCode: "", country: "", diagnosis: "", diagnosisCategory: "", clinicalNotes: "", documentCategory: "other", referral: EMPTY_REFERRAL_DATA, documentTypes: [], additionalInformation: [], overallConfidence: 0, reviewWarnings: [] };
 
 const readFile = (file: File) => new Promise<UploadFile>((resolve, reject) => {
   const reader = new FileReader();
@@ -52,6 +54,7 @@ export default function Scanner() {
   const duplicateCheck = trpc.leads.duplicateCheck.useMutation();
   const create = trpc.leads.create.useMutation();
   const confidence = useMemo(() => Math.round((result?.overallConfidence ?? 0) * 100), [result]);
+  const nameDobReady = Boolean(result?.firstName.trim() && result.lastName.trim() && result.dateOfBirth.trim());
 
   async function addFiles(list: FileList | File[]) {
     const remaining = 6 - files.length;
@@ -68,6 +71,7 @@ export default function Scanner() {
       const extracted = { ...empty, ...(data as Extraction) };
       setResult(extracted);
       setStateCode(inferSupportedStateCode(extracted) ?? "");
+      setDiagnosisCategory(extracted.diagnosisCategory || "");
       setDuplicate(null);
       toast.success("Extraction complete. Review every field before saving.");
     } catch (error) {
@@ -77,9 +81,10 @@ export default function Scanner() {
 
   async function saveLead() {
     if (!result?.firstName.trim() || !result.lastName.trim()) return toast.error("First and last name are required.");
+    if (!result.dateOfBirth.trim()) return toast.error("Date of birth is required so CareFlow can block duplicate patients by name and date of birth.");
     if (!diagnosisCategory || !stateCode) return toast.error("Select a diagnosis group and state before creating the lead.");
     try {
-      const checked = await duplicateCheck.mutateAsync({ firstName: result.firstName, lastName: result.lastName, email: result.email || null, phone: result.phone || null, dateOfBirth: result.dateOfBirth || null, address: result.address || null, postalCode: result.postalCode || null });
+      const checked = await duplicateCheck.mutateAsync({ firstName: result.firstName, lastName: result.lastName, email: result.email || null, phone: result.phone || null, dateOfBirth: result.dateOfBirth, address: result.address || null, postalCode: result.postalCode || null });
       if (checked.duplicate) {
         setDuplicate(checked.duplicate);
         toast.error(`Duplicate detected: Lead #${checked.duplicate.leadId}.`);
@@ -92,7 +97,8 @@ export default function Scanner() {
           phone: result.phone || null, dateOfBirth: result.dateOfBirth || null, address: result.address || null,
           city: result.city || null, stateProvince: result.stateProvince || null, postalCode: result.postalCode || null,
           country: result.country || null, diagnosis: result.diagnosis || null, diagnosisCategory: diagnosisCategory as "oncology" | "hematology", stateCode: stateCode as "FL" | "AZ" | "NV" | "CA", clinicalNotes: result.clinicalNotes || null,
-          additionalInformation: result.additionalInformation.length ? JSON.stringify(result.additionalInformation) : null,
+          sourceDocumentType: result.documentCategory as "referral_order" | "referral_form" | "medical_record" | "other",
+          additionalInformation: JSON.stringify(buildReferralAdditionalInformation({ documentCategory: result.documentCategory, sex: result.sex, medicalRecordNumber: result.medicalRecordNumber, referral: result.referral, additionalInformation: result.additionalInformation })) || null,
           status: status as any, interestLevel: interestLevel as any, assignedTo: null,
         },
         documents: files.map(({ name, mimeType, dataUrl }) => ({ name, mimeType, dataUrl })),
@@ -105,6 +111,7 @@ export default function Scanner() {
   }
 
   const update = (key: keyof Extraction, value: string) => { setDuplicate(null); setResult(current => current ? { ...current, [key]: value } : current); };
+  const updateReferral = (value: ReferralData) => { setDuplicate(null); setResult(current => current ? { ...current, referral: value } : current); };
 
   return <div className="mx-auto max-w-[1380px]">
     <PageHeader eyebrow="Document intelligence" title={result ? "Review extracted information" : "Add lead from images"} description={result ? "Confirm every value, correct any uncertainty, and save only when the record is accurate. Duplicate protection runs before creation." : "Upload up to six images for one person. CareFlow combines visible information into one reviewed lead draft."} actions={!result ? <Button variant="outline" className="bg-white" onClick={() => navigate("/bulk-import")}><Files className="mr-2 h-4 w-4" />Bulk image import</Button> : undefined} />
@@ -119,7 +126,7 @@ export default function Scanner() {
         <Button onClick={startScan} disabled={!files.length || extract.isPending} size="lg" className="mt-6 w-full bg-teal-700 hover:bg-teal-800">{extract.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Reading {files.length} document{files.length === 1 ? "" : "s"}…</> : <><ScanLine className="mr-2 h-4 w-4" />Scan and extract information</>}</Button>
       </CardContent></Card>
       <div className="space-y-4">
-        <Card className="rounded-2xl border-0 bg-slate-950 text-white"><CardContent className="p-6"><Sparkles className="h-5 w-5 text-teal-300" /><h3 className="mt-5 font-semibold">What CareFlow extracts</h3><p className="mt-2 text-sm leading-6 text-slate-400">Names, contact details, addresses, dates, diagnoses, clinical notes, document types, and any other visible information.</p></CardContent></Card>
+        <Card className="rounded-2xl border-0 bg-slate-950 text-white"><CardContent className="p-6"><Sparkles className="h-5 w-5 text-teal-300" /><h3 className="mt-5 font-semibold">Medical referrals are supported</h3><p className="mt-2 text-sm leading-6 text-slate-400">CareFlow extracts the patient, diagnosis, insurance, authorization, providers, referral instructions, ICD/CPT codes, and visits while keeping patient and provider contact details separate.</p></CardContent></Card>
         <Alert className="rounded-2xl border-amber-200 bg-amber-50"><LockKeyhole className="h-4 w-4 text-amber-700" /><AlertTitle>Human review is mandatory</AlertTitle><AlertDescription className="leading-6 text-amber-800">AI results may be incomplete or incorrect. An authorized staff member must verify the source images before creating a record.</AlertDescription></Alert>
       </div>
     </div> : <div className="space-y-6">
@@ -127,12 +134,13 @@ export default function Scanner() {
       {result.reviewWarnings.length > 0 && <Alert className="rounded-2xl border-amber-200 bg-amber-50"><AlertTriangle className="h-4 w-4 text-amber-700" /><AlertTitle>Items that need extra attention</AlertTitle><AlertDescription><ul className="mt-2 list-disc space-y-1 pl-4 text-amber-800">{result.reviewWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></AlertDescription></Alert>}
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <Card className="rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="space-y-8 p-6 sm:p-8">
-          <section><h2 className="mb-5 text-lg font-semibold tracking-tight">Personal information</h2><div className="grid gap-5 sm:grid-cols-2"><Field label="First name *" value={result.firstName} onChange={v => update("firstName", v)} /><Field label="Last name *" value={result.lastName} onChange={v => update("lastName", v)} /><Field label="Email" type="email" value={result.email} onChange={v => update("email", v)} /><Field label="Phone" value={result.phone} onChange={v => update("phone", v)} /><Field label="Date of birth" value={result.dateOfBirth} onChange={v => update("dateOfBirth", v)} /></div></section>
+          <section><h2 className="mb-5 text-lg font-semibold tracking-tight">Patient information</h2><div className="grid gap-5 sm:grid-cols-2"><Field label="First name *" value={result.firstName} onChange={v => update("firstName", v)} /><Field label="Last name *" value={result.lastName} onChange={v => update("lastName", v)} /><Field label="Email" type="email" value={result.email} onChange={v => update("email", v)} /><Field label="Phone" value={result.phone} onChange={v => update("phone", v)} /><Field label="Date of birth" value={result.dateOfBirth} onChange={v => update("dateOfBirth", v)} /><Field label="Sex" value={result.sex} onChange={v => update("sex", v)} /><Field label="Medical record number" value={result.medicalRecordNumber} onChange={v => update("medicalRecordNumber", v)} /></div></section>
           <section className="border-t border-slate-100 pt-8"><h2 className="mb-5 text-lg font-semibold tracking-tight">Address</h2><div className="grid gap-5 sm:grid-cols-2"><div className="sm:col-span-2"><Field label="Street address" value={result.address} onChange={v => update("address", v)} /></div><Field label="City" value={result.city} onChange={v => update("city", v)} /><Field label="State / Province" value={result.stateProvince} onChange={v => update("stateProvince", v)} /><Field label="Postal code" value={result.postalCode} onChange={v => update("postalCode", v)} /><Field label="Country" value={result.country} onChange={v => update("country", v)} /></div></section>
           <section className="border-t border-slate-100 pt-8"><div className="mb-5 flex items-center gap-2"><LockKeyhole className="h-4 w-4 text-rose-600" /><h2 className="text-lg font-semibold tracking-tight">Protected clinical information</h2></div><div className="space-y-5"><div className="space-y-2"><Label>Diagnosis</Label><Textarea value={result.diagnosis} onChange={e => update("diagnosis", e.target.value)} rows={3} /></div><div className="space-y-2"><Label>Clinical notes</Label><Textarea value={result.clinicalNotes} onChange={e => update("clinicalNotes", e.target.value)} rows={4} /></div></div></section>
+          {isReferralDocument(result.documentCategory) && <ReferralReview value={result.referral} onChange={updateReferral} documentCategory={result.documentCategory} onDocumentCategoryChange={value => update("documentCategory", value)} />}
           {result.additionalInformation.length > 0 && <section className="border-t border-slate-100 pt-8"><h2 className="mb-5 text-lg font-semibold tracking-tight">Additional extracted information</h2><div className="grid gap-4 sm:grid-cols-2">{result.additionalInformation.map((item, index) => <div key={`${item.label}-${index}`} className="rounded-xl bg-slate-50 p-4"><div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{item.label}</span><span className="text-xs text-slate-400">{Math.round(item.confidence * 100)}%</span></div><Input value={item.value} onChange={e => setResult(current => current ? { ...current, additionalInformation: current.additionalInformation.map((field, i) => i === index ? { ...field, value: e.target.value } : field) } : current)} className="mt-2 border-0 bg-white" /></div>)}</div></section>}
         </CardContent></Card>
-        <div className="space-y-5"><Card className="sticky top-6 rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="space-y-5 p-6"><div><h3 className="font-semibold">Confirm record</h3><p className="mt-1 text-sm leading-6 text-slate-500">Select the operational classification manually before saving. CareFlow then checks identity duplicates and attaches the source images.</p></div>{duplicate && <Alert className="border-amber-200 bg-amber-50"><AlertTriangle className="h-4 w-4 text-amber-700" /><AlertTitle>Possible duplicate blocked</AlertTitle><AlertDescription className="leading-6">{duplicate.leadId ? <>Matches Lead #{duplicate.leadId} — {duplicate.firstName} {duplicate.lastName} by {duplicate.matchedBy.join(", ")}.<Button variant="link" className="mt-1 h-auto p-0 text-amber-900" onClick={() => navigate(`/leads/${duplicate.leadId}`)}>Open existing lead</Button></> : <>A matching lead already exists, but you do not have access to that record. Contact the Super Admin.</>}</AlertDescription></Alert>}<div className="rounded-2xl bg-teal-50 p-4 ring-1 ring-teal-200"><p className="text-xs font-semibold uppercase tracking-[.14em] text-teal-700">Required classification</p><div className="mt-3 space-y-3"><div className="space-y-2"><Label>Diagnosis group</Label><Select value={diagnosisCategory} onValueChange={setDiagnosisCategory}><SelectTrigger className="bg-white"><SelectValue placeholder="Select Oncology or Hematology" /></SelectTrigger><SelectContent>{DIAGNOSIS_CATEGORY_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>State</Label><Select value={stateCode} onValueChange={setStateCode}><SelectTrigger className="bg-white"><SelectValue placeholder="Select state" /></SelectTrigger><SelectContent>{STATE_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div></div></div><div className="space-y-2"><Label>Initial business status</Label><Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUS_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select><p className="text-xs leading-5 text-slate-500">This is the only status set during creation. Later status changes are always manual and audited.</p></div><div className="space-y-2"><Label>Interest level</Label><Select value={interestLevel} onValueChange={setInterestLevel}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div><Button onClick={saveLead} disabled={create.isPending || duplicateCheck.isPending || !diagnosisCategory || !stateCode} className="w-full bg-teal-700 hover:bg-teal-800">{create.isPending || duplicateCheck.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Check duplicates and create lead</Button><Button variant="outline" className="w-full" onClick={() => { setDuplicate(null); setResult(null); }}><ArrowLeft className="mr-2 h-4 w-4" />Back to images</Button></CardContent></Card></div>
+        <div className="space-y-5"><Card className="sticky top-6 rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="space-y-5 p-6"><div><h3 className="font-semibold">Confirm record</h3><p className="mt-1 text-sm leading-6 text-slate-500">Select the operational classification manually before saving. CareFlow then checks identity duplicates and attaches the source images.</p></div><div className={`rounded-xl p-3 text-xs leading-5 ${nameDobReady ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{nameDobReady ? "First name + last name + date of birth are ready for the mandatory duplicate check." : "Enter first name, last name, and date of birth before this lead can be created."}</div>{duplicate && <Alert className="border-amber-200 bg-amber-50"><AlertTriangle className="h-4 w-4 text-amber-700" /><AlertTitle>Possible duplicate blocked</AlertTitle><AlertDescription className="leading-6">{duplicate.leadId ? <>Matches Lead #{duplicate.leadId} — {duplicate.firstName} {duplicate.lastName} by {duplicate.matchedBy.join(", ")}.<Button variant="link" className="mt-1 h-auto p-0 text-amber-900" onClick={() => navigate(`/leads/${duplicate.leadId}`)}>Open existing lead</Button></> : <>A matching lead already exists, but you do not have access to that record. Contact the Super Admin.</>}</AlertDescription></Alert>}<div className="rounded-2xl bg-teal-50 p-4 ring-1 ring-teal-200"><p className="text-xs font-semibold uppercase tracking-[.14em] text-teal-700">Required classification</p><div className="mt-3 space-y-3"><div className="space-y-2"><Label>Diagnosis group</Label><Select value={diagnosisCategory} onValueChange={setDiagnosisCategory}><SelectTrigger className="bg-white"><SelectValue placeholder="Select Oncology or Hematology" /></SelectTrigger><SelectContent>{DIAGNOSIS_CATEGORY_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>State</Label><Select value={stateCode} onValueChange={setStateCode}><SelectTrigger className="bg-white"><SelectValue placeholder="Select state" /></SelectTrigger><SelectContent>{STATE_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div></div></div><div className="space-y-2"><Label>Initial business status</Label><Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUS_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select><p className="text-xs leading-5 text-slate-500">This is the only status set during creation. Later status changes are always manual and audited.</p></div><div className="space-y-2"><Label>Interest level</Label><Select value={interestLevel} onValueChange={setInterestLevel}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div><Button onClick={saveLead} disabled={create.isPending || duplicateCheck.isPending || !nameDobReady || !diagnosisCategory || !stateCode} className="w-full bg-teal-700 hover:bg-teal-800">{create.isPending || duplicateCheck.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Check duplicates and create lead</Button><Button variant="outline" className="w-full" onClick={() => { setDuplicate(null); setResult(null); }}><ArrowLeft className="mr-2 h-4 w-4" />Back to images</Button></CardContent></Card></div>
       </div>
     </div>}
   </div>;

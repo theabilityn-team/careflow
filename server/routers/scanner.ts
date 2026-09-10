@@ -4,6 +4,7 @@ import { invokeLLM } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { assertPermission } from "../permissions";
 import { inferSupportedStateCode } from "../../shared/leadClassification";
+import { EMPTY_REFERRAL_DATA, inferDiagnosisCategory, isProhibitedSensitiveItem } from "../../shared/referralDocuments";
 
 const fileSchema = z.object({
   name: z.string().min(1).max(255),
@@ -19,14 +20,57 @@ const extractionSchema = {
     email: { type: "string" },
     phone: { type: "string" },
     dateOfBirth: { type: "string" },
+    sex: { type: "string" },
+    medicalRecordNumber: { type: "string" },
     address: { type: "string" },
     city: { type: "string" },
     stateProvince: { type: "string" },
-    stateCode: { type: "string", enum: ["FL", "AZ", "NV", "CA", ""] },
+    stateCode: { type: "string", enum: ["FL", "AZ", "NV", "CA", "unknown"] },
     postalCode: { type: "string" },
     country: { type: "string" },
     diagnosis: { type: "string" },
+    diagnosisCategory: { type: "string", enum: ["oncology", "hematology", "unknown"] },
     clinicalNotes: { type: "string" },
+    documentCategory: { type: "string", enum: ["referral_order", "referral_form", "medical_record", "other"] },
+    referral: {
+      type: "object",
+      properties: {
+        referralDate: { type: "string" },
+        referralReason: { type: "string" },
+        orderName: { type: "string" },
+        urgency: { type: "string" },
+        appointmentInstructions: { type: "string" },
+        requestedVisits: { type: "string" },
+        authorizationNumber: { type: "string" },
+        authorizationStatus: { type: "string" },
+        authorizationStartDate: { type: "string" },
+        authorizationEndDate: { type: "string" },
+        insuranceCarrier: { type: "string" },
+        insurancePlan: { type: "string" },
+        memberId: { type: "string" },
+        groupNumber: { type: "string" },
+        policyHolder: { type: "string" },
+        referringProviderName: { type: "string" },
+        referringProviderCredentials: { type: "string" },
+        referringProviderPractice: { type: "string" },
+        referringProviderSpecialty: { type: "string" },
+        referringProviderNpi: { type: "string" },
+        referringProviderPhone: { type: "string" },
+        referringProviderFax: { type: "string" },
+        referringProviderAddress: { type: "string" },
+        receivingProviderName: { type: "string" },
+        receivingProviderPractice: { type: "string" },
+        receivingProviderSpecialty: { type: "string" },
+        receivingProviderNpi: { type: "string" },
+        receivingProviderPhone: { type: "string" },
+        receivingProviderFax: { type: "string" },
+        receivingProviderAddress: { type: "string" },
+        icdCodes: { type: "array", items: { type: "string" } },
+        cptCodes: { type: "array", items: { type: "string" } },
+      },
+      required: Object.keys(EMPTY_REFERRAL_DATA),
+      additionalProperties: false,
+    },
     documentTypes: { type: "array", items: { type: "string" } },
     additionalInformation: {
       type: "array",
@@ -35,9 +79,10 @@ const extractionSchema = {
         properties: {
           label: { type: "string" },
           value: { type: "string" },
+          section: { type: "string" },
           confidence: { type: "number", minimum: 0, maximum: 1 },
         },
-        required: ["label", "value", "confidence"],
+        required: ["label", "value", "section", "confidence"],
         additionalProperties: false,
       },
     },
@@ -50,6 +95,8 @@ const extractionSchema = {
     "email",
     "phone",
     "dateOfBirth",
+    "sex",
+    "medicalRecordNumber",
     "address",
     "city",
     "stateProvince",
@@ -57,7 +104,10 @@ const extractionSchema = {
     "postalCode",
     "country",
     "diagnosis",
+    "diagnosisCategory",
     "clinicalNotes",
+    "documentCategory",
+    "referral",
     "documentTypes",
     "additionalInformation",
     "overallConfidence",
@@ -81,7 +131,7 @@ export const scannerRouter = router({
           {
             role: "system",
             content:
-              "You extract customer and clinical information from document images. Read all images as one case. Copy only visible facts; never invent missing information. Use empty strings when a field is absent. Preserve diagnostic wording accurately. Put every other useful fact in additionalInformation. Set stateCode to FL, AZ, NV, or CA when the visible state, address, or ZIP code clearly identifies Florida, Arizona, Nevada, or California; otherwise use an empty string. Flag ambiguous, conflicting, or low-confidence values in reviewWarnings. The output will always be reviewed by authorized staff before saving.",
+              "You extract patient and clinical information from medical document images, including referral orders and referral forms. Read all images as one patient case. The lead identity and address fields must always describe the PATIENT, never a provider, facility, policy holder, fax sender, or recipient. Copy only visible facts; never invent missing information. Use empty strings or empty arrays when a field is absent. Patient first name, last name, and date of birth are critical duplicate-check fields: copy the visible date exactly, never infer it from age, and add a review warning when it is absent, conflicting, or unclear. Classify documentCategory as referral_order, referral_form, medical_record, or other. For referral documents, separately extract referring and receiving provider details, insurance, authorization, visit count, priority, appointment instructions, ICD codes, and CPT/HCPCS codes into referral. Preserve diagnosis wording accurately. Set diagnosisCategory to hematology for blood disorders such as anemia or neutropenia, oncology for cancer/malignancy/neoplasm, and unknown only when neither is supported. Put every other useful fact in additionalInformation with a section. Set stateCode to FL, AZ, NV, or CA when the PATIENT state, address, or ZIP code clearly identifies Florida, Arizona, Nevada, or California; otherwise use unknown. Never return or store Social Security numbers, even if visible. Do not confuse provider phone/fax with patient phone. Flag ambiguous, conflicting, or low-confidence values in reviewWarnings. The output will always be reviewed by authorized staff before saving.",
           },
           {
             role: "user",
@@ -101,11 +151,30 @@ export const scannerRouter = router({
         max_tokens: 4096,
       });
 
+      const upstreamError = (response as unknown as { error?: { message?: string } }).error?.message;
+      if (!Array.isArray(response.choices)) throw new Error(upstreamError || "The scanner returned an unexpected response.");
       const content = response.choices[0]?.message.content;
       if (typeof content !== "string") throw new Error("The scanner returned an unexpected response.");
       try {
         const extracted = JSON.parse(content);
-        return { ...extracted, stateCode: inferSupportedStateCode(extracted) ?? "" };
+        const referral = { ...EMPTY_REFERRAL_DATA, ...(extracted.referral ?? {}) };
+        const reviewWarnings = Array.isArray(extracted.reviewWarnings) ? extracted.reviewWarnings : [];
+        if (!String(extracted.dateOfBirth ?? "").trim()) reviewWarnings.push("Date of birth was not found. Enter it manually before creating the lead so duplicate protection can run.");
+        return {
+          ...extracted,
+          referral,
+          reviewWarnings: Array.from(new Set(reviewWarnings)),
+          additionalInformation: Array.isArray(extracted.additionalInformation)
+            ? extracted.additionalInformation.filter((item: { label?: string; value?: string }) => item.label && item.value && !isProhibitedSensitiveItem({ label: item.label, value: item.value }))
+            : [],
+          stateCode: inferSupportedStateCode(extracted) ?? "",
+          diagnosisCategory: inferDiagnosisCategory({
+            diagnosis: extracted.diagnosis,
+            referralReason: referral.referralReason,
+            orderName: referral.orderName,
+            receivingProviderSpecialty: referral.receivingProviderSpecialty,
+          }) || (extracted.diagnosisCategory === "unknown" ? "" : extracted.diagnosisCategory) || "",
+        };
       } catch {
         throw new Error("The scanner could not produce valid structured information.");
       }

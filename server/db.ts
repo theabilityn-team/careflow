@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, like, lt, lte, ne,
 import { drizzle } from "drizzle-orm/mysql2";
 import { SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
 import { inferSupportedStateCode } from "../shared/leadClassification";
+import { inferStoredDocumentType } from "../shared/referralDocuments";
 import {
   authSessions,
   auditEvents,
@@ -803,7 +804,7 @@ export async function findDuplicateLead(input: LeadIdentityInput, excludeLeadId?
     leadId: first.leadId,
     firstName: first.firstName,
     lastName: first.lastName,
-    matchedBy: identityMatchLabels(keys.filter(key => matches.some(match => match.keyType === key.keyType))),
+    matchedBy: identityMatchLabels(keys.filter(key => matches.some(match => match.keyType === key.keyType)), input),
   };
 }
 
@@ -926,9 +927,9 @@ export async function updateFollowUpDelivery(id: number, values: Partial<typeof 
 
 export async function backfillLeadIdentityKeys() {
   const db = await requireDb();
-  const existingKeyCount = await db.select({ count: sql<number>`count(*)` }).from(leadIdentityKeys);
-  if (Number(existingKeyCount[0]?.count ?? 0) > 0) return;
-  const existingLeads = await db.select().from(leads).orderBy(asc(leads.id));
+  const keyedRows = await db.select({ leadId: leadIdentityKeys.leadId }).from(leadIdentityKeys).groupBy(leadIdentityKeys.leadId);
+  const keyedLeadIds = new Set(keyedRows.map(row => row.leadId));
+  const existingLeads = (await db.select().from(leads).orderBy(asc(leads.id))).filter(lead => !keyedLeadIds.has(lead.id));
   for (const lead of existingLeads) {
     const keys = buildLeadIdentityKeys(lead);
     for (const key of keys) {
@@ -948,6 +949,31 @@ export async function backfillLeadStateCodes() {
       action: "lead.state_inferred",
       source: "system_backfill",
       detail: `Operational state inferred from existing address data: ${stateCode}`,
+    });
+  }
+}
+
+export async function backfillLeadDocumentTypes() {
+  const db = await requireDb();
+  const [missing, documents] = await Promise.all([
+    db.select().from(leads).where(isNull(leads.sourceDocumentType)),
+    db.select({ leadId: leadDocuments.leadId, fileName: leadDocuments.fileName }).from(leadDocuments),
+  ]);
+  const filesByLead = new Map<number, string[]>();
+  for (const document of documents) {
+    const files = filesByLead.get(document.leadId) ?? [];
+    files.push(document.fileName);
+    filesByLead.set(document.leadId, files);
+  }
+  for (const lead of missing) {
+    const files = filesByLead.get(lead.id) ?? [];
+    if (!files.length) continue;
+    const sourceDocumentType = inferStoredDocumentType(lead.additionalInformation, files) ?? "other";
+    await updateLeadWithAudit(lead.id, { sourceDocumentType }, {
+      actorId: SYSTEM_ADMIN_ACTOR_ID,
+      action: "lead.document_type_inferred",
+      source: "system_backfill",
+      detail: `Source document type classified from existing record evidence: ${sourceDocumentType}`,
     });
   }
 }

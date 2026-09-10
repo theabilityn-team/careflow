@@ -50,10 +50,10 @@ export function analyzeBulkLeadDuplicates(
         leadId: firstExisting.leadId,
         firstName: firstExisting.firstName,
         lastName: firstExisting.lastName,
-        matchedBy: identityMatchLabels(sameExistingLead),
+        matchedBy: identityMatchLabels(sameExistingLead, input),
       } : null,
       duplicateOfIndex,
-      duplicateInBatchBy: identityMatchLabels(duplicateKeys),
+      duplicateInBatchBy: identityMatchLabels(duplicateKeys, input),
     };
   });
 }

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getFollowUpTiming } from "@/lib/contactTracking";
-import { DIAGNOSIS_CATEGORY_OPTIONS, INTEREST_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS, diagnosisCategoryLabel, formatDate, initials, stateLabel } from "@/lib/crm";
+import { DIAGNOSIS_CATEGORY_OPTIONS, INTEREST_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS, diagnosisCategoryLabel, documentTypeLabel, formatDate, initials, stateLabel } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
 import { ChevronLeft, ChevronRight, Files, Flame, Mail, Phone, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
@@ -124,7 +124,7 @@ export default function Leads() {
             <TableBody>{items.map(lead => {
               const timing = getFollowUpTiming(lead.nextFollowUpAt);
               return <TableRow key={lead.id} onClick={() => navigate(`/leads/${lead.id}`)} className="cursor-pointer border-slate-100">
-                <TableCell className="py-4 pl-6"><div className="flex items-center gap-3"><Avatar className="h-10 w-10"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{initials(lead.firstName, lead.lastName)}</AvatarFallback></Avatar><div><p className="font-semibold text-slate-900">{lead.firstName} {lead.lastName}</p><p className="text-xs text-slate-400">Added {formatDate(lead.createdAt)}</p></div></div></TableCell>
+                <TableCell className="py-4 pl-6"><div className="flex items-center gap-3"><Avatar className="h-10 w-10"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{initials(lead.firstName, lead.lastName)}</AvatarFallback></Avatar><div><p className="font-semibold text-slate-900">{lead.firstName} {lead.lastName}</p><p className="text-xs text-slate-400">Added {formatDate(lead.createdAt)} · {documentTypeLabel(lead.sourceDocumentType)}</p></div></div></TableCell>
                 <TableCell><Badge className="bg-indigo-50 text-indigo-700 hover:bg-indigo-50">{stateLabel(lead.stateCode)}</Badge></TableCell>
                 <TableCell><Badge className="bg-rose-50 text-rose-700 hover:bg-rose-50">{diagnosisCategoryLabel(lead.diagnosisCategory)}</Badge></TableCell>
                 <TableCell><StatusPill value={lead.status} /></TableCell>

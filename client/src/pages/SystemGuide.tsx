@@ -4,24 +4,24 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { STATUS_DESCRIPTIONS, STATUS_OPTIONS } from "@/lib/crm";
-import { ArrowRight, BellRing, CheckCircle2, ClipboardCheck, Download, Files, FileSearch, FolderKanban, History, KeyRound, MessageSquarePlus, ScanLine, ShieldCheck, UserCog } from "lucide-react";
+import { ArrowRight, BellRing, CheckCircle2, ClipboardCheck, Download, FileHeart, Files, FileSearch, FolderKanban, History, KeyRound, MessageSquarePlus, ScanLine, ShieldCheck, UserCog } from "lucide-react";
 import { useLocation } from "wouter";
 
 const flows = [
   {
     number: "01", icon: ScanLine, title: "Add a lead from document images", action: "Open Add lead", path: "/scan",
-    steps: ["Upload up to six images for one person.", "AI extracts visible personal and clinical information into a draft.", "Authorized staff reviews and corrects every field.", "Manually select Oncology or Hematology, and Florida, Arizona, Nevada, or California.", "Choose the initial Status and Interest level, then confirm. Duplicate protection runs before saving."],
+    steps: ["Upload up to six images for one person, including referral orders and referral forms.", "AI separates patient identity from provider, insurance, authorization, and referral details.", "Authorized staff reviews and corrects every field, including the detected document type.", "First name, last name, and date of birth are required for the mandatory patient duplicate check.", "Confirm state, diagnosis group, initial Status, and Interest level, then save."],
     result: "One lead owned by its creator is created, all source images are attached, and the complete reviewed state is written to the Audit trail.",
   },
   {
     number: "02", icon: Files, title: "Bulk import multiple leads from images", action: "Open Bulk image import", path: "/bulk-import",
-    steps: ["Create one image group for each person.", "Attach one to six images belonging to that person; never mix people inside one image group.", "Process all image groups. CareFlow extracts each person separately.", "Review every field and select a diagnosis group and state for each lead.", "Approve and import. Unique leads are created; existing and in-batch duplicates are blocked."],
+    steps: ["Create one image group for each person.", "Attach one to six images belonging to that person; never mix people inside one image group.", "Process all image groups. CareFlow extracts each person separately.", "Confirm first name, last name, date of birth, document type, diagnosis group, and state for each lead.", "Approve and import. Existing and in-batch name + date-of-birth duplicates are blocked."],
     result: "Multiple reviewed leads are created from one operation, with every source image attached to the correct person and a separate audit trail for each lead.",
   },
   {
     number: "03", icon: FileSearch, title: "Duplicate protection before saving", action: "Open Bulk image import", path: "/bulk-import",
-    steps: ["Upload images and review the extracted draft.", "CareFlow normalizes email and phone values before comparison.", "It also creates a strong profile identity from name + date of birth, or name + address + postal code.", "Confirm the lead only after the reviewed identity is correct.", "If any identity matches an existing lead, creation is blocked and the existing Lead number is shown."],
-    result: "The same person is not silently inserted twice. Bulk import checks both existing records and duplicates between groups in the current batch.",
+    steps: ["Upload images and review the extracted draft.", "CareFlow requires and normalizes first name, last name, and date of birth.", "It also checks normalized email and phone as additional duplicate signals.", "Confirm the lead only after the patient identity is correct.", "If any identity matches an existing lead, creation is blocked and the existing Lead number is shown when you have access."],
+    result: "The same patient cannot be silently inserted twice. The database enforces the same identity keys even if two users save at the same moment; bulk import also checks duplicates between groups in the current batch.",
   },
   {
     number: "04", icon: MessageSquarePlus, title: "Record a call, email, SMS, or meeting", action: "Open Leads", path: "/leads",
@@ -53,6 +53,11 @@ const flows = [
     steps: ["Set a Scheduled follow-up from Log contact or Edit lead.", "CareFlow selects the assigned staff member as recipient; if unassigned, it uses the lead creator.", "Two hours before the appointment, an unread in-app notification appears in Follow-ups.", "When email delivery is configured, CareFlow sends one message to that staff member and one to the lead when the lead has an email.", "Staff choose English or Spanish reminder language from their account menu."],
     result: "Reminder time, in-app read state, staff delivery, and lead delivery are tracked independently and safely retried without duplicate email sends.",
   },
+  {
+    number: "10", icon: FileHeart, title: "Review a medical referral document", action: "Open Add lead", path: "/scan",
+    steps: ["Upload the referral order or form as an image; multiple pages for the same patient may be uploaded together.", "CareFlow identifies the patient and keeps referring and receiving provider details separate.", "Review insurance, authorization, referral reason, priority, visit count, appointment instructions, ICD codes, and CPT / HCPCS codes.", "Confirm the suggested Oncology or Hematology group and the patient state.", "Save only after checking the extracted values against the source document."],
+    result: "The patient becomes the lead; referral, insurance, provider, authorization, and coding details appear in structured protected sections. Social Security numbers are never extracted or stored.",
+  },
 ];
 
 export default function SystemGuide() {
@@ -63,7 +68,7 @@ export default function SystemGuide() {
     <div className="mb-8 grid gap-4 md:grid-cols-3">
       <Card className="rounded-2xl border-0 bg-slate-950 text-white"><CardContent className="p-6"><ShieldCheck className="h-5 w-5 text-teal-300" /><p className="mt-5 font-semibold">Rule 1 — Human confirmation</p><p className="mt-2 text-sm leading-6 text-slate-400">AI extraction creates only a draft. A lead record exists only after an authorized person reviews and confirms it.</p></CardContent></Card>
       <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-6"><CheckCircle2 className="h-5 w-5 text-teal-700" /><p className="mt-5 font-semibold">Rule 2 — Explicit status</p><p className="mt-2 text-sm leading-6 text-slate-500">Status changes only from the Status control, Edit lead, or the initial status selected during image review. Communication does not change it.</p></CardContent></Card>
-      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-6"><FileSearch className="h-5 w-5 text-teal-700" /><p className="mt-5 font-semibold">Rule 3 — No silent duplicates</p><p className="mt-2 text-sm leading-6 text-slate-500">Email, phone, and strong profile identity are checked before every create and identity update. Matching records are blocked.</p></CardContent></Card>
+      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-6"><FileSearch className="h-5 w-5 text-teal-700" /><p className="mt-5 font-semibold">Rule 3 — No silent duplicates</p><p className="mt-2 text-sm leading-6 text-slate-500">Every image-created lead requires first name, last name, and date of birth. That identity, email, and phone are checked before saving and enforced by unique database keys.</p></CardContent></Card>
     </div>
 
     <div className="space-y-5">{flows.map(flow => <Card key={flow.number} className="rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.04)]"><CardContent className="p-6 sm:p-7"><div className="flex flex-col gap-5 lg:flex-row lg:items-start"><div className="flex min-w-72 items-start gap-4"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-teal-50 text-teal-700"><flow.icon className="h-5 w-5" /></div><div><p className="text-xs font-semibold tracking-[.16em] text-teal-700">FLOW {flow.number}</p><h2 className="mt-1 text-lg font-semibold text-slate-950">{flow.title}</h2><Button variant="outline" size="sm" className="mt-4" onClick={() => navigate(flow.path)}>{flow.action}<ArrowRight className="ml-2 h-3.5 w-3.5" /></Button></div></div><div className="grid flex-1 gap-5 md:grid-cols-[1fr_.8fr]"><ol className="space-y-3">{flow.steps.map((step, index) => <li key={step} className="flex gap-3 text-sm leading-6 text-slate-600"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">{index + 1}</span>{step}</li>)}</ol><div className="rounded-xl bg-emerald-50 p-4"><p className="text-xs font-semibold uppercase tracking-[.14em] text-emerald-700">Result</p><p className="mt-2 text-sm leading-6 text-emerald-900">{flow.result}</p></div></div></div></CardContent></Card>)}</div>

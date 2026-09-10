@@ -28,7 +28,7 @@ describe("bulk lead duplicate analysis", () => {
     ], []);
     expect(result[0].duplicateOfIndex).toBeNull();
     expect(result[1].duplicateOfIndex).toBe(0);
-    expect(result[1].duplicateInBatchBy).toContain("name + date of birth/address");
+    expect(result[1].duplicateInBatchBy).toContain("first name + last name + date of birth");
   });
 
   it("does not treat matching names alone as a duplicate", () => {

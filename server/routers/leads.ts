@@ -5,6 +5,7 @@ import { analyzeBulkLeadDuplicates, MAX_BULK_LEADS } from "../bulkLeadImport";
 import { prepareAuditEvents } from "../leadAudit";
 import { createLeadExport, LEAD_STATUS_LABELS } from "../leadExport";
 import { isDuplicateKeyError, isLeadDuplicateError } from "../leadIdentity";
+import { normalizeDateOfBirth } from "../leadIdentity";
 import { assertPermission } from "../permissions";
 import { storagePut } from "../storage";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -17,6 +18,7 @@ const statusEnum = z.enum([
 const interestEnum = z.enum(["unknown", "cold", "warm", "hot"]);
 const stateCodeEnum = z.enum(["FL", "AZ", "NV", "CA"]);
 const diagnosisCategoryEnum = z.enum(["oncology", "hematology"]);
+const documentTypeEnum = z.enum(["referral_order", "referral_form", "medical_record", "other"]);
 const nullableText = z.string().max(20_000).optional().nullable();
 const leadFields = z.object({
   firstName: z.string().trim().min(1).max(120),
@@ -34,6 +36,7 @@ const leadFields = z.object({
   stateCode: stateCodeEnum,
   clinicalNotes: nullableText,
   additionalInformation: nullableText,
+  sourceDocumentType: documentTypeEnum.optional().nullable(),
   status: statusEnum.default("new"),
   interestLevel: interestEnum.default("unknown"),
   assignedTo: z.number().int().positive().optional().nullable(),
@@ -112,16 +115,17 @@ export const leadsRouter = router({
 
   duplicateCheck: protectedProcedure
     .input(z.object({
-      firstName: z.string().max(120).optional().nullable(),
-      lastName: z.string().max(120).optional().nullable(),
+      firstName: z.string().trim().min(1).max(120),
+      lastName: z.string().trim().min(1).max(120),
       email: z.string().max(320).optional().nullable(),
       phone: z.string().max(80).optional().nullable(),
-      dateOfBirth: z.string().max(80).optional().nullable(),
+      dateOfBirth: z.string().trim().min(1).max(80),
       address: z.string().max(20_000).optional().nullable(),
       postalCode: z.string().max(40).optional().nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
       await assertPermission(ctx.user, "createLeads");
+      if (!normalizeDateOfBirth(input.dateOfBirth)) throw new TRPCError({ code: "BAD_REQUEST", message: "A valid date of birth is required for duplicate checking." });
       const duplicate = await db.findDuplicateLead(input);
       if (!duplicate) return { duplicate: null };
       const access = await db.canAccessLead(duplicate.leadId, ctx.user.id, ctx.user.role === "admin");
@@ -130,16 +134,17 @@ export const leadsRouter = router({
 
   bulkDuplicateCheck: protectedProcedure
     .input(z.object({ leads: z.array(z.object({
-      firstName: z.string().max(120).optional().nullable(),
-      lastName: z.string().max(120).optional().nullable(),
+      firstName: z.string().trim().min(1).max(120),
+      lastName: z.string().trim().min(1).max(120),
       email: z.string().max(320).optional().nullable(),
       phone: z.string().max(80).optional().nullable(),
-      dateOfBirth: z.string().max(80).optional().nullable(),
+      dateOfBirth: z.string().trim().min(1).max(80),
       address: z.string().max(20_000).optional().nullable(),
       postalCode: z.string().max(40).optional().nullable(),
     })).min(1).max(MAX_BULK_LEADS) }))
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "createLeads");
+      if (input.leads.some(lead => !normalizeDateOfBirth(lead.dateOfBirth))) throw new TRPCError({ code: "BAD_REQUEST", message: "Every bulk image lead requires a valid date of birth for duplicate checking." });
       const existing = await db.findExistingLeadIdentityMatches(input.leads);
       const analyzed = analyzeBulkLeadDuplicates(input.leads, existing);
       return Promise.all(analyzed.map(async result => {
@@ -155,6 +160,7 @@ export const leadsRouter = router({
       if (input.documents.length) {
         await assertPermission(ctx.user, "scanDocuments");
         await assertPermission(ctx.user, "viewClinical");
+        if (!normalizeDateOfBirth(input.lead.dateOfBirth)) throw new TRPCError({ code: "BAD_REQUEST", message: "Date of birth is required for image-created leads so name and date-of-birth duplicate protection can run." });
       }
       if (input.lead.diagnosis || input.lead.clinicalNotes || input.lead.additionalInformation) await assertPermission(ctx.user, "viewClinical");
       let leadId: number;
@@ -185,7 +191,7 @@ export const leadsRouter = router({
       const nonStatusFields = Object.keys(input.lead).filter(key => key !== "status");
       if (nonStatusFields.length > 0) await assertPermission(ctx.user, "editLeads");
       if (input.lead.status) await assertPermission(ctx.user, "changeStatus");
-      if (input.lead.diagnosis !== undefined || input.lead.clinicalNotes !== undefined || input.lead.additionalInformation !== undefined) await assertPermission(ctx.user, "viewClinical");
+      if (input.lead.diagnosis !== undefined || input.lead.clinicalNotes !== undefined || input.lead.additionalInformation !== undefined || input.lead.sourceDocumentType !== undefined) await assertPermission(ctx.user, "viewClinical");
       if (input.lead.assignedTo) {
         const assignees = await db.listAssignableStaff();
         if (!assignees.some(staff => staff.id === input.lead.assignedTo)) throw new TRPCError({ code: "BAD_REQUEST", message: "Select an active staff member." });

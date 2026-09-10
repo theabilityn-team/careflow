@@ -105,3 +105,16 @@ Existing legacy leads were intentionally not assigned an inferred state or diagn
 The scanner now returns a normalized operational `stateCode` and both single and bulk image review flows automatically preselect Florida, Arizona, Nevada, or California from the extracted State / Province, full address, or ZIP code. Staff can still review and change the dropdown before saving. Deterministic tests cover full state names, two-letter abbreviations, complete addresses, supported ZIP ranges, and unsupported-state non-matches.
 
 A startup backfill processed legacy leads whose operational state was empty. It inferred the state only from existing address data, wrote an audited `lead.state_inferred` event, and did not alter identity or clinical fields. A privacy-safe database check confirmed all three current leads now carry `FL`, and browser verification confirmed the Leads table displays **Florida** instead of **State not set**.
+
+
+## Referral Document Adaptation and Strict Patient Dedupe QA
+
+The document scanner was expanded for referral orders and referral forms. It now keeps patient identity separate from referring and receiving providers, and extracts insurance, authorization, requested visits, priority, appointment instructions, referral reason, ICD codes, CPT/HCPCS codes, and provider information into structured review sections. Social Security numbers and SSN-labeled values are excluded from scanner results and stored structured data.
+
+All three user-provided referral samples were processed through the live authenticated scanner without creating records. The detected results were: referral form / Hematology / Florida; referral form / Oncology / Florida; and referral order / Hematology / Florida. Patient identity, date of birth, state, diagnosis group, and document type were available for review. A lead-count comparison before and after the scans confirmed that the verification was read-only.
+
+Each new lead now stores the automatically detected source document type (`Referral order`, `Referral form`, `Medical record`, or `Other document`). The value is visible in the Leads list, prominent on the lead profile, editable by authorized staff, and included in the immutable audit trail. Existing leads with source images were backfilled from stored evidence; all three existing document-backed leads now have a source type and an audited system-backfill event.
+
+Every image-created lead now requires first name, last name, and date of birth. The single and bulk workflows disable approval until those fields are present. Duplicate checks normalize those three fields, while email and phone remain additional signals. The same unique identity keys are enforced in the database to cover concurrent saves. Live read-only API verification confirmed both an existing-record match and an in-batch bulk match using first name + last name + date of birth. Database verification found complete identity-key coverage and no existing duplicate name/date-of-birth groups.
+
+Visual QA confirmed source document labels in the Leads table and lead header, and the correction selector in Edit lead. The dialog was closed without saving, and no QA leads or temporary records were created.

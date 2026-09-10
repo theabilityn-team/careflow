@@ -59,8 +59,9 @@ export function buildLeadIdentityKeys(input: LeadIdentityInput): LeadIdentityKey
   return keys;
 }
 
-export function identityMatchLabels(keys: LeadIdentityKey[]) {
-  return keys.map(key => key.keyType === "profile" ? "name + date of birth/address" : key.keyType);
+export function identityMatchLabels(keys: LeadIdentityKey[], input?: LeadIdentityInput) {
+  const hasNameDob = Boolean(normalizeText(input?.firstName) && normalizeText(input?.lastName) && normalizeDateOfBirth(input?.dateOfBirth));
+  return keys.map(key => key.keyType === "profile" ? (hasNameDob ? "first name + last name + date of birth" : "first name + last name + address + postal code") : key.keyType);
 }
 
 export function isDuplicateKeyError(error: unknown) {
