@@ -1,3 +1,5 @@
+import { SUPPORTED_US_STATES } from "@shared/leadClassification";
+
 export const STATUS_OPTIONS = [
   ["new", "New"],
   ["pending_review", "Pending review"],
@@ -39,12 +41,7 @@ export const INTEREST_OPTIONS = [
   ["hot", "Hot"],
 ] as const;
 
-export const STATE_OPTIONS = [
-  ["FL", "Florida"],
-  ["AZ", "Arizona"],
-  ["NV", "Nevada"],
-  ["CA", "California"],
-] as const;
+export const STATE_OPTIONS = SUPPORTED_US_STATES;
 
 export const DIAGNOSIS_CATEGORY_OPTIONS = [
   ["oncology", "Oncology"],

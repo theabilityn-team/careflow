@@ -3,6 +3,7 @@ import { z } from "zod";
 import { invokeLLM } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { assertPermission } from "../permissions";
+import { inferSupportedStateCode } from "../../shared/leadClassification";
 
 const fileSchema = z.object({
   name: z.string().min(1).max(255),
@@ -21,6 +22,7 @@ const extractionSchema = {
     address: { type: "string" },
     city: { type: "string" },
     stateProvince: { type: "string" },
+    stateCode: { type: "string", enum: ["FL", "AZ", "NV", "CA", ""] },
     postalCode: { type: "string" },
     country: { type: "string" },
     diagnosis: { type: "string" },
@@ -51,6 +53,7 @@ const extractionSchema = {
     "address",
     "city",
     "stateProvince",
+    "stateCode",
     "postalCode",
     "country",
     "diagnosis",
@@ -78,7 +81,7 @@ export const scannerRouter = router({
           {
             role: "system",
             content:
-              "You extract customer and clinical information from document images. Read all images as one case. Copy only visible facts; never invent missing information. Use empty strings when a field is absent. Preserve diagnostic wording accurately. Put every other useful fact in additionalInformation. Flag ambiguous, conflicting, or low-confidence values in reviewWarnings. The output will always be reviewed by authorized staff before saving.",
+              "You extract customer and clinical information from document images. Read all images as one case. Copy only visible facts; never invent missing information. Use empty strings when a field is absent. Preserve diagnostic wording accurately. Put every other useful fact in additionalInformation. Set stateCode to FL, AZ, NV, or CA when the visible state, address, or ZIP code clearly identifies Florida, Arizona, Nevada, or California; otherwise use an empty string. Flag ambiguous, conflicting, or low-confidence values in reviewWarnings. The output will always be reviewed by authorized staff before saving.",
           },
           {
             role: "user",
@@ -101,7 +104,8 @@ export const scannerRouter = router({
       const content = response.choices[0]?.message.content;
       if (typeof content !== "string") throw new Error("The scanner returned an unexpected response.");
       try {
-        return JSON.parse(content);
+        const extracted = JSON.parse(content);
+        return { ...extracted, stateCode: inferSupportedStateCode(extracted) ?? "" };
       } catch {
         throw new Error("The scanner could not produce valid structured information.");
       }

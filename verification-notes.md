@@ -98,3 +98,10 @@ The Lead groups workspace is empty-state safe and clearly distinguishes owned an
 Follow-ups now acts as the staff-specific reminder center. Upcoming and overdue records are scoped to leads the current user may access. Two hours before the scheduled time, an unread in-app notification is displayed and counted in the sidebar. Reminder outbox rows are synchronized when a follow-up, assignee, or email changes. Bilingual English/Spanish email copy, state-based US time zones, three-attempt delivery tracking, and idempotency keys are covered by unit tests. The Super Admin sees a clear setup warning until an email sender and the scheduled processor are activated.
 
 Existing legacy leads were intentionally not assigned an inferred state or diagnosis group. They visibly show **State not set** and **Diagnosis group not set** until an authorized person confirms those classifications; all newly created single and bulk image leads require explicit selections.
+
+
+## Automatic State Classification Fix QA
+
+The scanner now returns a normalized operational `stateCode` and both single and bulk image review flows automatically preselect Florida, Arizona, Nevada, or California from the extracted State / Province, full address, or ZIP code. Staff can still review and change the dropdown before saving. Deterministic tests cover full state names, two-letter abbreviations, complete addresses, supported ZIP ranges, and unsupported-state non-matches.
+
+A startup backfill processed legacy leads whose operational state was empty. It inferred the state only from existing address data, wrote an audited `lead.state_inferred` event, and did not alter identity or clinical fields. A privacy-safe database check confirmed all three current leads now carry `FL`, and browser verification confirmed the Leads table displays **Florida** instead of **State not set**.

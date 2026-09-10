@@ -8,7 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { ensureSuperAdmin } from "../auth";
-import { backfillFollowUpReminders, backfillLeadIdentityKeys, getScheduledJobByTaskUid } from "../db";
+import { backfillFollowUpReminders, backfillLeadIdentityKeys, backfillLeadStateCodes, getScheduledJobByTaskUid } from "../db";
 import { processDueFollowUpReminders } from "../followUpReminders";
 import { sdk } from "./sdk";
 
@@ -40,6 +40,7 @@ async function startServer() {
   registerStorageProxy(app);
   await ensureSuperAdmin();
   await backfillLeadIdentityKeys();
+  await backfillLeadStateCodes();
   await backfillFollowUpReminders();
   app.post("/api/scheduled/follow-up-reminders", async (req, res) => {
     try {

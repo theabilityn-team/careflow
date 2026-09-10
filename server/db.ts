@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
+import { inferSupportedStateCode } from "../shared/leadClassification";
 import {
   authSessions,
   auditEvents,
@@ -933,6 +934,21 @@ export async function backfillLeadIdentityKeys() {
     for (const key of keys) {
       await db.insert(leadIdentityKeys).values({ leadId: lead.id, ...key }).onDuplicateKeyUpdate({ set: { keyHash: key.keyHash } });
     }
+  }
+}
+
+export async function backfillLeadStateCodes() {
+  const db = await requireDb();
+  const missing = await db.select().from(leads).where(isNull(leads.stateCode));
+  for (const lead of missing) {
+    const stateCode = inferSupportedStateCode(lead);
+    if (!stateCode) continue;
+    await updateLeadWithAudit(lead.id, { stateCode }, {
+      actorId: SYSTEM_ADMIN_ACTOR_ID,
+      action: "lead.state_inferred",
+      source: "system_backfill",
+      detail: `Operational state inferred from existing address data: ${stateCode}`,
+    });
   }
 }
 

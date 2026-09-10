@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { DIAGNOSIS_CATEGORY_OPTIONS, INTEREST_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
+import { inferSupportedStateCode } from "@shared/leadClassification";
 import { AlertTriangle, ArrowLeft, Check, FileImage, Files, Loader2, LockKeyhole, ScanLine, ShieldCheck, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -19,12 +20,12 @@ type UploadFile = { name: string; mimeType: "image/jpeg" | "image/png" | "image/
 type ExtraField = { label: string; value: string; confidence: number };
 type Extraction = {
   firstName: string; lastName: string; email: string; phone: string; dateOfBirth: string;
-  address: string; city: string; stateProvince: string; postalCode: string; country: string;
+  address: string; city: string; stateProvince: string; stateCode: string; postalCode: string; country: string;
   diagnosis: string; clinicalNotes: string; documentTypes: string[]; additionalInformation: ExtraField[];
   overallConfidence: number; reviewWarnings: string[];
 };
 
-const empty: Extraction = { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", address: "", city: "", stateProvince: "", postalCode: "", country: "", diagnosis: "", clinicalNotes: "", documentTypes: [], additionalInformation: [], overallConfidence: 0, reviewWarnings: [] };
+const empty: Extraction = { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", address: "", city: "", stateProvince: "", stateCode: "", postalCode: "", country: "", diagnosis: "", clinicalNotes: "", documentTypes: [], additionalInformation: [], overallConfidence: 0, reviewWarnings: [] };
 
 const readFile = (file: File) => new Promise<UploadFile>((resolve, reject) => {
   const reader = new FileReader();
@@ -64,7 +65,9 @@ export default function Scanner() {
   async function startScan() {
     try {
       const data = await extract.mutateAsync({ files: files.map(({ name, mimeType, dataUrl }) => ({ name, mimeType, dataUrl })) });
-      setResult({ ...empty, ...(data as Extraction) });
+      const extracted = { ...empty, ...(data as Extraction) };
+      setResult(extracted);
+      setStateCode(inferSupportedStateCode(extracted) ?? "");
       setDuplicate(null);
       toast.success("Extraction complete. Review every field before saving.");
     } catch (error) {

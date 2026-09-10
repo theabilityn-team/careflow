@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { DIAGNOSIS_CATEGORY_OPTIONS, INTEREST_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
+import { inferSupportedStateCode } from "@shared/leadClassification";
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronUp, FileImage, Files, FolderPlus, Loader2, RotateCcw, ScanLine, Trash2, UploadCloud, UsersRound, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -24,7 +25,7 @@ type UploadFile = { name: string; mimeType: "image/jpeg" | "image/png" | "image/
 type ExtraField = { label: string; value: string; confidence: number };
 type Extraction = {
   firstName: string; lastName: string; email: string; phone: string; dateOfBirth: string;
-  address: string; city: string; stateProvince: string; postalCode: string; country: string;
+  address: string; city: string; stateProvince: string; stateCode: string; postalCode: string; country: string;
   diagnosis: string; clinicalNotes: string; documentTypes: string[]; additionalInformation: ExtraField[];
   overallConfidence: number; reviewWarnings: string[];
 };
@@ -36,7 +37,7 @@ type LeadGroup = {
   reviewed: boolean; state: GroupState; expanded: boolean; error: string; duplicate: DuplicateState; createdLeadId?: number;
 };
 
-const empty: Extraction = { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", address: "", city: "", stateProvince: "", postalCode: "", country: "", diagnosis: "", clinicalNotes: "", documentTypes: [], additionalInformation: [], overallConfidence: 0, reviewWarnings: [] };
+const empty: Extraction = { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", address: "", city: "", stateProvince: "", stateCode: "", postalCode: "", country: "", diagnosis: "", clinicalNotes: "", documentTypes: [], additionalInformation: [], overallConfidence: 0, reviewWarnings: [] };
 const newGroup = (): LeadGroup => ({ id: crypto.randomUUID(), files: [], extraction: null, status: "verified", interestLevel: "unknown", diagnosisCategory: "", stateCode: "", reviewed: false, state: "idle", expanded: true, error: "", duplicate: null });
 const readFile = (file: File) => new Promise<UploadFile>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve({ name: file.name, mimeType: file.type as UploadFile["mimeType"], dataUrl: String(reader.result), size: file.size }); reader.onerror = reject; reader.readAsDataURL(file); });
 const hasIdentitySignal = (lead: Extraction) => Boolean(lead.email.trim() || lead.phone.replace(/\D/g, "").length >= 7 || (lead.firstName.trim() && lead.lastName.trim() && (lead.dateOfBirth.trim() || (lead.address.trim() && lead.postalCode.trim()))));
@@ -87,7 +88,8 @@ export default function BulkImageImport() {
       updateGroup(group.id, { state: "extracting", error: "", duplicate: null, reviewed: false, expanded: true });
       try {
         const result = await extract.mutateAsync({ files: group.files.map(({ name, mimeType, dataUrl }) => ({ name, mimeType, dataUrl })) });
-        updateGroup(group.id, { extraction: { ...empty, ...(result as Extraction) }, state: "review", expanded: true });
+        const extracted = { ...empty, ...(result as Extraction) };
+        updateGroup(group.id, { extraction: extracted, stateCode: inferSupportedStateCode(extracted) ?? "", state: "review", expanded: true });
       } catch (error) {
         updateGroup(group.id, { state: "error", error: error instanceof Error ? error.message : "Extraction failed." });
       }
