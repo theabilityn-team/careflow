@@ -12,6 +12,7 @@ import {
   leadIdentityKeys,
   leads,
   localCredentials,
+  passwordResetRequests,
   staffInvites,
   staffPermissions,
   systemAdminCredentials,
@@ -23,6 +24,7 @@ import { leadChanges, leadSnapshot, serializeAudit } from "./leadAudit";
 import { buildLeadIdentityKeys, identityMatchLabels, type LeadIdentityInput } from "./leadIdentity";
 import { normalizeLeadPagination } from "./leadList";
 import { communicationLeadUpdate } from "./leadWorkflow";
+import { isPasswordResetUsable } from "./passwordSecurity";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -195,6 +197,20 @@ export async function updateSystemAdminIdentifier() {
   }).where(eq(systemAdminCredentials.id, 1));
 }
 
+export async function changeSystemAdminPassword(passwordHash: string, passwordSalt: string) {
+  const db = await requireDb();
+  await db.transaction(async tx => {
+    await tx.update(systemAdminCredentials).set({
+      passwordHash,
+      passwordSalt,
+      passwordUpdatedAt: Date.now(),
+      failedLoginCount: 0,
+      lockedUntil: null,
+    }).where(eq(systemAdminCredentials.id, 1));
+    await tx.delete(systemAdminSessions);
+  });
+}
+
 export async function updateSystemAdminLoginFailure(failedLoginCount: number, lockedUntil: number | null) {
   const db = await requireDb();
   await db.update(systemAdminCredentials).set({ failedLoginCount, lockedUntil }).where(eq(systemAdminCredentials.id, 1));
@@ -307,6 +323,110 @@ export async function createStaffInvite(input: typeof staffInvites.$inferInsert)
 export async function listStaffInvites() {
   const db = await requireDb();
   return db.select().from(staffInvites).orderBy(desc(staffInvites.createdAt));
+}
+
+export async function createPasswordResetRequest(email: string) {
+  const db = await requireDb();
+  const normalized = email.trim().toLowerCase();
+  const account = (await db
+    .select({ userId: users.id, email: users.email, isActive: staffPermissions.isActive })
+    .from(users)
+    .innerJoin(localCredentials, eq(users.id, localCredentials.userId))
+    .leftJoin(staffPermissions, eq(users.id, staffPermissions.userId))
+    .where(and(eq(localCredentials.identifier, normalized), eq(users.role, "user")))
+    .limit(1))[0];
+  if (!account?.email) return false;
+  const accountEmail = account.email.toLowerCase();
+
+  await db.transaction(async tx => {
+    await tx.update(passwordResetRequests).set({ status: "expired" }).where(and(
+      eq(passwordResetRequests.userId, account.userId),
+      inArray(passwordResetRequests.status, ["pending", "ready"]),
+    ));
+    await tx.insert(passwordResetRequests).values({
+      userId: account.userId,
+      email: accountEmail,
+      status: "pending",
+      requestedAt: Date.now(),
+    });
+  });
+  return true;
+}
+
+export async function listPasswordResetRequests() {
+  const db = await requireDb();
+  await db.update(passwordResetRequests).set({ status: "expired" }).where(and(
+    eq(passwordResetRequests.status, "ready"),
+    isNotNull(passwordResetRequests.expiresAt),
+    lt(passwordResetRequests.expiresAt, Date.now()),
+  ));
+  return db
+    .select({ request: passwordResetRequests, staffName: users.name, isActive: staffPermissions.isActive })
+    .from(passwordResetRequests)
+    .leftJoin(users, eq(users.id, passwordResetRequests.userId))
+    .leftJoin(staffPermissions, eq(staffPermissions.userId, passwordResetRequests.userId))
+    .orderBy(desc(passwordResetRequests.requestedAt))
+    .limit(100);
+}
+
+export async function preparePasswordReset(input: { requestId: number; tokenHash: string; preparedBy: number; expiresAt: number }) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const request = (await tx.select().from(passwordResetRequests).where(eq(passwordResetRequests.id, input.requestId)).limit(1))[0];
+    if (!request || !["pending", "ready"].includes(request.status)) return null;
+    await tx.update(passwordResetRequests).set({
+      tokenHash: input.tokenHash,
+      status: "ready",
+      preparedBy: input.preparedBy,
+      preparedAt: Date.now(),
+      expiresAt: input.expiresAt,
+    }).where(eq(passwordResetRequests.id, input.requestId));
+    return request;
+  });
+}
+
+export async function rejectPasswordReset(requestId: number) {
+  const db = await requireDb();
+  const result = await db.update(passwordResetRequests).set({
+    status: "rejected",
+    tokenHash: null,
+    expiresAt: null,
+  }).where(and(eq(passwordResetRequests.id, requestId), inArray(passwordResetRequests.status, ["pending", "ready"])));
+  return Number(result[0].affectedRows) > 0;
+}
+
+export async function getPasswordResetByHash(tokenHash: string) {
+  const db = await requireDb();
+  return (await db
+    .select({ request: passwordResetRequests, staffName: users.name })
+    .from(passwordResetRequests)
+    .leftJoin(users, eq(users.id, passwordResetRequests.userId))
+    .where(eq(passwordResetRequests.tokenHash, tokenHash))
+    .limit(1))[0];
+}
+
+export async function completePasswordReset(input: { tokenHash: string; passwordHash: string; passwordSalt: string; now: number }) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const request = (await tx.select().from(passwordResetRequests).where(eq(passwordResetRequests.tokenHash, input.tokenHash)).limit(1))[0];
+    if (!request || !isPasswordResetUsable(request.status, request.expiresAt, input.now)) return null;
+    const account = (await tx.select({ userId: localCredentials.userId }).from(localCredentials).where(eq(localCredentials.userId, request.userId)).limit(1))[0];
+    if (!account) return null;
+    const claimed = await tx.update(passwordResetRequests).set({ status: "used", usedAt: input.now }).where(and(
+      eq(passwordResetRequests.id, request.id),
+      eq(passwordResetRequests.status, "ready"),
+    ));
+    if (Number(claimed[0].affectedRows) !== 1) return null;
+    await tx.update(localCredentials).set({
+      passwordHash: input.passwordHash,
+      passwordSalt: input.passwordSalt,
+      passwordUpdatedAt: input.now,
+      failedLoginCount: 0,
+      lockedUntil: null,
+    }).where(eq(localCredentials.userId, request.userId));
+    await tx.delete(authSessions).where(eq(authSessions.userId, request.userId));
+    return request.userId;
+  });
 }
 
 export async function getInviteByHash(tokenHash: string) {

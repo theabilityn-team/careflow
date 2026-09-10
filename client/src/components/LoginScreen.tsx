@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import ForgotPasswordDialog from "@/components/ForgotPasswordDialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { hasSuperLoginParameter } from "@/lib/loginMode";
@@ -48,6 +49,7 @@ export default function LoginScreen() {
           <form onSubmit={submit} className="mt-6 space-y-4">
             <div className="space-y-2"><Label htmlFor="login-email" className="text-slate-200">Email address</Label><div className="relative"><Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><Input id="login-email" type="email" autoComplete="username" value={superAdminMode ? SUPER_ADMIN_EMAIL : email} onChange={event => setEmail(event.target.value)} readOnly={superAdminMode} placeholder="name@company.com" required className="h-11 border-slate-700 bg-slate-900 pl-10 text-white placeholder:text-slate-600 read-only:text-teal-200" /></div></div>
             <div className="space-y-2"><Label htmlFor="login-password" className="text-slate-200">Password</Label><div className="relative"><LockKeyhole className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><Input id="login-password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required minLength={8} className="h-11 border-slate-700 bg-slate-900 pl-10 text-white" /></div></div>
+            {!superAdminMode && <div className="flex justify-end"><ForgotPasswordDialog initialEmail={email} /></div>}
             <Button type="submit" disabled={login.isPending || (!superAdminMode && !email)} size="lg" className="w-full bg-teal-500 text-slate-950 hover:bg-teal-400">{login.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LockKeyhole className="mr-2 h-4 w-4" />}{superAdminMode ? "Sign in to system administration" : "Sign in securely"}</Button>
           </form>
           <p className="mt-5 text-center text-xs leading-5 text-slate-500">Five failed attempts temporarily lock the account for 15 minutes.</p>

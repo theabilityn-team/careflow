@@ -48,12 +48,6 @@ export async function ensureSuperAdmin() {
   const existing = await db.getSystemAdminCredential();
   if (existing) {
     if (existing.identifier !== SUPER_ADMIN_EMAIL) await db.updateSystemAdminIdentifier();
-    const current = await verifyPassword(adminPassword, existing.passwordSalt, existing.passwordHash);
-    if (!current) {
-      const replacement = await hashPassword(adminPassword);
-      await db.upsertSystemAdminCredential({ passwordHash: replacement.hash, passwordSalt: replacement.salt });
-      console.log("[Auth] System Super Admin password synchronized");
-    }
     return;
   }
   const credential = await hashPassword(adminPassword);
@@ -94,6 +88,15 @@ export async function authenticateSystemAdmin(identifier: string, password: stri
   }
   await db.recordSuccessfulSystemAdminLogin();
   return { ok: true as const, user: systemAdminPrincipal(new Date()) };
+}
+
+export async function rotateSystemAdminPassword(currentPassword: string, newPassword: string) {
+  if (currentPassword === newPassword) return { ok: false as const, reason: "same" as const };
+  const authenticated = await authenticateSystemAdmin(SUPER_ADMIN_EMAIL, currentPassword);
+  if (!authenticated.ok) return authenticated;
+  const replacement = await hashPassword(newPassword);
+  await db.changeSystemAdminPassword(replacement.hash, replacement.salt);
+  return { ok: true as const };
 }
 
 export async function createLoginSession(res: Response, req: Request, userId: number) {

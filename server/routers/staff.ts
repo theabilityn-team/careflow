@@ -5,6 +5,7 @@ import * as db from "../db";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import { DEFAULT_TECHNICAL_PERMISSIONS, normalizePermissions, PERMISSION_KEYS } from "../permissions";
 import { createLoginSession, hashPassword } from "../auth";
+import { isPasswordResetUsable, staffPasswordSchema } from "../passwordSecurity";
 
 const permissionShape = Object.fromEntries(PERMISSION_KEYS.map(key => [key, z.boolean()])) as Record<(typeof PERMISSION_KEYS)[number], z.ZodBoolean>;
 const permissionsSchema = z.object(permissionShape);
@@ -54,6 +55,61 @@ export const staffRouter = router({
 
   invites: adminProcedure.query(async () => db.listStaffInvites()),
 
+  requestPasswordReset: publicProcedure
+    .input(z.object({ email: z.string().trim().email().max(320) }))
+    .mutation(async ({ input }) => {
+      await db.createPasswordResetRequest(input.email);
+      return { success: true, message: "If this email belongs to a staff account, the Super Admin will see the request." } as const;
+    }),
+
+  passwordResetRequests: adminProcedure.query(async () => {
+    const rows = await db.listPasswordResetRequests();
+    return rows.map(({ request, staffName, isActive }) => ({ ...request, staffName, isActive: isActive ?? false }));
+  }),
+
+  preparePasswordReset: adminProcedure
+    .input(z.object({ requestId: z.number().int().positive(), origin: z.string().url() }))
+    .mutation(async ({ ctx, input }) => {
+      const token = randomBytes(24).toString("hex");
+      const expiresAt = Date.now() + 60 * 60 * 1000;
+      const request = await db.preparePasswordReset({
+        requestId: input.requestId,
+        tokenHash: tokenHash(token),
+        preparedBy: ctx.user.id,
+        expiresAt,
+      });
+      if (!request) throw new TRPCError({ code: "NOT_FOUND", message: "This password reset request is no longer pending." });
+      return { resetUrl: `${input.origin}/reset-password/${token}`, expiresAt };
+    }),
+
+  rejectPasswordReset: adminProcedure
+    .input(z.object({ requestId: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      if (!await db.rejectPasswordReset(input.requestId)) throw new TRPCError({ code: "NOT_FOUND", message: "This password reset request is no longer pending." });
+      return { success: true } as const;
+    }),
+
+  inspectPasswordReset: publicProcedure
+    .input(z.object({ token: z.string().length(48) }))
+    .query(async ({ input }) => {
+      const row = await db.getPasswordResetByHash(tokenHash(input.token));
+      if (!row || !isPasswordResetUsable(row.request.status, row.request.expiresAt, Date.now())) return null;
+      return { email: row.request.email, staffName: row.staffName, expiresAt: row.request.expiresAt };
+    }),
+
+  completePasswordReset: publicProcedure
+    .input(z.object({
+      token: z.string().length(48),
+      password: staffPasswordSchema,
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const credential = await hashPassword(input.password);
+      const userId = await db.completePasswordReset({ tokenHash: tokenHash(input.token), passwordHash: credential.hash, passwordSalt: credential.salt, now: Date.now() });
+      if (!userId) throw new TRPCError({ code: "BAD_REQUEST", message: "This password reset link is invalid, expired, or already used." });
+      await createLoginSession(ctx.res, ctx.req, userId);
+      return { success: true } as const;
+    }),
+
   inspectInvite: publicProcedure.input(z.object({ token: z.string().length(48) })).query(async ({ input }) => {
     const invite = await db.getInviteByHash(tokenHash(input.token));
     if (!invite || invite.status !== "pending" || invite.expiresAt < Date.now()) return null;
@@ -62,7 +118,7 @@ export const staffRouter = router({
 
   acceptInvite: publicProcedure.input(z.object({
     token: z.string().length(48),
-    password: z.string().min(10).max(200).regex(/[A-Z]/, "Add an uppercase letter").regex(/[a-z]/, "Add a lowercase letter").regex(/[0-9]/, "Add a number"),
+    password: staffPasswordSchema,
   })).mutation(async ({ ctx, input }) => {
     const invite = await db.getInviteByHash(tokenHash(input.token));
     if (!invite || invite.status !== "pending") throw new TRPCError({ code: "NOT_FOUND", message: "This invitation is no longer available." });

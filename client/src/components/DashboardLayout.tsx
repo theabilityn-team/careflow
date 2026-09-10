@@ -9,10 +9,11 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
-import { BookOpenCheck, ClipboardCheck, ContactRound, Files, LayoutDashboard, LogOut, PanelLeft, ScanLine, ShieldCheck, UsersRound } from "lucide-react";
+import { BookOpenCheck, ClipboardCheck, ContactRound, Files, KeyRound, LayoutDashboard, LogOut, PanelLeft, ScanLine, ShieldCheck, UsersRound } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+import ChangeSuperAdminPasswordDialog from "./ChangeSuperAdminPasswordDialog";
 import LoginScreen from "./LoginScreen";
 
 const SIDEBAR_WIDTH_KEY = "careflow-sidebar-width";
@@ -37,6 +38,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const menuItems = [
@@ -89,7 +91,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
           <SidebarFooter className="border-t border-slate-100 p-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild><button className="flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-slate-50"><Avatar className="h-9 w-9 border border-slate-200"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{user?.name?.slice(0, 1).toUpperCase() ?? "U"}</AvatarFallback></Avatar>{!isCollapsed && <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user?.name ?? "Staff member"}</p><p className="truncate text-xs text-slate-400">{access?.jobTitle ?? "Loading access…"}</p></div>}</button></DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52"><DropdownMenuItem onClick={logout} className="cursor-pointer text-rose-600 focus:text-rose-600"><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem></DropdownMenuContent>
+              <DropdownMenuContent align="end" className="w-60">{access?.role === "super_admin" && <DropdownMenuItem onClick={() => setPasswordDialogOpen(true)} className="cursor-pointer"><KeyRound className="mr-2 h-4 w-4" />Change admin password</DropdownMenuItem>}<DropdownMenuItem onClick={logout} className="cursor-pointer text-rose-600 focus:text-rose-600"><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem></DropdownMenuContent>
             </DropdownMenu>
           </SidebarFooter>
         </Sidebar>
@@ -100,6 +102,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
         {!access?.isActive && <div className="m-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">Your account is awaiting Super Admin approval. CRM data is not available yet.</div>}
         <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
       </SidebarInset>
+      {access?.role === "super_admin" && <ChangeSuperAdminPasswordDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen} />}
     </>
   );
 }

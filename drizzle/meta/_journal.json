@@ -43,6 +43,13 @@
       "when": 1789034373701,
       "tag": "0005_spicy_tinkerer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1789039323447,
+      "tag": "0006_narrow_jackal",
+      "breakpoints": true
     }
   ]
 }

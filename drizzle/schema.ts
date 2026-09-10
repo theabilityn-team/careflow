@@ -92,6 +92,23 @@ export const staffInvites = mysqlTable("staff_invites", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const passwordResetRequests = mysqlTable("password_reset_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  tokenHash: varchar("tokenHash", { length: 64 }).unique(),
+  status: mysqlEnum("status", ["pending", "ready", "used", "rejected", "expired"])
+    .default("pending")
+    .notNull(),
+  requestedAt: bigint("requestedAt", { mode: "number" }).notNull(),
+  preparedBy: int("preparedBy"),
+  preparedAt: bigint("preparedAt", { mode: "number" }),
+  expiresAt: bigint("expiresAt", { mode: "number" }),
+  usedAt: bigint("usedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const leads = mysqlTable("leads", {
   id: int("id").autoincrement().primaryKey(),
   firstName: varchar("firstName", { length: 120 }).notNull(),

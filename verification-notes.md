@@ -78,3 +78,10 @@ The database contained one legacy Google/Manus OAuth user with no related record
 ## Super Admin Email Login Fix QA
 
 The hidden `/?super-login=1` form now shows the fixed, read-only Super Admin email **admin@admin.com** together with the password field. The API requires the same exact email for `super_admin` mode and rejects any other identifier. The dedicated system credential was synchronized to `admin@admin.com`, its failed-attempt counter and temporary lock were cleared, and a live end-to-end request verified successful login, the expected system administrator session identity, and logout with the existing private password. The complete suite reports 34 passing tests, a clean TypeScript check, and a successful production build.
+
+
+## Password Management Visual QA
+
+The default English staff login now includes a clear **Forgot password?** action beneath the password field. Its dialog explains the security model before any submission: the staff member enters the login email, the Super Admin reviews the request, and a one-time reset link is privately provided. The dialog fits cleanly within the existing desktop login card and keeps the normal sign-in form visible in context. No reset request or test data was created during browser visual inspection.
+
+The public reset-password page was also verified with an invalid token. It reveals no account information, clearly explains that the link is invalid, expired, or already used, and provides a direct return to CareFlow. End-to-end API verification used a temporary staff account to test request creation, Super Admin link preparation, reset inspection, password replacement, automatic staff sign-in, old-password rejection, and one-time token reuse prevention. The same run changed and verified the Super Admin password, then restored the original configured password. All temporary users, sessions, and reset requests were deleted, and a database check confirmed zero QA records remain.

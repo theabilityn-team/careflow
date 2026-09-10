@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { STATUS_DESCRIPTIONS, STATUS_OPTIONS } from "@/lib/crm";
-import { ArrowRight, CheckCircle2, ClipboardCheck, Download, Files, FileSearch, History, MessageSquarePlus, ScanLine, ShieldCheck, UserCog } from "lucide-react";
+import { ArrowRight, CheckCircle2, ClipboardCheck, Download, Files, FileSearch, History, KeyRound, MessageSquarePlus, ScanLine, ShieldCheck, UserCog } from "lucide-react";
 import { useLocation } from "wouter";
 
 const flows = [
@@ -38,6 +38,11 @@ const flows = [
     steps: ["Open a lead.", "Change Status from the top Status control or Edit lead.", "Choose the stage that reflects the current business reality.", "The change is saved immediately with before/after values."],
     result: "Status changes only when an authorized person changes it. Scanning, logging contact, and scheduling reminders do not silently overwrite it.",
   },
+  {
+    number: "07", icon: KeyRound, title: "Recover a staff password", action: "Open staff sign-in", path: "/",
+    steps: ["Select Forgot password on the staff sign-in screen and submit the staff email.", "The Super Admin reviews the request under Staff & access → Password resets.", "The Super Admin generates and privately shares a one-time reset link.", "The staff member opens the link, creates a new password, and is signed in automatically.", "The link expires after one hour and cannot be reused."],
+    result: "Passwords are never sent or displayed. Existing staff sessions are revoked when the reset is completed.",
+  },
 ];
 
 export default function SystemGuide() {
@@ -56,7 +61,7 @@ export default function SystemGuide() {
     <Card className="mt-8 rounded-2xl border-0 bg-white shadow-sm"><CardHeader><CardTitle>Lead status dictionary</CardTitle><p className="text-sm leading-6 text-slate-500">Status answers one question: <strong>What business stage is this lead in now?</strong> It does not represent the follow-up reminder date.</p></CardHeader><CardContent><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{STATUS_OPTIONS.map(([value, label]) => <div key={value} className="rounded-xl border border-slate-100 p-4"><div className="flex items-center justify-between gap-3"><StatusPill value={value} /><Badge variant="outline" className="font-mono text-[10px] text-slate-400">{value}</Badge></div><p className="mt-3 text-sm leading-6 text-slate-600">{STATUS_DESCRIPTIONS[value]}</p></div>)}</div></CardContent></Card>
 
     <div className="mt-8 grid gap-6 lg:grid-cols-2">
-      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardHeader><div className="flex items-center gap-2"><UserCog className="h-5 w-5 text-teal-700" /><CardTitle>People and permissions</CardTitle></div></CardHeader><CardContent className="space-y-4 text-sm leading-6 text-slate-600"><p><strong className="text-slate-900">Super Administrator:</strong> creates staff invitations, activates accounts, and assigns each permission separately.</p><p><strong className="text-slate-900">Technical staff:</strong> sees only actions granted to that account. Export, clinical data, adding leads from images, status changes, and contact logging are independently controlled.</p><p><strong className="text-slate-900">Local login:</strong> staff signs in with email and password; Super Admin uses the private Super Admin login.</p></CardContent></Card>
+      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardHeader><div className="flex items-center gap-2"><UserCog className="h-5 w-5 text-teal-700" /><CardTitle>People and permissions</CardTitle></div></CardHeader><CardContent className="space-y-4 text-sm leading-6 text-slate-600"><p><strong className="text-slate-900">Super Administrator:</strong> creates staff invitations, activates accounts, assigns each permission, reviews password reset requests, and can rotate the private administrator password from the account menu.</p><p><strong className="text-slate-900">Technical staff:</strong> sees only actions granted to that account. Export, clinical data, adding leads from images, status changes, and contact logging are independently controlled.</p><p><strong className="text-slate-900">Local login:</strong> staff signs in with email and password; Super Admin uses the private Super Admin login. Password reset links are one-time and expire after one hour.</p></CardContent></Card>
       <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardHeader><div className="flex items-center gap-2"><Download className="h-5 w-5 text-teal-700" /><CardTitle>Audit and export</CardTitle></div></CardHeader><CardContent className="space-y-4 text-sm leading-6 text-slate-600"><p><strong className="text-slate-900">Audit trail:</strong> records the actor, time, source, and before/after values for every lead state change.</p><p><strong className="text-slate-900">Export:</strong> filters by one or more statuses and creates CSV, Excel, or PDF with basic lead information only.</p><p><strong className="text-slate-900">Privacy:</strong> clinical fields and source documents are excluded from exports and hidden from staff without clinical access.</p></CardContent></Card>
     </div>
 

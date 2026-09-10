@@ -2,12 +2,13 @@ import { TRPCError } from "@trpc/server";
 import { SUPER_ADMIN_EMAIL } from "@shared/const";
 import { z } from "zod";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
-import { authenticateStaffCredentials, authenticateSystemAdmin, createLoginSession, createSystemAdminLoginSession, destroyLoginSession } from "./auth";
+import { adminProcedure, publicProcedure, router } from "./_core/trpc";
+import { authenticateStaffCredentials, authenticateSystemAdmin, createLoginSession, createSystemAdminLoginSession, destroyLoginSession, rotateSystemAdminPassword } from "./auth";
 import { dashboardRouter } from "./routers/dashboard";
 import { leadsRouter } from "./routers/leads";
 import { scannerRouter } from "./routers/scanner";
 import { staffRouter } from "./routers/staff";
+import { superAdminPasswordSchema } from "./passwordSecurity";
 
 export const appRouter = router({
   system: systemRouter,
@@ -36,6 +37,22 @@ export const appRouter = router({
       await destroyLoginSession(ctx.req, ctx.res);
       return { success: true } as const;
     }),
+    changeSuperAdminPassword: adminProcedure
+      .input(z.object({
+        currentPassword: z.string().min(8).max(200),
+        newPassword: superAdminPasswordSchema,
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.loginMethod !== "system") throw new TRPCError({ code: "FORBIDDEN", message: "Only the system Super Admin can change this password." });
+        const result = await rotateSystemAdminPassword(input.currentPassword, input.newPassword);
+        if (!result.ok) {
+          if (result.reason === "same") throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a password different from the current password." });
+          if (result.reason === "locked") throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Too many failed attempts. Try again in 15 minutes." });
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "The current password is incorrect." });
+        }
+        await destroyLoginSession(ctx.req, ctx.res);
+        return { success: true } as const;
+      }),
   }),
   dashboard: dashboardRouter,
   leads: leadsRouter,

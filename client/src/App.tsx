@@ -7,6 +7,7 @@ import Invite from "@/pages/Invite";
 import LeadDetail from "@/pages/LeadDetail";
 import Leads from "@/pages/Leads";
 import NotFound from "@/pages/NotFound";
+import ResetPassword from "@/pages/ResetPassword";
 import Scanner from "@/pages/Scanner";
 import Staff from "@/pages/Staff";
 import SystemGuide from "@/pages/SystemGuide";
@@ -22,6 +23,7 @@ function DashboardPage({ children }: { children: React.ReactNode }) {
 function Router() {
   return <Switch>
     <Route path="/invite/:token" component={Invite} />
+    <Route path="/reset-password/:token" component={ResetPassword} />
     <Route path="/"><DashboardPage><Home /></DashboardPage></Route>
     <Route path="/leads"><DashboardPage><Leads /></DashboardPage></Route>
     <Route path="/leads/:id"><DashboardPage><LeadDetail /></DashboardPage></Route>
