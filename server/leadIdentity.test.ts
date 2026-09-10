@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildLeadIdentityKeys, identityMatchLabels, normalizeEmail, normalizePhone } from "./leadIdentity";
-import { communicationLeadUpdate } from "./leadWorkflow";
+import { communicationLeadUpdate, mergeLeadPatch } from "./leadWorkflow";
 
 describe("lead duplicate identities", () => {
   it("normalizes email casing and whitespace", () => {
@@ -26,6 +26,12 @@ describe("lead duplicate identities", () => {
 });
 
 describe("explicit status workflow", () => {
+  it("keeps business status and interest signal independent", () => {
+    const current = { status: "verified", interestLevel: "warm", firstName: "Ana", lastName: "Stone" } as any;
+    expect(mergeLeadPatch(current, { status: "qualified" } as any)).toMatchObject({ status: "qualified", interestLevel: "warm" });
+    expect(mergeLeadPatch(current, { interestLevel: "hot" } as any)).toMatchObject({ status: "verified", interestLevel: "hot" });
+  });
+
   it("records contact time without changing status", () => {
     const update = communicationLeadUpdate({ contactedAt: 1234 });
     expect(update).toEqual({ lastContactAt: 1234 });

@@ -42,6 +42,10 @@ const leadFields = z.object({
   assignedTo: z.number().int().positive().optional().nullable(),
   nextFollowUpAt: z.number().int().positive().optional().nullable(),
 });
+export const leadUpdateFields = leadFields.partial().extend({
+  status: statusEnum.optional(),
+  interestLevel: interestEnum.optional(),
+});
 const documentSchema = z.object({
   name: z.string().min(1).max(255),
   mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
@@ -184,7 +188,7 @@ export const leadsRouter = router({
     }),
 
   update: protectedProcedure
-    .input(z.object({ id: z.number().int().positive(), lead: leadFields.partial() }))
+    .input(z.object({ id: z.number().int().positive(), lead: leadUpdateFields }))
     .mutation(async ({ ctx, input }) => {
       const viewAccess = await assertPermission(ctx.user, "viewLeads");
       if (!await db.canAccessLead(input.id, ctx.user.id, viewAccess.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });

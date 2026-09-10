@@ -31,7 +31,7 @@ import { ENV } from "./_core/env";
 import { leadChanges, leadSnapshot, serializeAudit } from "./leadAudit";
 import { buildLeadIdentityKeys, identityMatchLabels, type LeadIdentityInput } from "./leadIdentity";
 import { normalizeLeadPagination } from "./leadList";
-import { communicationLeadUpdate } from "./leadWorkflow";
+import { communicationLeadUpdate, mergeLeadPatch } from "./leadWorkflow";
 import { isPasswordResetUsable } from "./passwordSecurity";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1016,7 +1016,7 @@ export async function updateLeadWithAudit(
   return db.transaction(async tx => {
     const before = (await tx.select().from(leads).where(eq(leads.id, leadId)).limit(1).for("update"))[0];
     if (!before) return null;
-    const after = { ...before, ...values } as Lead;
+    const after = mergeLeadPatch(before, values as Partial<Lead>);
     const changes = leadChanges(before, after);
     if (!changes.length) return { lead: before, changes };
     const keys = buildLeadIdentityKeys(after);

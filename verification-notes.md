@@ -118,3 +118,10 @@ Each new lead now stores the automatically detected source document type (`Refer
 Every image-created lead now requires first name, last name, and date of birth. The single and bulk workflows disable approval until those fields are present. Duplicate checks normalize those three fields, while email and phone remain additional signals. The same unique identity keys are enforced in the database to cover concurrent saves. Live read-only API verification confirmed both an existing-record match and an in-batch bulk match using first name + last name + date of birth. Database verification found complete identity-key coverage and no existing duplicate name/date-of-birth groups.
 
 Visual QA confirmed source document labels in the Leads table and lead header, and the correction selector in Edit lead. The dialog was closed without saving, and no QA leads or temporary records were created.
+
+
+## Independent Business Status and Interest Signal Fix QA
+
+The reset behavior was traced to the partial update validation schema: create-time defaults for `status` and `interestLevel` were also being applied to partial updates. A status-only request could therefore inject `interestLevel: unknown`, while an interest-only request could inject `status: new`.
+
+The update contract now explicitly keeps both fields optional with no defaults. Business Status and Interest Signal use separate optimistic mutations and loading states, and the database update applies only the supplied patch. Regression tests verify both parser directions and patch preservation. A live API test created one temporary record, changed Status and Interest in both directions, confirmed the other field remained unchanged each time, and then removed the lead, identity keys, audit events, session, and all temporary artifacts. A final database check confirmed zero temporary regression records remain.

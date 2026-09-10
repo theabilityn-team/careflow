@@ -28,6 +28,26 @@ export default function LeadDetail() {
   const { data, isLoading, error } = trpc.leads.get.useQuery({ id }, { enabled: Number.isFinite(id) });
   const { data: assignees = [] } = trpc.leads.assignees.useQuery(undefined, { enabled: Boolean(access?.permissions.viewLeads) });
   const update = trpc.leads.update.useMutation({ onSuccess: () => utils.leads.get.invalidate({ id }) });
+  const statusUpdate = trpc.leads.update.useMutation({
+    onMutate: async ({ lead: patch }) => {
+      await utils.leads.get.cancel({ id });
+      const previous = utils.leads.get.getData({ id });
+      if (previous && patch.status !== undefined) utils.leads.get.setData({ id }, { ...previous, lead: { ...previous.lead, status: patch.status } });
+      return { previous };
+    },
+    onError: (_error, _input, context) => { if (context?.previous) utils.leads.get.setData({ id }, context.previous); },
+    onSettled: () => utils.leads.get.invalidate({ id }),
+  });
+  const interestUpdate = trpc.leads.update.useMutation({
+    onMutate: async ({ lead: patch }) => {
+      await utils.leads.get.cancel({ id });
+      const previous = utils.leads.get.getData({ id });
+      if (previous && patch.interestLevel !== undefined) utils.leads.get.setData({ id }, { ...previous, lead: { ...previous.lead, interestLevel: patch.interestLevel } });
+      return { previous };
+    },
+    onError: (_error, _input, context) => { if (context?.previous) utils.leads.get.setData({ id }, context.previous); },
+    onSettled: () => utils.leads.get.invalidate({ id }),
+  });
   const addContact = trpc.leads.addCommunication.useMutation({ onSuccess: () => { utils.leads.get.invalidate({ id }); utils.dashboard.invalidate(); } });
   if (isLoading) return <PageLoading />;
   if (error || !data) return <div className="mx-auto max-w-3xl rounded-2xl bg-rose-50 p-6 text-rose-700">{error?.message ?? "Lead not found."}</div>;
@@ -35,7 +55,11 @@ export default function LeadDetail() {
   const followUpTiming = getFollowUpTiming(lead.nextFollowUpAt);
 
   async function changeField(field: "status" | "interestLevel", value: string) {
-    try { await update.mutateAsync({ id, lead: { [field]: value } as any }); toast.success(field === "status" ? `Status changed to ${statusLabel(value)} and added to the audit trail.` : "Interest level updated and audited."); }
+    try {
+      const mutation = field === "status" ? statusUpdate : interestUpdate;
+      await mutation.mutateAsync({ id, lead: { [field]: value } as any });
+      toast.success(field === "status" ? `Status changed to ${statusLabel(value)} and added to the audit trail.` : "Interest level updated and audited.");
+    }
     catch (e) { toast.error(e instanceof Error ? e.message : "Unable to update the lead."); }
   }
 
@@ -60,8 +84,8 @@ export default function LeadDetail() {
     <div className="mb-6 flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-slate-950 to-slate-900 p-5 text-white sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-teal-300">Lead classification</p><div className="mt-3 flex flex-wrap gap-2"><Badge className="bg-indigo-400/15 text-indigo-200 hover:bg-indigo-400/15"><MapPin className="mr-1 h-3.5 w-3.5" />{stateLabel(lead.stateCode)}</Badge><Badge className="bg-rose-400/15 text-rose-200 hover:bg-rose-400/15"><LockKeyhole className="mr-1 h-3.5 w-3.5" />{diagnosisCategoryLabel(lead.diagnosisCategory)}</Badge><Badge className="bg-cyan-400/15 text-cyan-100 hover:bg-cyan-400/15"><FileText className="mr-1 h-3.5 w-3.5" />{documentTypeLabel(lead.sourceDocumentType)}</Badge></div></div><LeadAccessDialog leadId={id} staff={assignees} /></div>
 
     <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Business status</p><Select disabled={!access?.permissions.changeStatus || update.isPending} value={lead.status} onValueChange={value => changeField("status", value)}><SelectTrigger className="mt-3 h-10"><SelectValue /></SelectTrigger><SelectContent>{STATUS_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><p className="mt-2 text-xs leading-5 text-slate-500">Changes only when an authorized person selects a stage.</p></CardContent></Card>
-      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Interest signal</p><Select disabled={!access?.permissions.editLeads || update.isPending} value={lead.interestLevel} onValueChange={value => changeField("interestLevel", value)}><SelectTrigger className="mt-3 h-10"><SelectValue /></SelectTrigger><SelectContent>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><p className="mt-2 text-xs leading-5 text-slate-500">Separate from status; describes purchase interest only.</p></CardContent></Card>
+      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Business status</p><Select disabled={!access?.permissions.changeStatus || statusUpdate.isPending} value={lead.status} onValueChange={value => changeField("status", value)}><SelectTrigger className="mt-3 h-10"><SelectValue /></SelectTrigger><SelectContent>{STATUS_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><p className="mt-2 text-xs leading-5 text-slate-500">Changes only when an authorized person selects a stage.</p></CardContent></Card>
+      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Interest signal</p><Select disabled={!access?.permissions.editLeads || interestUpdate.isPending} value={lead.interestLevel} onValueChange={value => changeField("interestLevel", value)}><SelectTrigger className="mt-3 h-10"><SelectValue /></SelectTrigger><SelectContent>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><p className="mt-2 text-xs leading-5 text-slate-500">Separate from status; describes purchase interest only.</p></CardContent></Card>
       <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Most recent contact</p><p className="mt-3 text-sm font-semibold text-slate-900">{lead.lastContactAt ? formatDate(lead.lastContactAt, true) : "No contact logged"}</p><p className="mt-2 text-xs leading-5 text-slate-500">Updated automatically when Log contact is saved.</p></CardContent></Card>
       <Card className="rounded-2xl border-0 bg-slate-950 text-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Scheduled follow-up</p><p className="mt-3 text-sm font-semibold">{lead.nextFollowUpAt ? formatDate(lead.nextFollowUpAt, true) : "No reminder scheduled"}</p><p className={`mt-2 text-xs leading-5 ${followUpTiming === "overdue" ? "text-amber-300" : "text-slate-400"}`}>{followUpTimingLabel(followUpTiming)} · shown in Follow-ups.</p></CardContent></Card>
     </div>
