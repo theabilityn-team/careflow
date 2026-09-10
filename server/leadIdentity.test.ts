@@ -44,4 +44,11 @@ describe("explicit status workflow", () => {
     expect(update).toEqual({ lastContactAt: 1234, nextFollowUpAt: 5678 });
     expect(update).not.toHaveProperty("status");
   });
+
+  it("completes and clears a reminder without changing status", () => {
+    const update = communicationLeadUpdate({ contactedAt: 1234, nextFollowUpAt: null, clearFollowUp: true });
+    expect(update).toEqual({ lastContactAt: 1234, nextFollowUpAt: null });
+    expect(update).not.toHaveProperty("status");
+    expect(update).not.toHaveProperty("interestLevel");
+  });
 });

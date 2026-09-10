@@ -125,3 +125,16 @@ Visual QA confirmed source document labels in the Leads table and lead header, a
 The reset behavior was traced to the partial update validation schema: create-time defaults for `status` and `interestLevel` were also being applied to partial updates. A status-only request could therefore inject `interestLevel: unknown`, while an interest-only request could inject `status: new`.
 
 The update contract now explicitly keeps both fields optional with no defaults. Business Status and Interest Signal use separate optimistic mutations and loading states, and the database update applies only the supplied patch. Regression tests verify both parser directions and patch preservation. A live API test created one temporary record, changed Status and Interest in both directions, confirmed the other field remained unchanged each time, and then removed the lead, identity keys, audit events, session, and all temporary artifacts. A final database check confirmed zero temporary regression records remain.
+
+
+## Regular Type, Pipeline Controls, Groups, and Follow-up Completion QA
+
+The existing lead profile now displays **Regular** instead of Other/Medical record for non-referral source documents. Business Status and Interest Signal remain separate controls, each with its own pending state and Saving label. A prominent **Lead groups** card appears in the same top summary row, and the **Recent pipeline changes** card provides the latest audited Status and Interest before/after values without mixing the two fields.
+
+The Leads page now keeps both **All statuses** and **All interest levels** visible beside search. Advanced filters remain under More filters, and existing rows display Regular consistently. Browser verification was read-only and did not alter any lead.
+
+The Follow-ups page now explains the completion behavior above the queue and shows a **Complete** action on each accessible reminder. The dialog was opened without saving an existing record. It clearly states that the performed contact is logged, the current reminder disappears from Upcoming/Overdue when no next date is selected, and selecting a new date completes and reschedules the reminder instead.
+
+Live read-only extraction of both provided Willie Freeman clinical chart screenshots verified **Regular** document classification, patient identity extraction, Florida state detection, Oncology diagnosis grouping, and no lead creation. A live API regression test created temporary data, verified automatic assignment to the creator's latest group, verified that completing an overdue reminder records a Communication and Audit event, clears `nextFollowUpAt`, and removes the item from the Follow-ups queue, then deleted all temporary data.
+
+Final validation completed successfully: TypeScript check passed, all **63 unit tests** across 16 test files passed, the production build completed, the runtime is healthy, no temporary verification files remain, and the database contains no temporary QA records or legacy `other` / `medical_record` source document values. Current source types are normalized to **Regular** and **Referral form**.

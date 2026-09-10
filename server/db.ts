@@ -955,8 +955,8 @@ export async function backfillLeadStateCodes() {
 
 export async function backfillLeadDocumentTypes() {
   const db = await requireDb();
-  const [missing, documents] = await Promise.all([
-    db.select().from(leads).where(isNull(leads.sourceDocumentType)),
+  const [unclassified, documents] = await Promise.all([
+    db.select().from(leads).where(or(isNull(leads.sourceDocumentType), inArray(leads.sourceDocumentType, ["other", "medical_record"]))),
     db.select({ leadId: leadDocuments.leadId, fileName: leadDocuments.fileName }).from(leadDocuments),
   ]);
   const filesByLead = new Map<number, string[]>();
@@ -965,10 +965,12 @@ export async function backfillLeadDocumentTypes() {
     files.push(document.fileName);
     filesByLead.set(document.leadId, files);
   }
-  for (const lead of missing) {
+  for (const lead of unclassified) {
     const files = filesByLead.get(lead.id) ?? [];
-    if (!files.length) continue;
-    const sourceDocumentType = inferStoredDocumentType(lead.additionalInformation, files) ?? "other";
+    if (!files.length && !lead.sourceDocumentType) continue;
+    const sourceDocumentType = lead.sourceDocumentType === "other" || lead.sourceDocumentType === "medical_record"
+      ? "regular"
+      : inferStoredDocumentType(lead.additionalInformation, files) ?? "regular";
     await updateLeadWithAudit(lead.id, { sourceDocumentType }, {
       actorId: SYSTEM_ADMIN_ACTOR_ID,
       action: "lead.document_type_inferred",
@@ -1002,6 +1004,25 @@ export async function createLeadWithAudit(input: InsertLead, audit: { actorId: n
       snapshotAfter: serializeAudit(leadSnapshot(created)),
       occurredAt: Date.now(),
     });
+    const latestOwnedGroup = (await tx.select({ id: leadGroups.id, name: leadGroups.name })
+      .from(leadGroups)
+      .where(eq(leadGroups.ownerId, input.createdBy))
+      .orderBy(desc(leadGroups.createdAt), desc(leadGroups.id))
+      .limit(1))[0];
+    if (latestOwnedGroup) {
+      await tx.insert(leadGroupMembers).values({ groupId: latestOwnedGroup.id, leadId, addedBy: input.createdBy });
+      await tx.insert(auditEvents).values({
+        leadId,
+        actorId: audit.actorId,
+        action: "lead.group_assigned",
+        source: "automatic_default",
+        detail: `Automatically added to the creator's latest group: ${latestOwnedGroup.name}`,
+        changes: null,
+        snapshotBefore: null,
+        snapshotAfter: null,
+        occurredAt: Date.now(),
+      });
+    }
     if (created.nextFollowUpAt) await syncFollowUpReminder(tx, created);
     return leadId;
   });
@@ -1047,14 +1068,15 @@ export async function addLeadDocument(input: typeof leadDocuments.$inferInsert) 
   await db.insert(leadDocuments).values(input);
 }
 
-export async function addCommunicationWithAudit(input: typeof communications.$inferInsert) {
+export async function addCommunicationWithAudit(input: typeof communications.$inferInsert & { clearFollowUp?: boolean }) {
   const db = await requireDb();
   return db.transaction(async tx => {
+    const { clearFollowUp, ...communication } = input;
     const before = (await tx.select().from(leads).where(eq(leads.id, input.leadId)).limit(1).for("update"))[0];
     if (!before) return null;
-    const leadUpdate = communicationLeadUpdate(input);
+    const leadUpdate = communicationLeadUpdate({ contactedAt: input.contactedAt, nextFollowUpAt: input.nextFollowUpAt, clearFollowUp });
     const after = { ...before, ...leadUpdate } as Lead;
-    await tx.insert(communications).values(input);
+    await tx.insert(communications).values(communication);
     await tx.update(leads).set(leadUpdate).where(eq(leads.id, input.leadId));
     await tx.insert(auditEvents).values({
       leadId: input.leadId,
@@ -1067,7 +1089,7 @@ export async function addCommunicationWithAudit(input: typeof communications.$in
       snapshotAfter: serializeAudit(leadSnapshot(after)),
       occurredAt: Date.now(),
     });
-    if (input.nextFollowUpAt !== undefined) await syncFollowUpReminder(tx, after);
+    if (input.nextFollowUpAt !== undefined || clearFollowUp) await syncFollowUpReminder(tx, after);
     return after;
   });
 }

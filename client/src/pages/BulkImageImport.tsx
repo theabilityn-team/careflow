@@ -39,7 +39,7 @@ type LeadGroup = {
   reviewed: boolean; state: GroupState; expanded: boolean; error: string; duplicate: DuplicateState; createdLeadId?: number;
 };
 
-const empty: Extraction = { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", sex: "", medicalRecordNumber: "", address: "", city: "", stateProvince: "", stateCode: "", postalCode: "", country: "", diagnosis: "", diagnosisCategory: "", clinicalNotes: "", documentCategory: "other", referral: EMPTY_REFERRAL_DATA, documentTypes: [], additionalInformation: [], overallConfidence: 0, reviewWarnings: [] };
+const empty: Extraction = { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", sex: "", medicalRecordNumber: "", address: "", city: "", stateProvince: "", stateCode: "", postalCode: "", country: "", diagnosis: "", diagnosisCategory: "", clinicalNotes: "", documentCategory: "regular", referral: EMPTY_REFERRAL_DATA, documentTypes: [], additionalInformation: [], overallConfidence: 0, reviewWarnings: [] };
 const newGroup = (): LeadGroup => ({ id: crypto.randomUUID(), files: [], extraction: null, status: "verified", interestLevel: "unknown", diagnosisCategory: "", stateCode: "", reviewed: false, state: "idle", expanded: true, error: "", duplicate: null });
 const readFile = (file: File) => new Promise<UploadFile>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve({ name: file.name, mimeType: file.type as UploadFile["mimeType"], dataUrl: String(reader.result), size: file.size }); reader.onerror = reject; reader.readAsDataURL(file); });
 const hasIdentitySignal = (lead: Extraction) => Boolean(lead.firstName.trim() && lead.lastName.trim() && lead.dateOfBirth.trim());
@@ -147,7 +147,7 @@ export default function BulkImageImport() {
             dateOfBirth: lead.dateOfBirth || null, address: lead.address || null, city: lead.city || null,
             stateProvince: lead.stateProvince || null, postalCode: lead.postalCode || null, country: lead.country || null,
             diagnosis: lead.diagnosis || null, diagnosisCategory: group.diagnosisCategory as "oncology" | "hematology", stateCode: group.stateCode as "FL" | "AZ" | "NV" | "CA", clinicalNotes: lead.clinicalNotes || null,
-            sourceDocumentType: lead.documentCategory as "referral_order" | "referral_form" | "medical_record" | "other",
+            sourceDocumentType: lead.documentCategory as "referral_order" | "referral_form" | "regular",
             additionalInformation: JSON.stringify(buildReferralAdditionalInformation({ documentCategory: lead.documentCategory, sex: lead.sex, medicalRecordNumber: lead.medicalRecordNumber, referral: lead.referral, additionalInformation: lead.additionalInformation })) || null,
             status: group.status as any, interestLevel: group.interestLevel as any, assignedTo: null,
           },

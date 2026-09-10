@@ -27,7 +27,7 @@ type Extraction = {
   overallConfidence: number; reviewWarnings: string[];
 };
 
-const empty: Extraction = { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", sex: "", medicalRecordNumber: "", address: "", city: "", stateProvince: "", stateCode: "", postalCode: "", country: "", diagnosis: "", diagnosisCategory: "", clinicalNotes: "", documentCategory: "other", referral: EMPTY_REFERRAL_DATA, documentTypes: [], additionalInformation: [], overallConfidence: 0, reviewWarnings: [] };
+const empty: Extraction = { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", sex: "", medicalRecordNumber: "", address: "", city: "", stateProvince: "", stateCode: "", postalCode: "", country: "", diagnosis: "", diagnosisCategory: "", clinicalNotes: "", documentCategory: "regular", referral: EMPTY_REFERRAL_DATA, documentTypes: [], additionalInformation: [], overallConfidence: 0, reviewWarnings: [] };
 
 const readFile = (file: File) => new Promise<UploadFile>((resolve, reject) => {
   const reader = new FileReader();
@@ -97,7 +97,7 @@ export default function Scanner() {
           phone: result.phone || null, dateOfBirth: result.dateOfBirth || null, address: result.address || null,
           city: result.city || null, stateProvince: result.stateProvince || null, postalCode: result.postalCode || null,
           country: result.country || null, diagnosis: result.diagnosis || null, diagnosisCategory: diagnosisCategory as "oncology" | "hematology", stateCode: stateCode as "FL" | "AZ" | "NV" | "CA", clinicalNotes: result.clinicalNotes || null,
-          sourceDocumentType: result.documentCategory as "referral_order" | "referral_form" | "medical_record" | "other",
+          sourceDocumentType: result.documentCategory as "referral_order" | "referral_form" | "regular",
           additionalInformation: JSON.stringify(buildReferralAdditionalInformation({ documentCategory: result.documentCategory, sex: result.sex, medicalRecordNumber: result.medicalRecordNumber, referral: result.referral, additionalInformation: result.additionalInformation })) || null,
           status: status as any, interestLevel: interestLevel as any, assignedTo: null,
         },

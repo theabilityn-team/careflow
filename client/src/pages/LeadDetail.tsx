@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DIAGNOSIS_CATEGORY_OPTIONS, DOCUMENT_TYPE_OPTIONS, INTEREST_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS, diagnosisCategoryLabel, documentTypeLabel, formatDate, initials, stateLabel, statusLabel } from "@/lib/crm";
 import { CONTACT_TRACKING_HELP, followUpTimingLabel, getFollowUpTiming } from "@/lib/contactTracking";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, CalendarClock, FileImage, FileText, FolderPlus, GitCompareArrows, Info, LockKeyhole, Mail, MapPin, MessageSquarePlus, Pencil, Phone, Share2, Trash2, UserPlus } from "lucide-react";
+import { ArrowLeft, CalendarClock, FileImage, FileText, FolderPlus, GitCompareArrows, Info, Loader2, LockKeyhole, Mail, MapPin, MessageSquarePlus, Pencil, Phone, Share2, Trash2, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useLocation, useRoute } from "wouter";
@@ -27,6 +27,7 @@ export default function LeadDetail() {
   const { data: access } = trpc.dashboard.access.useQuery();
   const { data, isLoading, error } = trpc.leads.get.useQuery({ id }, { enabled: Number.isFinite(id) });
   const { data: assignees = [] } = trpc.leads.assignees.useQuery(undefined, { enabled: Boolean(access?.permissions.viewLeads) });
+  const { data: leadSharing } = trpc.groups.leadSharing.useQuery({ leadId: id }, { enabled: Number.isFinite(id) });
   const update = trpc.leads.update.useMutation({ onSuccess: () => utils.leads.get.invalidate({ id }) });
   const statusUpdate = trpc.leads.update.useMutation({
     onMutate: async ({ lead: patch }) => {
@@ -83,12 +84,15 @@ export default function LeadDetail() {
 
     <div className="mb-6 flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-slate-950 to-slate-900 p-5 text-white sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-teal-300">Lead classification</p><div className="mt-3 flex flex-wrap gap-2"><Badge className="bg-indigo-400/15 text-indigo-200 hover:bg-indigo-400/15"><MapPin className="mr-1 h-3.5 w-3.5" />{stateLabel(lead.stateCode)}</Badge><Badge className="bg-rose-400/15 text-rose-200 hover:bg-rose-400/15"><LockKeyhole className="mr-1 h-3.5 w-3.5" />{diagnosisCategoryLabel(lead.diagnosisCategory)}</Badge><Badge className="bg-cyan-400/15 text-cyan-100 hover:bg-cyan-400/15"><FileText className="mr-1 h-3.5 w-3.5" />{documentTypeLabel(lead.sourceDocumentType)}</Badge></div></div><LeadAccessDialog leadId={id} staff={assignees} /></div>
 
-    <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Business status</p><Select disabled={!access?.permissions.changeStatus || statusUpdate.isPending} value={lead.status} onValueChange={value => changeField("status", value)}><SelectTrigger className="mt-3 h-10"><SelectValue /></SelectTrigger><SelectContent>{STATUS_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><p className="mt-2 text-xs leading-5 text-slate-500">Changes only when an authorized person selects a stage.</p></CardContent></Card>
-      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Interest signal</p><Select disabled={!access?.permissions.editLeads || interestUpdate.isPending} value={lead.interestLevel} onValueChange={value => changeField("interestLevel", value)}><SelectTrigger className="mt-3 h-10"><SelectValue /></SelectTrigger><SelectContent>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><p className="mt-2 text-xs leading-5 text-slate-500">Separate from status; describes purchase interest only.</p></CardContent></Card>
+    <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Business status</p><Select disabled={!access?.permissions.changeStatus || statusUpdate.isPending} value={lead.status} onValueChange={value => changeField("status", value)}><SelectTrigger className="mt-3 h-10"><SelectValue /></SelectTrigger><SelectContent>{STATUS_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>{statusUpdate.isPending ? <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-teal-700"><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving status…</p> : <p className="mt-2 text-xs leading-5 text-slate-500">Changes only when an authorized person selects a stage.</p>}</CardContent></Card>
+      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Interest signal</p><Select disabled={!access?.permissions.editLeads || interestUpdate.isPending} value={lead.interestLevel} onValueChange={value => changeField("interestLevel", value)}><SelectTrigger className="mt-3 h-10"><SelectValue /></SelectTrigger><SelectContent>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>{interestUpdate.isPending ? <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-teal-700"><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving interest…</p> : <p className="mt-2 text-xs leading-5 text-slate-500">Separate from status; describes purchase interest only.</p>}</CardContent></Card>
+      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Lead groups</p><div className="mt-3 flex min-h-10 flex-wrap items-center gap-1.5">{leadSharing?.groups.length ? leadSharing.groups.map(group => <Badge key={group.id} variant="outline" className="bg-slate-50 text-slate-700">{group.name}</Badge>) : <span className="text-sm font-medium text-slate-500">No group</span>}</div><p className="mt-2 text-xs leading-5 text-slate-500">New leads use the creator's latest group by default.</p></CardContent></Card>
       <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Most recent contact</p><p className="mt-3 text-sm font-semibold text-slate-900">{lead.lastContactAt ? formatDate(lead.lastContactAt, true) : "No contact logged"}</p><p className="mt-2 text-xs leading-5 text-slate-500">Updated automatically when Log contact is saved.</p></CardContent></Card>
       <Card className="rounded-2xl border-0 bg-slate-950 text-white shadow-sm"><CardContent className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Scheduled follow-up</p><p className="mt-3 text-sm font-semibold">{lead.nextFollowUpAt ? formatDate(lead.nextFollowUpAt, true) : "No reminder scheduled"}</p><p className={`mt-2 text-xs leading-5 ${followUpTiming === "overdue" ? "text-amber-300" : "text-slate-400"}`}>{followUpTimingLabel(followUpTiming)} · shown in Follow-ups.</p></CardContent></Card>
     </div>
+
+    <PipelineHistory items={data.auditEvents} assignees={assignees} />
 
     <div className="mb-6 rounded-2xl border border-teal-100 bg-teal-50/70 p-5"><div className="flex items-start gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-teal-700 shadow-sm"><Info className="h-4 w-4" /></div><div><p className="font-semibold text-slate-900">Status and contact tracking are separate</p><div className="mt-3 grid gap-3 text-sm leading-6 text-slate-600 md:grid-cols-3"><p><strong className="text-slate-800">Business status:</strong> Changes only when you choose a new stage above or in Edit lead.</p><p><strong className="text-slate-800">Most recent contact:</strong> {CONTACT_TRACKING_HELP.lastContact}</p><p><strong className="text-slate-800">Scheduled follow-up:</strong> {CONTACT_TRACKING_HELP.nextFollowUp}</p></div></div></div></div>
 
@@ -108,6 +112,14 @@ function TimelineCard({ title, items }: { title: string; items: Array<{ id: stri
   return <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardHeader><CardTitle className="text-lg">{title}</CardTitle></CardHeader><CardContent>{!items.length ? <p className="text-sm text-slate-500">No activity recorded yet.</p> : <div className="space-y-0">{items.map((item, index) => <div key={item.id} className="relative flex gap-4 pb-6 last:pb-0">{index < items.length - 1 && <div className="absolute left-[7px] top-5 h-[calc(100%-10px)] w-px bg-slate-200" />}<div className="mt-1.5 h-4 w-4 shrink-0 rounded-full border-4 border-teal-100 bg-teal-700" /><div><p className="text-sm font-semibold capitalize text-slate-900">{item.title}</p><p className="mt-1 text-xs text-slate-400">{formatDate(item.date, true)}</p>{item.detail && <p className="mt-2 text-sm leading-6 text-slate-600">{item.detail}</p>}</div></div>)}</div>}</CardContent></Card>;
 }
 
+function PipelineHistory({ items, assignees }: { items: any[]; assignees: Array<{ id: number; name: string | null; email: string | null }> }) {
+  const changes = items.flatMap(item => (Array.isArray(item.changes) ? item.changes : [])
+    .filter((change: any) => change.field === "status" || change.field === "interestLevel")
+    .map((change: any) => ({ ...change, eventId: item.id, occurredAt: item.occurredAt, actorName: item.actorName, actorEmail: item.actorEmail })))
+    .slice(0, 6);
+  return <Card className="mb-6 rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><div className="flex items-start gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700"><GitCompareArrows className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900">Recent pipeline changes</p><p className="text-xs text-slate-500">Business Status and Interest Signal remain independent.</p></div><span className="text-xs text-slate-400">Latest {Math.min(changes.length, 6)}</span></div>{changes.length === 0 ? <p className="mt-4 text-sm text-slate-500">No Status or Interest changes have been recorded yet.</p> : <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{changes.map((change: any, index: number) => <div key={`${change.eventId}-${change.field}-${index}`} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3"><div className="flex items-center justify-between gap-2"><Badge variant="outline" className="bg-white">{change.field === "status" ? "Business status" : "Interest signal"}</Badge><span className="text-[11px] text-slate-400">{formatDate(change.occurredAt, true)}</span></div><p className="mt-3 text-sm text-slate-700"><span className="text-slate-400">{auditValue(change.field, change.before, assignees)}</span><span className="mx-2 text-slate-300">→</span><strong className="text-slate-900">{auditValue(change.field, change.after, assignees)}</strong></p><p className="mt-2 truncate text-xs text-slate-400">{change.actorName || change.actorEmail || "System"}</p></div>)}</div>}</div></div></CardContent></Card>;
+}
+
 const auditFieldLabels: Record<string, string> = {
   firstName: "First name", lastName: "Last name", email: "Email", phone: "Phone",
   dateOfBirth: "Date of birth", address: "Street address", city: "City",
@@ -123,6 +135,7 @@ const auditActionLabels: Record<string, string> = {
   "lead.updated": "Lead profile updated",
   "lead.status_changed": "Status changed",
   "lead.interest_changed": "Interest level changed",
+  "lead.group_assigned": "Added to lead group",
   "communication.logged": "Communication logged",
 };
 
@@ -198,7 +211,7 @@ function buildLeadForm(lead: any) {
     firstName: lead.firstName ?? "", lastName: lead.lastName ?? "", email: lead.email ?? "",
     phone: lead.phone ?? "", dateOfBirth: lead.dateOfBirth ?? "", address: lead.address ?? "",
     city: lead.city ?? "", stateProvince: lead.stateProvince ?? "", postalCode: lead.postalCode ?? "",
-    country: lead.country ?? "", stateCode: lead.stateCode ?? "", diagnosisCategory: lead.diagnosisCategory ?? "", sourceDocumentType: lead.sourceDocumentType ?? "other", status: lead.status ?? "new", interestLevel: lead.interestLevel ?? "unknown",
+    country: lead.country ?? "", stateCode: lead.stateCode ?? "", diagnosisCategory: lead.diagnosisCategory ?? "", sourceDocumentType: lead.sourceDocumentType ?? "regular", status: lead.status ?? "new", interestLevel: lead.interestLevel ?? "unknown",
     assignedTo: lead.assignedTo ? String(lead.assignedTo) : "unassigned",
     nextFollowUpAt: dateTimeInputValue(lead.nextFollowUpAt), diagnosis: lead.diagnosis ?? "",
     clinicalNotes: lead.clinicalNotes ?? "", additionalInformation: additionalInfoText(lead.additionalInformation),

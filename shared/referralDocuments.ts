@@ -1,5 +1,5 @@
 export type DiagnosisCategory = "oncology" | "hematology" | "";
-export type DocumentCategory = "referral_order" | "referral_form" | "medical_record" | "other";
+export type DocumentCategory = "referral_order" | "referral_form" | "regular";
 
 export type ReferralData = {
   referralDate: string;
@@ -187,6 +187,5 @@ export function inferStoredDocumentType(additionalInformation?: string | null, f
   const text = normalized(evidence.join(" "));
   if (/referral[\s_-]*order/.test(text)) return "referral_order" as const;
   if (/referral|authorization[\s_-]*form/.test(text)) return "referral_form" as const;
-  if (/medical[\s_-]*(record|chart)|clinical[\s_-]*record|summary[\s_-]*of[\s_-]*care/.test(text)) return "medical_record" as const;
-  return null;
+  return "regular" as const;
 }

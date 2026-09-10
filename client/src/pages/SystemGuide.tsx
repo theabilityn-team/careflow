@@ -10,13 +10,13 @@ import { useLocation } from "wouter";
 const flows = [
   {
     number: "01", icon: ScanLine, title: "Add a lead from document images", action: "Open Add lead", path: "/scan",
-    steps: ["Upload up to six images for one person, including referral orders and referral forms.", "AI separates patient identity from provider, insurance, authorization, and referral details.", "Authorized staff reviews and corrects every field, including the detected document type.", "First name, last name, and date of birth are required for the mandatory patient duplicate check.", "Confirm state, diagnosis group, initial Status, and Interest level, then save."],
-    result: "One lead owned by its creator is created, all source images are attached, and the complete reviewed state is written to the Audit trail.",
+    steps: ["Upload up to six images for one person, including referral orders and referral forms.", "AI classifies explicit referrals separately and labels every ordinary chart, demographic, clinical, or other non-referral image as Regular.", "Authorized staff reviews and corrects every field.", "First name, last name, and date of birth are required for the mandatory patient duplicate check.", "Confirm state, diagnosis group, initial Status, and Interest level, then save."],
+    result: "One lead owned by its creator is created, automatically added to that creator's most recently created group when one exists, all source images are attached, and the complete reviewed state is written to the Audit trail.",
   },
   {
     number: "02", icon: Files, title: "Bulk import multiple leads from images", action: "Open Bulk image import", path: "/bulk-import",
     steps: ["Create one image group for each person.", "Attach one to six images belonging to that person; never mix people inside one image group.", "Process all image groups. CareFlow extracts each person separately.", "Confirm first name, last name, date of birth, document type, diagnosis group, and state for each lead.", "Approve and import. Existing and in-batch name + date-of-birth duplicates are blocked."],
-    result: "Multiple reviewed leads are created from one operation, with every source image attached to the correct person and a separate audit trail for each lead.",
+    result: "Multiple reviewed leads are created from one operation, automatically added to the creator's most recently created group when one exists, with every source image attached to the correct person and a separate audit trail for each lead.",
   },
   {
     number: "03", icon: FileSearch, title: "Duplicate protection before saving", action: "Open Bulk image import", path: "/bulk-import",
@@ -30,13 +30,13 @@ const flows = [
   },
   {
     number: "05", icon: ClipboardCheck, title: "Plan and complete follow-ups", action: "Open Follow-ups", path: "/follow-ups",
-    steps: ["A reminder is created from Log contact or Edit lead.", "Upcoming reminders appear in Upcoming; passed dates appear in Overdue.", "Open the lead, perform the contact, and log the result.", "Set a new reminder if another action is needed, or clear it from Edit lead."],
-    result: "The queue is driven only by Scheduled follow-up dates, not by Status.",
+    steps: ["A reminder is created from Log contact or Edit lead.", "Upcoming reminders appear in Upcoming; passed dates appear in Overdue.", "After calling, emailing, or meeting the lead, select Complete beside the reminder.", "Record the contact outcome and notes.", "Leave the next date blank to remove the reminder, or select a new date to complete and reschedule it."],
+    result: "Completion is written to Communications and Audit trail. The completed reminder disappears from Upcoming and Overdue unless a new date is scheduled. Status and Interest do not change automatically.",
   },
   {
     number: "06", icon: History, title: "Change status and preserve history", action: "Open Leads", path: "/leads",
-    steps: ["Open a lead.", "Change Status from the top Status control or Edit lead.", "Choose the stage that reflects the current business reality.", "The change is saved immediately with before/after values."],
-    result: "Status changes only when an authorized person changes it. Scanning, logging contact, and scheduling reminders do not silently overwrite it.",
+    steps: ["Open a lead.", "Change Business Status or Interest Signal from its own top control.", "Watch the control-specific Saving indicator, then review the new item in Recent pipeline changes.", "Use the always-visible Status and Interest filters on Leads to find matching records."],
+    result: "Business Status and Interest Signal are saved independently. Changing one never resets the other, and each change retains before/after audit values.",
   },
   {
     number: "07", icon: KeyRound, title: "Recover a staff password", action: "Open staff sign-in", path: "/",

@@ -51,8 +51,7 @@ export const DIAGNOSIS_CATEGORY_OPTIONS = [
 export const DOCUMENT_TYPE_OPTIONS = [
   ["referral_order", "Referral order"],
   ["referral_form", "Referral form"],
-  ["medical_record", "Medical record"],
-  ["other", "Other document"],
+  ["regular", "Regular"],
 ] as const;
 
 export const LANGUAGE_OPTIONS = [

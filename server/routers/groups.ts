@@ -70,9 +70,10 @@ export const groupsRouter = router({
 
   leadSharing: protectedProcedure.input(z.object({ leadId: id })).query(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
+    if (!await db.canAccessLead(input.leadId, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     const canManage = await db.canManageLeadSharing(input.leadId, ctx.user.id, access.role === "super_admin");
-    if (!canManage) return { canManage: false, shares: [], groups: [] };
-    return { canManage: true, ...(await db.listLeadSharing(input.leadId)) };
+    const sharing = await db.listLeadSharing(input.leadId);
+    return { canManage, shares: canManage ? sharing.shares : [], groups: sharing.groups };
   }),
 
   shareLead: protectedProcedure.input(z.object({ leadId: id, staffId: id })).mutation(async ({ ctx, input }) => {

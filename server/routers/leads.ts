@@ -18,7 +18,7 @@ const statusEnum = z.enum([
 const interestEnum = z.enum(["unknown", "cold", "warm", "hot"]);
 const stateCodeEnum = z.enum(["FL", "AZ", "NV", "CA"]);
 const diagnosisCategoryEnum = z.enum(["oncology", "hematology"]);
-const documentTypeEnum = z.enum(["referral_order", "referral_form", "medical_record", "other"]);
+const documentTypeEnum = z.enum(["referral_order", "referral_form", "regular"]);
 const nullableText = z.string().max(20_000).optional().nullable();
 const leadFields = z.object({
   firstName: z.string().trim().min(1).max(120),
@@ -218,7 +218,8 @@ export const leadsRouter = router({
       outcome: z.string().trim().min(1).max(160),
       notes: z.string().max(20_000).optional().nullable(),
       contactedAt: z.number().int().positive(),
-      nextFollowUpAt: z.number().int().positive().optional(),
+      nextFollowUpAt: z.number().int().positive().optional().nullable(),
+      clearFollowUp: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "manageContacts");

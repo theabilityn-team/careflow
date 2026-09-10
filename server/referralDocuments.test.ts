@@ -53,10 +53,10 @@ describe("referral structured information", () => {
     expect(rows.some(item => item.label === "Preferred language")).toBe(true);
   });
 
-  it("backfills legacy document types only from reliable stored evidence", () => {
+  it("keeps explicit referrals separate and classifies all other records as regular", () => {
     expect(inferStoredDocumentType(JSON.stringify([{ label: "Document type", value: "Referral Order" }]))).toBe("referral_order");
     expect(inferStoredDocumentType(null, ["american-care-referral-form-page-1.jpg"])).toBe("referral_form");
-    expect(inferStoredDocumentType(null, ["patient-medical-record.png"])).toBe("medical_record");
-    expect(inferStoredDocumentType(null, ["scan-001.jpg"])).toBeNull();
+    expect(inferStoredDocumentType(null, ["patient-medical-record.png"])).toBe("regular");
+    expect(inferStoredDocumentType(null, ["scan-001.jpg"])).toBe("regular");
   });
 });
