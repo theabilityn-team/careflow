@@ -8,7 +8,9 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { ensureSuperAdmin } from "../auth";
-import { backfillLeadIdentityKeys } from "../db";
+import { backfillFollowUpReminders, backfillLeadIdentityKeys, getScheduledJobByTaskUid } from "../db";
+import { processDueFollowUpReminders } from "../followUpReminders";
+import { sdk } from "./sdk";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -38,6 +40,18 @@ async function startServer() {
   registerStorageProxy(app);
   await ensureSuperAdmin();
   await backfillLeadIdentityKeys();
+  await backfillFollowUpReminders();
+  app.post("/api/scheduled/follow-up-reminders", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
+      const job = await getScheduledJobByTaskUid(user.taskUid);
+      if (!job || job.jobKey !== "follow-up-reminders") return res.json({ ok: true, skipped: "orphan" });
+      return res.json({ ok: true, ...(await processDueFollowUpReminders()) });
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined, context: { url: req.originalUrl }, timestamp: new Date().toISOString() });
+    }
+  });
   // tRPC API
   app.use(
     "/api/trpc",

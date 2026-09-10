@@ -5,6 +5,7 @@ import FollowUps from "@/pages/FollowUps";
 import Home from "@/pages/Home";
 import Invite from "@/pages/Invite";
 import LeadDetail from "@/pages/LeadDetail";
+import LeadGroups from "@/pages/LeadGroups";
 import Leads from "@/pages/Leads";
 import NotFound from "@/pages/NotFound";
 import ResetPassword from "@/pages/ResetPassword";
@@ -27,6 +28,8 @@ function Router() {
     <Route path="/"><DashboardPage><Home /></DashboardPage></Route>
     <Route path="/leads"><DashboardPage><Leads /></DashboardPage></Route>
     <Route path="/leads/:id"><DashboardPage><LeadDetail /></DashboardPage></Route>
+    <Route path="/groups"><DashboardPage><LeadGroups /></DashboardPage></Route>
+    <Route path="/groups/:id"><DashboardPage><LeadGroups /></DashboardPage></Route>
     <Route path="/scan"><DashboardPage><Scanner /></DashboardPage></Route>
     <Route path="/bulk-import"><DashboardPage><BulkImageImport /></DashboardPage></Route>
     <Route path="/follow-ups"><DashboardPage><FollowUps /></DashboardPage></Route>

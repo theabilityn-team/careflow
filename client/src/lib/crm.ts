@@ -39,6 +39,31 @@ export const INTEREST_OPTIONS = [
   ["hot", "Hot"],
 ] as const;
 
+export const STATE_OPTIONS = [
+  ["FL", "Florida"],
+  ["AZ", "Arizona"],
+  ["NV", "Nevada"],
+  ["CA", "California"],
+] as const;
+
+export const DIAGNOSIS_CATEGORY_OPTIONS = [
+  ["oncology", "Oncology"],
+  ["hematology", "Hematology"],
+] as const;
+
+export const LANGUAGE_OPTIONS = [
+  ["en", "English"],
+  ["es", "Spanish"],
+] as const;
+
+export function stateLabel(value?: string | null) {
+  return STATE_OPTIONS.find(([key]) => key === value)?.[1] ?? value ?? "State not set";
+}
+
+export function diagnosisCategoryLabel(value?: string | null) {
+  return DIAGNOSIS_CATEGORY_OPTIONS.find(([key]) => key === value)?.[1] ?? value ?? "Diagnosis group not set";
+}
+
 export const PERMISSION_LABELS = {
   viewLeads: ["View leads", "Access lead profiles and search"],
   createLeads: ["Create leads", "Confirm new records after review"],

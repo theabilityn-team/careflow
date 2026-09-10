@@ -69,6 +69,7 @@ export const staffPermissions = mysqlTable("staff_permissions", {
   userId: int("userId").primaryKey(),
   jobTitle: varchar("jobTitle", { length: 120 }).default("Technical Staff").notNull(),
   isActive: boolean("isActive").default(true).notNull(),
+  preferredLanguage: mysqlEnum("preferredLanguage", ["en", "es"]).default("en").notNull(),
   permissions: text("permissions").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -122,6 +123,8 @@ export const leads = mysqlTable("leads", {
   postalCode: varchar("postalCode", { length: 40 }),
   country: varchar("country", { length: 120 }),
   diagnosis: text("diagnosis"),
+  diagnosisCategory: varchar("diagnosisCategory", { length: 80 }),
+  stateCode: varchar("stateCode", { length: 2 }),
   clinicalNotes: text("clinicalNotes"),
   additionalInformation: text("additionalInformation"),
   status: mysqlEnum("status", [
@@ -149,6 +152,72 @@ export const leads = mysqlTable("leads", {
   createdBy: int("createdBy").notNull(),
   lastContactAt: bigint("lastContactAt", { mode: "number" }),
   nextFollowUpAt: bigint("nextFollowUpAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const leadGroups = mysqlTable("lead_groups", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 160 }).notNull(),
+  description: text("description"),
+  ownerId: int("ownerId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const leadGroupMembers = mysqlTable("lead_group_members", {
+  id: int("id").autoincrement().primaryKey(),
+  groupId: int("groupId").notNull(),
+  leadId: int("leadId").notNull(),
+  addedBy: int("addedBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  uniqueGroupLead: uniqueIndex("lead_group_members_groupId_leadId_unique").on(table.groupId, table.leadId),
+}));
+
+export const leadShares = mysqlTable("lead_shares", {
+  id: int("id").autoincrement().primaryKey(),
+  leadId: int("leadId").notNull(),
+  sharedWithUserId: int("sharedWithUserId").notNull(),
+  sharedByUserId: int("sharedByUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  uniqueLeadShare: uniqueIndex("lead_shares_leadId_sharedWith_unique").on(table.leadId, table.sharedWithUserId),
+}));
+
+export const leadGroupShares = mysqlTable("lead_group_shares", {
+  id: int("id").autoincrement().primaryKey(),
+  groupId: int("groupId").notNull(),
+  sharedWithUserId: int("sharedWithUserId").notNull(),
+  sharedByUserId: int("sharedByUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  uniqueGroupShare: uniqueIndex("lead_group_shares_groupId_sharedWith_unique").on(table.groupId, table.sharedWithUserId),
+}));
+
+export const followUpReminders = mysqlTable("follow_up_reminders", {
+  id: int("id").autoincrement().primaryKey(),
+  leadId: int("leadId").notNull(),
+  recipientUserId: int("recipientUserId").notNull(),
+  scheduledFor: bigint("scheduledFor", { mode: "number" }).notNull(),
+  remindAt: bigint("remindAt", { mode: "number" }).notNull(),
+  readAt: bigint("readAt", { mode: "number" }),
+  staffEmailStatus: mysqlEnum("staffEmailStatus", ["pending", "sent", "failed", "skipped"]).default("pending").notNull(),
+  leadEmailStatus: mysqlEnum("leadEmailStatus", ["pending", "sent", "failed", "skipped"]).default("pending").notNull(),
+  staffSentAt: bigint("staffSentAt", { mode: "number" }),
+  leadSentAt: bigint("leadSentAt", { mode: "number" }),
+  lastError: text("lastError"),
+  attempts: int("attempts").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  uniqueReminder: uniqueIndex("follow_up_reminders_lead_recipient_time_unique").on(table.leadId, table.recipientUserId, table.scheduledFor),
+}));
+
+export const scheduledJobs = mysqlTable("scheduled_jobs", {
+  id: int("id").autoincrement().primaryKey(),
+  jobKey: varchar("jobKey", { length: 80 }).notNull().unique(),
+  taskUid: varchar("taskUid", { length: 65 }).notNull().unique(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

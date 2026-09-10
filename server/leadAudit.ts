@@ -2,7 +2,7 @@ import type { Lead } from "../drizzle/schema";
 
 export const AUDITED_LEAD_FIELDS = [
   "firstName", "lastName", "email", "phone", "dateOfBirth", "address", "city",
-  "stateProvince", "postalCode", "country", "diagnosis", "clinicalNotes",
+  "stateProvince", "postalCode", "country", "stateCode", "diagnosisCategory", "diagnosis", "clinicalNotes",
   "additionalInformation", "status", "interestLevel", "assignedTo", "lastContactAt",
   "nextFollowUpAt",
 ] as const;

@@ -34,6 +34,7 @@ export type ExportLeadRow = {
   phone: string | null;
   address: string | null;
   city: string | null;
+  stateCode: string | null;
   stateProvince: string | null;
   postalCode: string | null;
   country: string | null;
@@ -47,7 +48,7 @@ export type ExportLeadRow = {
 
 const HEADERS = [
   "Lead ID", "First Name", "Last Name", "Email", "Phone", "Address", "City",
-  "State / Province", "Postal Code", "Country", "Status", "Interest Level",
+  "Operational State", "State / Province", "Postal Code", "Country", "Status", "Interest Level",
   "Assigned Staff", "Next Follow-up (UTC)", "Created At (UTC)", "Last Updated (UTC)",
 ] as const;
 
@@ -56,7 +57,7 @@ const iso = (value: Date | number | null) => value ? new Date(value).toISOString
 export function exportRowValues(row: ExportLeadRow) {
   return [
     row.id, row.firstName, row.lastName, row.email ?? "", row.phone ?? "", row.address ?? "",
-    row.city ?? "", row.stateProvince ?? "", row.postalCode ?? "", row.country ?? "",
+    row.city ?? "", row.stateCode ?? "", row.stateProvince ?? "", row.postalCode ?? "", row.country ?? "",
     LEAD_STATUS_LABELS[row.status], INTEREST_LABELS[row.interestLevel], row.assignedStaff ?? "Unassigned",
     iso(row.nextFollowUpAt), iso(row.createdAt), iso(row.updatedAt),
   ];
@@ -80,10 +81,10 @@ export async function createExcel(rows: ExportLeadRow[], selectedStatuses: strin
   const sheet = workbook.addWorksheet("Leads", { views: [{ state: "frozen", ySplit: 1 }] });
   sheet.addRow([...HEADERS]);
   rows.forEach(row => sheet.addRow(exportRowValues(row)));
-  sheet.autoFilter = { from: "A1", to: "P1" };
+  sheet.autoFilter = { from: "A1", to: "Q1" };
   sheet.columns = [
     { width: 10 }, { width: 18 }, { width: 18 }, { width: 30 }, { width: 18 }, { width: 34 },
-    { width: 18 }, { width: 20 }, { width: 14 }, { width: 18 }, { width: 22 }, { width: 16 },
+    { width: 18 }, { width: 18 }, { width: 20 }, { width: 14 }, { width: 18 }, { width: 22 }, { width: 16 },
     { width: 24 }, { width: 24 }, { width: 24 }, { width: 24 },
   ];
   const header = sheet.getRow(1);
@@ -161,7 +162,7 @@ export async function createPdf(rows: ExportLeadRow[], selectedStatuses: string[
     const values = [
       row.id, `${row.firstName} ${row.lastName}`, row.email, row.phone,
       LEAD_STATUS_LABELS[row.status], INTEREST_LABELS[row.interestLevel],
-      row.assignedStaff ?? "Unassigned", [row.city, row.stateProvince].filter(Boolean).join(", "),
+      row.assignedStaff ?? "Unassigned", [row.city, row.stateCode || row.stateProvince].filter(Boolean).join(", "),
       row.nextFollowUpAt ? new Date(row.nextFollowUpAt).toISOString().slice(0, 10) : "—",
       row.createdAt.toISOString().slice(0, 10),
     ];

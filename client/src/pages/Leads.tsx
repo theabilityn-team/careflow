@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getFollowUpTiming } from "@/lib/contactTracking";
-import { INTEREST_OPTIONS, STATUS_OPTIONS, formatDate, initials } from "@/lib/crm";
+import { DIAGNOSIS_CATEGORY_OPTIONS, INTEREST_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS, diagnosisCategoryLabel, formatDate, initials, stateLabel } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
 import { ChevronLeft, ChevronRight, Files, Flame, Mail, Phone, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
@@ -38,6 +38,9 @@ export default function Leads() {
   const [assigned, setAssigned] = useState("all");
   const [followUp, setFollowUp] = useState("all");
   const [contact, setContact] = useState("all");
+  const [stateCode, setStateCode] = useState("all");
+  const [diagnosisCategory, setDiagnosisCategory] = useState("all");
+  const [groupId, setGroupId] = useState(() => new URLSearchParams(window.location.search).get("group") ?? "all");
   const [createdFrom, setCreatedFrom] = useState("");
   const [createdTo, setCreatedTo] = useState("");
   const [sort, setSort] = useState<(typeof sortOptions)[number][0]>("updated_desc");
@@ -46,6 +49,7 @@ export default function Leads() {
   const [showFilters, setShowFilters] = useState(false);
   const { data: access } = trpc.dashboard.access.useQuery();
   const { data: assignees = [] } = trpc.leads.assignees.useQuery();
+  const { data: groups = [] } = trpc.groups.list.useQuery();
 
   const queryInput = useMemo(() => ({
     search: deferredSearch || undefined,
@@ -54,19 +58,22 @@ export default function Leads() {
     assignedTo: assigned === "all" ? undefined : assigned === "unassigned" ? "unassigned" as const : Number(assigned),
     followUpState: followUp === "all" ? undefined : followUp as "overdue" | "upcoming" | "none",
     contactState: contact === "all" ? undefined : contact as "contacted" | "not_contacted",
+    stateCode: stateCode === "all" ? undefined : stateCode as "FL" | "AZ" | "NV" | "CA",
+    diagnosisCategory: diagnosisCategory === "all" ? undefined : diagnosisCategory as "oncology" | "hematology",
+    groupId: groupId === "all" ? undefined : Number(groupId),
     createdFrom: createdFrom ? new Date(`${createdFrom}T00:00:00`).getTime() : undefined,
     createdTo: createdTo ? new Date(`${createdTo}T23:59:59.999`).getTime() : undefined,
     sort,
     page,
     pageSize,
-  }), [deferredSearch, status, interest, assigned, followUp, contact, createdFrom, createdTo, sort, page, pageSize]);
+  }), [deferredSearch, status, interest, assigned, followUp, contact, stateCode, diagnosisCategory, groupId, createdFrom, createdTo, sort, page, pageSize]);
   const { data, isLoading, error, isFetching } = trpc.leads.list.useQuery(queryInput, { placeholderData: previous => previous });
 
-  const activeFilterCount = [status !== "all", interest !== "all", assigned !== "all", followUp !== "all", contact !== "all", Boolean(createdFrom), Boolean(createdTo)].filter(Boolean).length;
+  const activeFilterCount = [status !== "all", interest !== "all", assigned !== "all", followUp !== "all", contact !== "all", stateCode !== "all", diagnosisCategory !== "all", groupId !== "all", Boolean(createdFrom), Boolean(createdTo)].filter(Boolean).length;
   const hasAnyFilter = Boolean(search) || activeFilterCount > 0;
   const setFilter = (setter: (value: string) => void) => (value: string) => { setter(value); setPage(1); };
   function resetFilters() {
-    setSearch(""); setStatus("all"); setInterest("all"); setAssigned("all"); setFollowUp("all"); setContact("all"); setCreatedFrom(""); setCreatedTo(""); setSort("updated_desc"); setPage(1);
+    setSearch(""); setStatus("all"); setInterest("all"); setAssigned("all"); setFollowUp("all"); setContact("all"); setStateCode("all"); setDiagnosisCategory("all"); setGroupId("all"); setCreatedFrom(""); setCreatedTo(""); setSort("updated_desc"); setPage(1);
   }
 
   const items = data?.items ?? [];
@@ -95,7 +102,10 @@ export default function Leads() {
             {hasAnyFilter && <Button variant="ghost" className="h-11 text-slate-500" onClick={resetFilters}><X className="mr-2 h-4 w-4" />Clear</Button>}
           </div>
 
-          {showFilters && <div className="mt-4 grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          {showFilters && <div className="mt-4 grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+            <div className="space-y-2"><Label>State</Label><Select value={stateCode} onValueChange={setFilter(setStateCode)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All states</SelectItem>{STATE_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Diagnosis group</Label><Select value={diagnosisCategory} onValueChange={setFilter(setDiagnosisCategory)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All diagnosis groups</SelectItem>{DIAGNOSIS_CATEGORY_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Lead group</Label><Select value={groupId} onValueChange={setFilter(setGroupId)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All accessible groups</SelectItem>{groups.map(group => <SelectItem key={group.id} value={String(group.id)}>{group.name}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Interest</Label><Select value={interest} onValueChange={setFilter(setInterest)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All interest levels</SelectItem>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Assigned staff</Label><Select value={assigned} onValueChange={setFilter(setAssigned)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All assignees</SelectItem><SelectItem value="unassigned">Unassigned</SelectItem>{assignees.map(member => <SelectItem key={member.id} value={String(member.id)}>{member.name || member.email || `Staff #${member.id}`}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Follow-up</Label><Select value={followUp} onValueChange={setFilter(setFollowUp)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Any follow-up</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="upcoming">Upcoming</SelectItem><SelectItem value="none">No reminder</SelectItem></SelectContent></Select></div>
@@ -110,11 +120,13 @@ export default function Leads() {
 
         {isLoading ? <div className="p-6"><PageLoading /></div> : error ? <div className="m-6 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error.message}</div> : !items.length ? <div className="p-6"><EmptyState title="No matching leads" description={hasAnyFilter ? "Clear or adjust filters to widen the result set." : "Add a reviewed lead from images or use Bulk image import."} action={hasAnyFilter ? <Button variant="outline" onClick={resetFilters}>Clear all filters</Button> : access?.permissions.scanDocuments && access.permissions.viewClinical ? <Button onClick={() => navigate("/bulk-import")} variant="outline">Bulk image import</Button> : undefined} /></div> : <div className="overflow-x-auto">
           <Table>
-            <TableHeader><TableRow className="border-slate-100 hover:bg-transparent"><TableHead className="pl-6">Lead</TableHead><TableHead>Status</TableHead><TableHead>Interest</TableHead><TableHead>Contact — click to copy</TableHead><TableHead>Follow-up reminder</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
+            <TableHeader><TableRow className="border-slate-100 hover:bg-transparent"><TableHead className="pl-6">Lead</TableHead><TableHead>State</TableHead><TableHead>Diagnosis group</TableHead><TableHead>Status</TableHead><TableHead>Interest</TableHead><TableHead>Contact — click to copy</TableHead><TableHead>Follow-up reminder</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
             <TableBody>{items.map(lead => {
               const timing = getFollowUpTiming(lead.nextFollowUpAt);
               return <TableRow key={lead.id} onClick={() => navigate(`/leads/${lead.id}`)} className="cursor-pointer border-slate-100">
                 <TableCell className="py-4 pl-6"><div className="flex items-center gap-3"><Avatar className="h-10 w-10"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{initials(lead.firstName, lead.lastName)}</AvatarFallback></Avatar><div><p className="font-semibold text-slate-900">{lead.firstName} {lead.lastName}</p><p className="text-xs text-slate-400">Added {formatDate(lead.createdAt)}</p></div></div></TableCell>
+                <TableCell><Badge className="bg-indigo-50 text-indigo-700 hover:bg-indigo-50">{stateLabel(lead.stateCode)}</Badge></TableCell>
+                <TableCell><Badge className="bg-rose-50 text-rose-700 hover:bg-rose-50">{diagnosisCategoryLabel(lead.diagnosisCategory)}</Badge></TableCell>
                 <TableCell><StatusPill value={lead.status} /></TableCell>
                 <TableCell><span className={`inline-flex items-center gap-1.5 text-sm font-medium ${lead.interestLevel === "hot" ? "text-amber-700" : "text-slate-600"}`}>{lead.interestLevel === "hot" && <Flame className="h-3.5 w-3.5" />}{INTEREST_OPTIONS.find(([value]) => value === lead.interestLevel)?.[1]}</span></TableCell>
                 <TableCell><div className="min-w-52 space-y-1">{lead.email && <div className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="min-w-0 flex-1 truncate text-sm text-slate-700">{lead.email}</span><CopyContactButton value={lead.email} label="email" compact /></div>}{lead.phone && <div className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="min-w-0 flex-1 truncate text-sm text-slate-700">{lead.phone}</span><CopyContactButton value={lead.phone} label="phone" compact /></div>}{!lead.email && !lead.phone && <span className="text-sm text-slate-400">No contact details</span>}</div></TableCell>

@@ -43,6 +43,7 @@ export async function getUserAccess(user: User) {
     return {
       role: "super_admin" as const,
       jobTitle: "Super Administrator",
+      preferredLanguage: "en" as const,
       isActive: true,
       permissions: ALL_PERMISSIONS,
     };
@@ -52,6 +53,7 @@ export async function getUserAccess(user: User) {
   return {
     role: "technical_staff" as const,
     jobTitle: record?.jobTitle ?? "Technical Staff",
+    preferredLanguage: record?.preferredLanguage ?? "en",
     isActive: record?.isActive ?? false,
     permissions: record ? normalizePermissions(JSON.parse(record.permissions)) : normalizePermissions({}),
   };

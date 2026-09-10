@@ -4,18 +4,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { STATUS_DESCRIPTIONS, STATUS_OPTIONS } from "@/lib/crm";
-import { ArrowRight, CheckCircle2, ClipboardCheck, Download, Files, FileSearch, History, KeyRound, MessageSquarePlus, ScanLine, ShieldCheck, UserCog } from "lucide-react";
+import { ArrowRight, BellRing, CheckCircle2, ClipboardCheck, Download, Files, FileSearch, FolderKanban, History, KeyRound, MessageSquarePlus, ScanLine, ShieldCheck, UserCog } from "lucide-react";
 import { useLocation } from "wouter";
 
 const flows = [
   {
     number: "01", icon: ScanLine, title: "Add a lead from document images", action: "Open Add lead", path: "/scan",
-    steps: ["Upload up to six images for one person.", "AI extracts visible personal and clinical information into a draft.", "Authorized staff reviews and corrects every field.", "Choose the initial Status and Interest level explicitly.", "Confirm creation. Duplicate protection runs before the record is saved."],
-    result: "One lead is created, all source images are attached, and the initial reviewed state is written to the Audit trail.",
+    steps: ["Upload up to six images for one person.", "AI extracts visible personal and clinical information into a draft.", "Authorized staff reviews and corrects every field.", "Manually select Oncology or Hematology, and Florida, Arizona, Nevada, or California.", "Choose the initial Status and Interest level, then confirm. Duplicate protection runs before saving."],
+    result: "One lead owned by its creator is created, all source images are attached, and the complete reviewed state is written to the Audit trail.",
   },
   {
     number: "02", icon: Files, title: "Bulk import multiple leads from images", action: "Open Bulk image import", path: "/bulk-import",
-    steps: ["Create one lead group for each person.", "Attach one to six images belonging to that person; never mix people inside one group.", "Process all groups. CareFlow extracts each group separately and sequentially.", "Review every field and explicitly approve each lead.", "Select Check duplicates and import. Unique approved groups are created; existing and in-batch duplicates are blocked."],
+    steps: ["Create one image group for each person.", "Attach one to six images belonging to that person; never mix people inside one image group.", "Process all image groups. CareFlow extracts each person separately.", "Review every field and select a diagnosis group and state for each lead.", "Approve and import. Unique leads are created; existing and in-batch duplicates are blocked."],
     result: "Multiple reviewed leads are created from one operation, with every source image attached to the correct person and a separate audit trail for each lead.",
   },
   {
@@ -43,12 +43,22 @@ const flows = [
     steps: ["Select Forgot password on the staff sign-in screen and submit the staff email.", "The Super Admin reviews the request under Staff & access → Password resets.", "The Super Admin generates and privately shares a one-time reset link.", "The staff member opens the link, creates a new password, and is signed in automatically.", "The link expires after one hour and cannot be reused."],
     result: "Passwords are never sent or displayed. Existing staff sessions are revoked when the reset is completed.",
   },
+  {
+    number: "08", icon: FolderKanban, title: "Organize and share lead access", action: "Open Lead groups", path: "/groups",
+    steps: ["A staff member creates a private lead group.", "From an accessible lead, use Groups & sharing to add it to a group you manage.", "The group owner may share the entire group with another active staff member.", "The lead creator may also share one lead directly without sharing a group.", "Open Lead groups to review group membership and current access."],
+    result: "Staff see only leads they created, leads assigned to them, directly shared leads, or leads inside a shared group. Super Admin can see and manage everything.",
+  },
+  {
+    number: "09", icon: BellRing, title: "Receive the two-hour follow-up reminder", action: "Open Follow-ups", path: "/follow-ups",
+    steps: ["Set a Scheduled follow-up from Log contact or Edit lead.", "CareFlow selects the assigned staff member as recipient; if unassigned, it uses the lead creator.", "Two hours before the appointment, an unread in-app notification appears in Follow-ups.", "When email delivery is configured, CareFlow sends one message to that staff member and one to the lead when the lead has an email.", "Staff choose English or Spanish reminder language from their account menu."],
+    result: "Reminder time, in-app read state, staff delivery, and lead delivery are tracked independently and safely retried without duplicate email sends.",
+  },
 ];
 
 export default function SystemGuide() {
   const [, navigate] = useLocation();
   return <div className="mx-auto max-w-[1380px]">
-    <PageHeader eyebrow="CareFlow operating model" title="System guide" description="A single source of truth for how leads enter the system, move through statuses, receive follow-ups, and stay protected from duplicates." />
+    <PageHeader eyebrow="CareFlow operating model" title="System guide" description="A single source of truth for lead ownership, image intake, classifications, sharing, statuses, and follow-up reminders." />
 
     <div className="mb-8 grid gap-4 md:grid-cols-3">
       <Card className="rounded-2xl border-0 bg-slate-950 text-white"><CardContent className="p-6"><ShieldCheck className="h-5 w-5 text-teal-300" /><p className="mt-5 font-semibold">Rule 1 — Human confirmation</p><p className="mt-2 text-sm leading-6 text-slate-400">AI extraction creates only a draft. A lead record exists only after an authorized person reviews and confirms it.</p></CardContent></Card>
@@ -61,7 +71,7 @@ export default function SystemGuide() {
     <Card className="mt-8 rounded-2xl border-0 bg-white shadow-sm"><CardHeader><CardTitle>Lead status dictionary</CardTitle><p className="text-sm leading-6 text-slate-500">Status answers one question: <strong>What business stage is this lead in now?</strong> It does not represent the follow-up reminder date.</p></CardHeader><CardContent><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{STATUS_OPTIONS.map(([value, label]) => <div key={value} className="rounded-xl border border-slate-100 p-4"><div className="flex items-center justify-between gap-3"><StatusPill value={value} /><Badge variant="outline" className="font-mono text-[10px] text-slate-400">{value}</Badge></div><p className="mt-3 text-sm leading-6 text-slate-600">{STATUS_DESCRIPTIONS[value]}</p></div>)}</div></CardContent></Card>
 
     <div className="mt-8 grid gap-6 lg:grid-cols-2">
-      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardHeader><div className="flex items-center gap-2"><UserCog className="h-5 w-5 text-teal-700" /><CardTitle>People and permissions</CardTitle></div></CardHeader><CardContent className="space-y-4 text-sm leading-6 text-slate-600"><p><strong className="text-slate-900">Super Administrator:</strong> creates staff invitations, activates accounts, assigns each permission, reviews password reset requests, and can rotate the private administrator password from the account menu.</p><p><strong className="text-slate-900">Technical staff:</strong> sees only actions granted to that account. Export, clinical data, adding leads from images, status changes, and contact logging are independently controlled.</p><p><strong className="text-slate-900">Local login:</strong> staff signs in with email and password; Super Admin uses the private Super Admin login. Password reset links are one-time and expire after one hour.</p></CardContent></Card>
+      <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardHeader><div className="flex items-center gap-2"><UserCog className="h-5 w-5 text-teal-700" /><CardTitle>People and permissions</CardTitle></div></CardHeader><CardContent className="space-y-4 text-sm leading-6 text-slate-600"><p><strong className="text-slate-900">Super Administrator:</strong> creates staff invitations, activates accounts, assigns each permission, reviews password reset requests, and can rotate the private administrator password from the account menu.</p><p><strong className="text-slate-900">Technical staff:</strong> sees only leads created by that staff member, assigned to them, shared directly, or included in a shared group. Feature permissions still control export, clinical data, image intake, status changes, and contact logging.</p><p><strong className="text-slate-900">Local login:</strong> staff signs in with email and password; Super Admin uses the private Super Admin login. Password reset links are one-time and expire after one hour.</p></CardContent></Card>
       <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardHeader><div className="flex items-center gap-2"><Download className="h-5 w-5 text-teal-700" /><CardTitle>Audit and export</CardTitle></div></CardHeader><CardContent className="space-y-4 text-sm leading-6 text-slate-600"><p><strong className="text-slate-900">Audit trail:</strong> records the actor, time, source, and before/after values for every lead state change.</p><p><strong className="text-slate-900">Export:</strong> filters by one or more statuses and creates CSV, Excel, or PDF with basic lead information only.</p><p><strong className="text-slate-900">Privacy:</strong> clinical fields and source documents are excluded from exports and hidden from staff without clinical access.</p></CardContent></Card>
     </div>
 

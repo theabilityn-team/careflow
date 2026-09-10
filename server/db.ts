@@ -5,14 +5,20 @@ import {
   authSessions,
   auditEvents,
   communications,
+  followUpReminders,
   InsertLead,
   InsertUser,
   Lead,
   leadDocuments,
+  leadGroupMembers,
+  leadGroups,
+  leadGroupShares,
   leadIdentityKeys,
+  leadShares,
   leads,
   localCredentials,
   passwordResetRequests,
+  scheduledJobs,
   staffInvites,
   staffPermissions,
   systemAdminCredentials,
@@ -293,6 +299,7 @@ export async function listStaff() {
       lastSignedIn: users.lastSignedIn,
       jobTitle: staffPermissions.jobTitle,
       isActive: staffPermissions.isActive,
+      preferredLanguage: staffPermissions.preferredLanguage,
       permissions: staffPermissions.permissions,
     })
     .from(users)
@@ -307,11 +314,17 @@ export async function upsertStaffPermissions(input: {
   jobTitle: string;
   isActive: boolean;
   permissions: string;
+  preferredLanguage?: "en" | "es";
 }) {
   const db = await requireDb();
   await db.insert(staffPermissions).values(input).onDuplicateKeyUpdate({
-    set: { jobTitle: input.jobTitle, isActive: input.isActive, permissions: input.permissions },
+    set: { jobTitle: input.jobTitle, isActive: input.isActive, permissions: input.permissions, ...(input.preferredLanguage ? { preferredLanguage: input.preferredLanguage } : {}) },
   });
+}
+
+export async function updateStaffPreferredLanguage(userId: number, preferredLanguage: "en" | "es") {
+  const db = await requireDb();
+  await db.update(staffPermissions).set({ preferredLanguage }).where(eq(staffPermissions.userId, userId));
 }
 
 export async function createStaffInvite(input: typeof staffInvites.$inferInsert) {
@@ -496,6 +509,9 @@ export type LeadListInput = {
   assignedTo?: number | "unassigned";
   followUpState?: "overdue" | "upcoming" | "none";
   contactState?: "contacted" | "not_contacted";
+  stateCode?: "FL" | "AZ" | "NV" | "CA";
+  diagnosisCategory?: "oncology" | "hematology";
+  groupId?: number;
   createdFrom?: number;
   createdTo?: number;
   sort?: "updated_desc" | "created_desc" | "name_asc" | "name_desc" | "follow_up_asc";
@@ -503,9 +519,49 @@ export type LeadListInput = {
   pageSize: number;
 };
 
-export async function listLeads(input: LeadListInput) {
+function leadVisibilityCondition(userId: number, isSuperAdmin: boolean) {
+  if (isSuperAdmin) return undefined;
+  return sql<boolean>`(
+    ${leads.createdBy} = ${userId}
+    OR ${leads.assignedTo} = ${userId}
+    OR EXISTS (
+      SELECT 1 FROM ${leadShares}
+      WHERE ${leadShares.leadId} = ${leads.id}
+        AND ${leadShares.sharedWithUserId} = ${userId}
+    )
+    OR EXISTS (
+      SELECT 1 FROM ${leadGroupMembers}
+      INNER JOIN ${leadGroups} ON ${leadGroups.id} = ${leadGroupMembers.groupId}
+      WHERE ${leadGroupMembers.leadId} = ${leads.id}
+        AND ${leadGroups.ownerId} = ${userId}
+    )
+    OR EXISTS (
+      SELECT 1 FROM ${leadGroupMembers}
+      INNER JOIN ${leadGroupShares} ON ${leadGroupShares.groupId} = ${leadGroupMembers.groupId}
+      WHERE ${leadGroupMembers.leadId} = ${leads.id}
+        AND ${leadGroupShares.sharedWithUserId} = ${userId}
+    )
+  )`;
+}
+
+export async function canAccessLead(leadId: number, userId: number, isSuperAdmin: boolean) {
+  const db = await requireDb();
+  const visibility = leadVisibilityCondition(userId, isSuperAdmin);
+  const result = await db.select({ id: leads.id }).from(leads).where(and(eq(leads.id, leadId), visibility)).limit(1);
+  return Boolean(result[0]);
+}
+
+export async function canManageLeadSharing(leadId: number, userId: number, isSuperAdmin: boolean) {
+  const db = await requireDb();
+  if (isSuperAdmin) return Boolean((await db.select({ id: leads.id }).from(leads).where(eq(leads.id, leadId)).limit(1))[0]);
+  return Boolean((await db.select({ id: leads.id }).from(leads).where(and(eq(leads.id, leadId), eq(leads.createdBy, userId))).limit(1))[0]);
+}
+
+export async function listLeads(input: LeadListInput, viewer: { userId: number; isSuperAdmin: boolean }) {
   const db = await requireDb();
   const filters = [];
+  const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
+  if (visibility) filters.push(visibility);
   if (input.search) {
     const term = `%${input.search}%`;
     filters.push(or(like(leads.firstName, term), like(leads.lastName, term), like(leads.email, term), like(leads.phone, term), like(leads.address, term), like(leads.city, term))!);
@@ -520,6 +576,13 @@ export async function listLeads(input: LeadListInput) {
   if (input.followUpState === "none") filters.push(isNull(leads.nextFollowUpAt));
   if (input.contactState === "contacted") filters.push(isNotNull(leads.lastContactAt));
   if (input.contactState === "not_contacted") filters.push(isNull(leads.lastContactAt));
+  if (input.stateCode) filters.push(eq(leads.stateCode, input.stateCode));
+  if (input.diagnosisCategory) filters.push(eq(leads.diagnosisCategory, input.diagnosisCategory));
+  if (input.groupId) filters.push(sql<boolean>`EXISTS (
+    SELECT 1 FROM ${leadGroupMembers}
+    WHERE ${leadGroupMembers.groupId} = ${input.groupId}
+      AND ${leadGroupMembers.leadId} = ${leads.id}
+  )`);
   if (input.createdFrom) filters.push(gte(leads.createdAt, new Date(input.createdFrom)));
   if (input.createdTo) filters.push(lte(leads.createdAt, new Date(input.createdTo)));
 
@@ -535,17 +598,20 @@ export async function listLeads(input: LeadListInput) {
   return { items, total: pagination.total, page: pagination.page, pageSize: pagination.pageSize, totalPages: pagination.totalPages };
 }
 
-export async function getLeadStatusCounts() {
+export async function getLeadStatusCounts(viewer: { userId: number; isSuperAdmin: boolean }) {
   const db = await requireDb();
+  const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
   return db
     .select({ status: leads.status, count: sql<number>`count(*)` })
     .from(leads)
+    .where(visibility)
     .groupBy(leads.status)
     .orderBy(asc(leads.status));
 }
 
-export async function getLeadExportRows(statuses: Array<typeof leads.status.enumValues[number]>) {
+export async function getLeadExportRows(statuses: Array<typeof leads.status.enumValues[number]>, viewer: { userId: number; isSuperAdmin: boolean }) {
   const db = await requireDb();
+  const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
   const [rows, staff] = await Promise.all([
     db.select({
       id: leads.id,
@@ -555,6 +621,7 @@ export async function getLeadExportRows(statuses: Array<typeof leads.status.enum
       phone: leads.phone,
       address: leads.address,
       city: leads.city,
+      stateCode: leads.stateCode,
       stateProvince: leads.stateProvince,
       postalCode: leads.postalCode,
       country: leads.country,
@@ -566,7 +633,7 @@ export async function getLeadExportRows(statuses: Array<typeof leads.status.enum
       updatedAt: leads.updatedAt,
     })
       .from(leads)
-      .where(inArray(leads.status, statuses))
+      .where(and(inArray(leads.status, statuses), visibility))
       .orderBy(asc(leads.status), asc(leads.lastName), asc(leads.firstName))
       .limit(5000),
     db.select({ id: users.id, name: users.name, email: users.email }).from(users),
@@ -589,9 +656,105 @@ export async function listAssignableStaff() {
     .orderBy(asc(users.name));
 }
 
-export async function getLead(leadId: number) {
+export async function listLeadGroups(viewer: { userId: number; isSuperAdmin: boolean }) {
   const db = await requireDb();
-  const lead = (await db.select().from(leads).where(eq(leads.id, leadId)).limit(1))[0];
+  const visibility = viewer.isSuperAdmin ? undefined : or(
+    eq(leadGroups.ownerId, viewer.userId),
+    sql<boolean>`EXISTS (
+      SELECT 1 FROM ${leadGroupShares}
+      WHERE ${leadGroupShares.groupId} = ${leadGroups.id}
+        AND ${leadGroupShares.sharedWithUserId} = ${viewer.userId}
+    )`,
+  );
+  return db.select({
+    id: leadGroups.id,
+    name: leadGroups.name,
+    description: leadGroups.description,
+    ownerId: leadGroups.ownerId,
+    ownerName: users.name,
+    canManage: viewer.isSuperAdmin ? sql<boolean>`true` : sql<boolean>`${leadGroups.ownerId} = ${viewer.userId}`,
+    createdAt: leadGroups.createdAt,
+    updatedAt: leadGroups.updatedAt,
+    memberCount: sql<number>`(SELECT count(*) FROM ${leadGroupMembers} WHERE ${leadGroupMembers.groupId} = ${leadGroups.id})`,
+    shareCount: sql<number>`(SELECT count(*) FROM ${leadGroupShares} WHERE ${leadGroupShares.groupId} = ${leadGroups.id})`,
+  }).from(leadGroups).leftJoin(users, eq(users.id, leadGroups.ownerId)).where(visibility).orderBy(desc(leadGroups.updatedAt));
+}
+
+export async function getLeadGroup(groupId: number, viewer: { userId: number; isSuperAdmin: boolean }) {
+  const db = await requireDb();
+  const visibility = viewer.isSuperAdmin ? undefined : or(
+    eq(leadGroups.ownerId, viewer.userId),
+    sql<boolean>`EXISTS (SELECT 1 FROM ${leadGroupShares} WHERE ${leadGroupShares.groupId} = ${leadGroups.id} AND ${leadGroupShares.sharedWithUserId} = ${viewer.userId})`,
+  );
+  const group = (await db.select({ group: leadGroups, ownerName: users.name }).from(leadGroups).leftJoin(users, eq(users.id, leadGroups.ownerId)).where(and(eq(leadGroups.id, groupId), visibility)).limit(1))[0];
+  if (!group) return null;
+  const [members, shares] = await Promise.all([
+    db.select({ lead: leads, addedAt: leadGroupMembers.createdAt }).from(leadGroupMembers).innerJoin(leads, eq(leads.id, leadGroupMembers.leadId)).where(eq(leadGroupMembers.groupId, groupId)).orderBy(desc(leadGroupMembers.createdAt)),
+    db.select({ id: leadGroupShares.id, userId: users.id, name: users.name, email: users.email }).from(leadGroupShares).innerJoin(users, eq(users.id, leadGroupShares.sharedWithUserId)).where(eq(leadGroupShares.groupId, groupId)).orderBy(asc(users.name)),
+  ]);
+  return { ...group, members, shares };
+}
+
+export async function createLeadGroup(input: { name: string; description?: string | null; ownerId: number }) {
+  const db = await requireDb();
+  const result = await db.insert(leadGroups).values(input);
+  return Number(result[0].insertId);
+}
+
+export async function updateLeadGroup(groupId: number, values: { name?: string; description?: string | null }) {
+  const db = await requireDb();
+  await db.update(leadGroups).set(values).where(eq(leadGroups.id, groupId));
+}
+
+export async function canManageLeadGroup(groupId: number, userId: number, isSuperAdmin: boolean) {
+  const db = await requireDb();
+  const condition = isSuperAdmin ? eq(leadGroups.id, groupId) : and(eq(leadGroups.id, groupId), eq(leadGroups.ownerId, userId));
+  return Boolean((await db.select({ id: leadGroups.id }).from(leadGroups).where(condition).limit(1))[0]);
+}
+
+export async function addLeadToGroup(input: { groupId: number; leadId: number; addedBy: number }) {
+  const db = await requireDb();
+  await db.insert(leadGroupMembers).values(input).onDuplicateKeyUpdate({ set: { addedBy: input.addedBy } });
+}
+
+export async function removeLeadFromGroup(groupId: number, leadId: number) {
+  const db = await requireDb();
+  await db.delete(leadGroupMembers).where(and(eq(leadGroupMembers.groupId, groupId), eq(leadGroupMembers.leadId, leadId)));
+}
+
+export async function shareLead(input: { leadId: number; sharedWithUserId: number; sharedByUserId: number }) {
+  const db = await requireDb();
+  await db.insert(leadShares).values(input).onDuplicateKeyUpdate({ set: { sharedByUserId: input.sharedByUserId } });
+}
+
+export async function unshareLead(leadId: number, sharedWithUserId: number) {
+  const db = await requireDb();
+  await db.delete(leadShares).where(and(eq(leadShares.leadId, leadId), eq(leadShares.sharedWithUserId, sharedWithUserId)));
+}
+
+export async function shareLeadGroup(input: { groupId: number; sharedWithUserId: number; sharedByUserId: number }) {
+  const db = await requireDb();
+  await db.insert(leadGroupShares).values(input).onDuplicateKeyUpdate({ set: { sharedByUserId: input.sharedByUserId } });
+}
+
+export async function unshareLeadGroup(groupId: number, sharedWithUserId: number) {
+  const db = await requireDb();
+  await db.delete(leadGroupShares).where(and(eq(leadGroupShares.groupId, groupId), eq(leadGroupShares.sharedWithUserId, sharedWithUserId)));
+}
+
+export async function listLeadSharing(leadId: number) {
+  const db = await requireDb();
+  const [shares, groups] = await Promise.all([
+    db.select({ id: leadShares.id, userId: users.id, name: users.name, email: users.email }).from(leadShares).innerJoin(users, eq(users.id, leadShares.sharedWithUserId)).where(eq(leadShares.leadId, leadId)).orderBy(asc(users.name)),
+    db.select({ id: leadGroups.id, name: leadGroups.name, ownerId: leadGroups.ownerId }).from(leadGroupMembers).innerJoin(leadGroups, eq(leadGroups.id, leadGroupMembers.groupId)).where(eq(leadGroupMembers.leadId, leadId)).orderBy(asc(leadGroups.name)),
+  ]);
+  return { shares, groups };
+}
+
+export async function getLead(leadId: number, viewer?: { userId: number; isSuperAdmin: boolean }) {
+  const db = await requireDb();
+  const visibility = viewer ? leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin) : undefined;
+  const lead = (await db.select().from(leads).where(and(eq(leads.id, leadId), visibility)).limit(1))[0];
   if (!lead) return null;
   const [documents, contactHistory, auditHistory] = await Promise.all([
     db.select().from(leadDocuments).where(eq(leadDocuments.leadId, leadId)).orderBy(desc(leadDocuments.createdAt)),
@@ -666,6 +829,100 @@ async function replaceLeadIdentityKeys(tx: any, leadId: number, input: Partial<I
   if (keys.length) await tx.insert(leadIdentityKeys).values(keys.map(key => ({ leadId, ...key })));
 }
 
+async function syncFollowUpReminder(tx: any, lead: Lead) {
+  await tx.delete(followUpReminders).where(and(eq(followUpReminders.leadId, lead.id), isNull(followUpReminders.staffSentAt), isNull(followUpReminders.leadSentAt)));
+  if (!lead.nextFollowUpAt) return;
+  const recipientUserId = lead.assignedTo ?? (lead.createdBy > 0 ? lead.createdBy : SYSTEM_ADMIN_ACTOR_ID);
+  await tx.insert(followUpReminders).values({
+    leadId: lead.id,
+    recipientUserId,
+    scheduledFor: lead.nextFollowUpAt,
+    remindAt: lead.nextFollowUpAt - 2 * 60 * 60 * 1000,
+    staffEmailStatus: recipientUserId > 0 ? "pending" : "skipped",
+    leadEmailStatus: lead.email ? "pending" : "skipped",
+  }).onDuplicateKeyUpdate({ set: { remindAt: lead.nextFollowUpAt - 2 * 60 * 60 * 1000 } });
+}
+
+export async function backfillFollowUpReminders() {
+  const db = await requireDb();
+  const rows = await db.select().from(leads).where(isNotNull(leads.nextFollowUpAt));
+  for (const lead of rows) await db.transaction(tx => syncFollowUpReminder(tx, lead));
+}
+
+export async function listFollowUpNotifications(viewer: { userId: number; isSuperAdmin: boolean }) {
+  const db = await requireDb();
+  const visibility = viewer.isSuperAdmin ? undefined : eq(followUpReminders.recipientUserId, viewer.userId);
+  return db.select({
+    id: followUpReminders.id,
+    leadId: leads.id,
+    firstName: leads.firstName,
+    lastName: leads.lastName,
+    stateCode: leads.stateCode,
+    diagnosisCategory: leads.diagnosisCategory,
+    scheduledFor: followUpReminders.scheduledFor,
+    remindAt: followUpReminders.remindAt,
+    readAt: followUpReminders.readAt,
+    staffEmailStatus: followUpReminders.staffEmailStatus,
+    leadEmailStatus: followUpReminders.leadEmailStatus,
+  }).from(followUpReminders).innerJoin(leads, eq(leads.id, followUpReminders.leadId)).where(and(visibility, eq(followUpReminders.scheduledFor, leads.nextFollowUpAt))).orderBy(asc(followUpReminders.scheduledFor)).limit(200);
+}
+
+export async function markFollowUpReminderRead(id: number, viewer: { userId: number; isSuperAdmin: boolean }) {
+  const db = await requireDb();
+  const ownership = viewer.isSuperAdmin ? eq(followUpReminders.id, id) : and(eq(followUpReminders.id, id), eq(followUpReminders.recipientUserId, viewer.userId));
+  await db.update(followUpReminders).set({ readAt: Date.now() }).where(ownership);
+}
+
+export async function getScheduledJobByTaskUid(taskUid: string) {
+  const db = await requireDb();
+  return (await db.select().from(scheduledJobs).where(eq(scheduledJobs.taskUid, taskUid)).limit(1))[0];
+}
+
+export async function getScheduledJobByKey(jobKey: string) {
+  const db = await requireDb();
+  return (await db.select().from(scheduledJobs).where(eq(scheduledJobs.jobKey, jobKey)).limit(1))[0];
+}
+
+export async function saveScheduledJob(jobKey: string, taskUid: string) {
+  const db = await requireDb();
+  await db.insert(scheduledJobs).values({ jobKey, taskUid }).onDuplicateKeyUpdate({ set: { taskUid } });
+}
+
+export async function getDueFollowUpReminderDeliveries(now: number) {
+  const db = await requireDb();
+  return db.select({
+    id: followUpReminders.id,
+    leadId: leads.id,
+    firstName: leads.firstName,
+    lastName: leads.lastName,
+    leadEmail: leads.email,
+    stateCode: leads.stateCode,
+    scheduledFor: followUpReminders.scheduledFor,
+    recipientUserId: followUpReminders.recipientUserId,
+    staffName: users.name,
+    staffEmail: users.email,
+    preferredLanguage: staffPermissions.preferredLanguage,
+    staffEmailStatus: followUpReminders.staffEmailStatus,
+    leadEmailStatus: followUpReminders.leadEmailStatus,
+    attempts: followUpReminders.attempts,
+  }).from(followUpReminders)
+    .innerJoin(leads, eq(leads.id, followUpReminders.leadId))
+    .leftJoin(users, eq(users.id, followUpReminders.recipientUserId))
+    .leftJoin(staffPermissions, eq(staffPermissions.userId, users.id))
+    .where(and(
+      lte(followUpReminders.remindAt, now),
+      gte(followUpReminders.scheduledFor, now - 24 * 60 * 60 * 1000),
+      eq(followUpReminders.scheduledFor, leads.nextFollowUpAt),
+      lt(followUpReminders.attempts, 3),
+      or(eq(followUpReminders.staffEmailStatus, "pending"), eq(followUpReminders.staffEmailStatus, "failed"), eq(followUpReminders.leadEmailStatus, "pending"), eq(followUpReminders.leadEmailStatus, "failed")),
+    )).limit(100);
+}
+
+export async function updateFollowUpDelivery(id: number, values: Partial<typeof followUpReminders.$inferInsert>) {
+  const db = await requireDb();
+  await db.update(followUpReminders).set(values).where(eq(followUpReminders.id, id));
+}
+
 export async function backfillLeadIdentityKeys() {
   const db = await requireDb();
   const existingKeyCount = await db.select({ count: sql<number>`count(*)` }).from(leadIdentityKeys);
@@ -703,6 +960,7 @@ export async function createLeadWithAudit(input: InsertLead, audit: { actorId: n
       snapshotAfter: serializeAudit(leadSnapshot(created)),
       occurredAt: Date.now(),
     });
+    if (created.nextFollowUpAt) await syncFollowUpReminder(tx, created);
     return leadId;
   });
 }
@@ -737,6 +995,7 @@ export async function updateLeadWithAudit(
       snapshotAfter: serializeAudit(leadSnapshot(after)),
       occurredAt: Date.now(),
     });
+    if (changes.some(change => change.field === "nextFollowUpAt" || change.field === "assignedTo" || change.field === "email")) await syncFollowUpReminder(tx, after);
     return { lead: after, changes };
   });
 }
@@ -766,6 +1025,7 @@ export async function addCommunicationWithAudit(input: typeof communications.$in
       snapshotAfter: serializeAudit(leadSnapshot(after)),
       occurredAt: Date.now(),
     });
+    if (input.nextFollowUpAt !== undefined) await syncFollowUpReminder(tx, after);
     return after;
   });
 }
@@ -775,17 +1035,18 @@ export async function addAuditEvent(input: typeof auditEvents.$inferInsert) {
   await db.insert(auditEvents).values(input);
 }
 
-export async function getDashboardSummary() {
+export async function getDashboardSummary(viewer: { userId: number; isSuperAdmin: boolean }) {
   const db = await requireDb();
   const now = Date.now();
+  const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
   const [totals, followUps, recent] = await Promise.all([
     db.select({
       total: sql<number>`count(*)`,
       hot: sql<number>`sum(case when ${leads.interestLevel} = 'hot' then 1 else 0 end)`,
       buyers: sql<number>`sum(case when ${leads.status} = 'buyer' then 1 else 0 end)`,
-    }).from(leads),
-    db.select({ count: sql<number>`count(*)` }).from(leads).where(and(sql`${leads.nextFollowUpAt} is not null`, sql`${leads.nextFollowUpAt} <= ${now + 7 * 24 * 60 * 60 * 1000}`)),
-    db.select().from(leads).orderBy(desc(leads.updatedAt)).limit(6),
+    }).from(leads).where(visibility),
+    db.select({ count: sql<number>`count(*)` }).from(leads).where(and(visibility, sql`${leads.nextFollowUpAt} is not null`, sql`${leads.nextFollowUpAt} <= ${now + 7 * 24 * 60 * 60 * 1000}`)),
+    db.select().from(leads).where(visibility).orderBy(desc(leads.updatedAt)).limit(6),
   ]);
   return {
     total: Number(totals[0]?.total ?? 0),
@@ -796,7 +1057,8 @@ export async function getDashboardSummary() {
   };
 }
 
-export async function getUpcomingFollowUps() {
+export async function getUpcomingFollowUps(viewer: { userId: number; isSuperAdmin: boolean }) {
   const db = await requireDb();
-  return db.select().from(leads).where(sql`${leads.nextFollowUpAt} is not null`).orderBy(asc(leads.nextFollowUpAt)).limit(50);
+  const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
+  return db.select().from(leads).where(and(visibility, sql`${leads.nextFollowUpAt} is not null`)).orderBy(asc(leads.nextFollowUpAt)).limit(100);
 }

@@ -50,6 +50,20 @@
       "when": 1789039323447,
       "tag": "0006_narrow_jackal",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1789042250688,
+      "tag": "0007_chief_stardust",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1789042991033,
+      "tag": "0008_perfect_leech",
+      "breakpoints": true
     }
   ]
 }

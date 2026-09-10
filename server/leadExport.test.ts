@@ -10,6 +10,7 @@ const row: ExportLeadRow = {
   phone: "+1 555 0100",
   address: "10 Main Street",
   city: "Miami",
+  stateCode: "FL",
   stateProvince: "Florida",
   postalCode: "33101",
   country: "United States",
@@ -42,8 +43,8 @@ describe("lead exports", () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
     const leads = workbook.getWorksheet("Leads");
-    expect(leads?.getCell("K1").value).toBe("Status");
-    expect(leads?.getCell("K2").value).toBe("Follow-up required");
+    expect(leads?.getCell("L1").value).toBe("Status");
+    expect(leads?.getCell("L2").value).toBe("Follow-up required");
     expect(workbook.getWorksheet("Export Summary")?.getCell("B3").value).toBe(1);
   });
 

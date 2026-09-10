@@ -15,6 +15,8 @@ const statusEnum = z.enum([
   "not_interested", "unable_to_reach", "archived",
 ]);
 const interestEnum = z.enum(["unknown", "cold", "warm", "hot"]);
+const stateCodeEnum = z.enum(["FL", "AZ", "NV", "CA"]);
+const diagnosisCategoryEnum = z.enum(["oncology", "hematology"]);
 const nullableText = z.string().max(20_000).optional().nullable();
 const leadFields = z.object({
   firstName: z.string().trim().min(1).max(120),
@@ -28,6 +30,8 @@ const leadFields = z.object({
   postalCode: z.string().max(40).optional().nullable(),
   country: z.string().max(120).optional().nullable(),
   diagnosis: nullableText,
+  diagnosisCategory: diagnosisCategoryEnum,
+  stateCode: stateCodeEnum,
   clinicalNotes: nullableText,
   additionalInformation: nullableText,
   status: statusEnum.default("new"),
@@ -46,7 +50,7 @@ function hideClinical<T extends { diagnosis: string | null; clinicalNotes: strin
 }
 
 function throwDuplicate(error: unknown): never {
-  if (isLeadDuplicateError(error)) throw new TRPCError({ code: "CONFLICT", message: `Duplicate lead detected. Review existing Lead #${error.leadId}.` });
+  if (isLeadDuplicateError(error)) throw new TRPCError({ code: "CONFLICT", message: "Duplicate lead detected. The matching record may belong to another staff member; contact the Super Admin if you cannot access it." });
   if (isDuplicateKeyError(error)) throw new TRPCError({ code: "CONFLICT", message: "Duplicate lead detected by email, phone, or profile identity." });
   throw error;
 }
@@ -60,6 +64,9 @@ export const leadsRouter = router({
       assignedTo: z.union([z.number().int().positive(), z.literal("unassigned")]).optional(),
       followUpState: z.enum(["overdue", "upcoming", "none"]).optional(),
       contactState: z.enum(["contacted", "not_contacted"]).optional(),
+      stateCode: stateCodeEnum.optional(),
+      diagnosisCategory: diagnosisCategoryEnum.optional(),
+      groupId: z.number().int().positive().optional(),
       createdFrom: z.number().int().positive().optional(),
       createdTo: z.number().int().positive().optional(),
       sort: z.enum(["updated_desc", "created_desc", "name_asc", "name_desc", "follow_up_asc"]).default("updated_desc"),
@@ -68,21 +75,21 @@ export const leadsRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "viewLeads");
-      const result = await db.listLeads(input);
+      const result = await db.listLeads(input, { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
       return access.permissions.viewClinical ? result : { ...result, items: result.items.map(hideClinical) };
     }),
 
   exportSummary: protectedProcedure.query(async ({ ctx }) => {
-    await assertPermission(ctx.user, "exportData");
-    const counts = await db.getLeadStatusCounts();
+    const access = await assertPermission(ctx.user, "exportData");
+    const counts = await db.getLeadStatusCounts({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
     return { total: counts.reduce((sum, item) => sum + Number(item.count), 0), counts: Object.fromEntries(counts.map(item => [item.status, Number(item.count)])), limit: 5000 };
   }),
 
   export: protectedProcedure
     .input(z.object({ statuses: z.array(statusEnum).min(1).max(14), format: z.enum(["csv", "xlsx", "pdf"]) }))
     .mutation(async ({ ctx, input }) => {
-      await assertPermission(ctx.user, "exportData");
-      const rows = await db.getLeadExportRows(input.statuses);
+      const access = await assertPermission(ctx.user, "exportData");
+      const rows = await db.getLeadExportRows(input.statuses, { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
       if (!rows.length) throw new TRPCError({ code: "NOT_FOUND", message: "No leads match the selected statuses." });
       const file = await createLeadExport(input.format, rows, input.statuses);
       const timestamp = new Date().toISOString().replaceAll(":", "-").replace(".000Z", "Z");
@@ -92,7 +99,7 @@ export const leadsRouter = router({
 
   get: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
-    const result = await db.getLead(input.id);
+    const result = await db.getLead(input.id, { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
     if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     const auditEvents = prepareAuditEvents(result.auditEvents, access.permissions.viewClinical);
     return access.permissions.viewClinical ? { ...result, auditEvents } : { ...result, lead: hideClinical(result.lead), documents: [], auditEvents };
@@ -115,7 +122,10 @@ export const leadsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertPermission(ctx.user, "createLeads");
-      return { duplicate: await db.findDuplicateLead(input) };
+      const duplicate = await db.findDuplicateLead(input);
+      if (!duplicate) return { duplicate: null };
+      const access = await db.canAccessLead(duplicate.leadId, ctx.user.id, ctx.user.role === "admin");
+      return { duplicate: access ? duplicate : { leadId: 0, firstName: "Existing", lastName: "lead", matchedBy: duplicate.matchedBy } };
     }),
 
   bulkDuplicateCheck: protectedProcedure
@@ -129,9 +139,13 @@ export const leadsRouter = router({
       postalCode: z.string().max(40).optional().nullable(),
     })).min(1).max(MAX_BULK_LEADS) }))
     .mutation(async ({ ctx, input }) => {
-      await assertPermission(ctx.user, "createLeads");
+      const access = await assertPermission(ctx.user, "createLeads");
       const existing = await db.findExistingLeadIdentityMatches(input.leads);
-      return analyzeBulkLeadDuplicates(input.leads, existing);
+      const analyzed = analyzeBulkLeadDuplicates(input.leads, existing);
+      return Promise.all(analyzed.map(async result => {
+        if (!result.existing || await db.canAccessLead(result.existing.leadId, ctx.user.id, access.role === "super_admin")) return result;
+        return { ...result, existing: { leadId: 0, firstName: "Existing", lastName: "lead", matchedBy: result.existing.matchedBy } };
+      }));
     }),
 
   create: protectedProcedure
@@ -166,6 +180,8 @@ export const leadsRouter = router({
   update: protectedProcedure
     .input(z.object({ id: z.number().int().positive(), lead: leadFields.partial() }))
     .mutation(async ({ ctx, input }) => {
+      const viewAccess = await assertPermission(ctx.user, "viewLeads");
+      if (!await db.canAccessLead(input.id, ctx.user.id, viewAccess.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
       const nonStatusFields = Object.keys(input.lead).filter(key => key !== "status");
       if (nonStatusFields.length > 0) await assertPermission(ctx.user, "editLeads");
       if (input.lead.status) await assertPermission(ctx.user, "changeStatus");
@@ -195,7 +211,8 @@ export const leadsRouter = router({
       nextFollowUpAt: z.number().int().positive().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await assertPermission(ctx.user, "manageContacts");
+      const access = await assertPermission(ctx.user, "manageContacts");
+      if (!await db.canAccessLead(input.leadId, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
       const result = await db.addCommunicationWithAudit({ ...input, createdBy: ctx.user.id });
       if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
       return { success: true };

@@ -85,3 +85,16 @@ The hidden `/?super-login=1` form now shows the fixed, read-only Super Admin ema
 The default English staff login now includes a clear **Forgot password?** action beneath the password field. Its dialog explains the security model before any submission: the staff member enters the login email, the Super Admin reviews the request, and a one-time reset link is privately provided. The dialog fits cleanly within the existing desktop login card and keeps the normal sign-in form visible in context. No reset request or test data was created during browser visual inspection.
 
 The public reset-password page was also verified with an invalid token. It reveals no account information, clearly explains that the link is invalid, expired, or already used, and provides a direct return to CareFlow. End-to-end API verification used a temporary staff account to test request creation, Super Admin link preparation, reset inspection, password replacement, automatic staff sign-in, old-password rejection, and one-time token reuse prevention. The same run changed and verified the Super Admin password, then restored the original configured password. All temporary users, sessions, and reset requests were deleted, and a database check confirmed zero QA records remain.
+
+
+## Ownership, Groups, Classification, and Follow-up Reminder QA
+
+The authenticated application was verified across **Lead groups**, **Leads**, an existing lead profile, **Bulk image import**, **Follow-ups**, and **System guide**. Lead profiles now show the operational state and diagnosis group immediately beneath the header, while the full Edit lead dialog includes required selectors for both fields. The Leads table includes prominent State and Diagnosis group columns, plus server-side filters for state, diagnosis group, and accessible lead group.
+
+A database integration test created two isolated temporary staff identities and leads, then verified owner-only visibility, direct lead sharing, shared-group visibility, and unrestricted Super Admin visibility. Its temporary groups, shares, leads, audit artifacts, and users were removed after the assertions passed.
+
+The Lead groups workspace is empty-state safe and clearly distinguishes owned and shared groups. The Groups & sharing dialog on a lead was opened and closed without changing production data. It provides current group membership, owner-manageable group selection, and direct staff access controls.
+
+Follow-ups now acts as the staff-specific reminder center. Upcoming and overdue records are scoped to leads the current user may access. Two hours before the scheduled time, an unread in-app notification is displayed and counted in the sidebar. Reminder outbox rows are synchronized when a follow-up, assignee, or email changes. Bilingual English/Spanish email copy, state-based US time zones, three-attempt delivery tracking, and idempotency keys are covered by unit tests. The Super Admin sees a clear setup warning until an email sender and the scheduled processor are activated.
+
+Existing legacy leads were intentionally not assigned an inferred state or diagnosis group. They visibly show **State not set** and **Diagnosis group not set** until an authorized person confirms those classifications; all newly created single and bulk image leads require explicit selections.
