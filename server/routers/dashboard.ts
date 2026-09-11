@@ -30,6 +30,25 @@ export const dashboardRouter = router({
           additionalInformation: null,
         }));
   }),
+  followUpCalendar: protectedProcedure
+    .input(z.object({ from: z.number().int().nonnegative(), to: z.number().int().positive() }).refine(value => value.to >= value.from && value.to - value.from <= 370 * 24 * 60 * 60 * 1000, "Select a valid calendar range up to 370 days."))
+    .query(async ({ ctx, input }) => {
+      const access = await assertPermission(ctx.user, "viewLeads");
+      return db.getFollowUpCalendar({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" }, input);
+    }),
+  followUpArchive: protectedProcedure
+    .input(z.object({
+      search: z.string().trim().max(120).optional(),
+      method: z.enum(["phone", "email", "sms", "in_person", "other"]).optional(),
+      completedFrom: z.number().int().nonnegative().optional(),
+      completedTo: z.number().int().positive().optional(),
+      page: z.number().int().positive().default(1),
+      pageSize: z.number().int().min(10).max(100).default(20),
+    }))
+    .query(async ({ ctx, input }) => {
+      const access = await assertPermission(ctx.user, "viewLeads");
+      return db.getCompletedFollowUps({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" }, input);
+    }),
   notifications: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
     return db.listFollowUpNotifications({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });

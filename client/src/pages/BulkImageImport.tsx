@@ -146,7 +146,7 @@ export default function BulkImageImport() {
             firstName: lead.firstName, lastName: lead.lastName, email: lead.email || null, phone: lead.phone || null,
             dateOfBirth: lead.dateOfBirth || null, address: lead.address || null, city: lead.city || null,
             stateProvince: lead.stateProvince || null, postalCode: lead.postalCode || null, country: lead.country || null,
-            diagnosis: lead.diagnosis || null, diagnosisCategory: group.diagnosisCategory as "oncology" | "hematology", stateCode: group.stateCode as "FL" | "AZ" | "NV" | "CA", clinicalNotes: lead.clinicalNotes || null,
+            diagnosis: lead.diagnosis || null, diagnosisCategory: group.diagnosisCategory as "oncology" | "hematology", stateCode: group.stateCode as "FL" | "AZ" | "NV" | "CA" | "OR", clinicalNotes: lead.clinicalNotes || null,
             sourceDocumentType: lead.documentCategory as "referral_order" | "referral_form" | "regular",
             additionalInformation: JSON.stringify(buildReferralAdditionalInformation({ documentCategory: lead.documentCategory, sex: lead.sex, medicalRecordNumber: lead.medicalRecordNumber, referral: lead.referral, additionalInformation: lead.additionalInformation })) || null,
             status: group.status as any, interestLevel: group.interestLevel as any, assignedTo: null,

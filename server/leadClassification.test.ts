@@ -8,6 +8,7 @@ describe("supported lead state inference", () => {
     ["Arizona", "AZ"],
     ["NV", "NV"],
     ["California", "CA"],
+    ["Oregon", "OR"],
   ])("maps %s to %s", (stateProvince, expected) => {
     expect(inferSupportedStateCode({ stateProvince })).toBe(expected);
   });
@@ -20,6 +21,7 @@ describe("supported lead state inference", () => {
   it("uses supported ZIP ranges when the state text is missing", () => {
     expect(inferSupportedStateCode({ postalCode: "90210" })).toBe("CA");
     expect(inferSupportedStateCode({ postalCode: "85001" })).toBe("AZ");
+    expect(inferSupportedStateCode({ postalCode: "97201" })).toBe("OR");
   });
 
   it("does not guess unsupported or ambiguous states", () => {

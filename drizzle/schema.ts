@@ -258,6 +258,22 @@ export const communications = mysqlTable("communications", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const completedFollowUps = mysqlTable("completed_follow_ups", {
+  id: int("id").autoincrement().primaryKey(),
+  leadId: int("leadId").notNull(),
+  communicationId: int("communicationId").notNull(),
+  completedBy: int("completedBy").notNull(),
+  scheduledFor: bigint("scheduledFor", { mode: "number" }).notNull(),
+  completedAt: bigint("completedAt", { mode: "number" }).notNull(),
+  method: mysqlEnum("method", ["phone", "email", "sms", "in_person", "other"]).notNull(),
+  outcome: varchar("outcome", { length: 160 }).notNull(),
+  notes: text("notes"),
+  nextFollowUpAt: bigint("nextFollowUpAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  uniqueCommunication: uniqueIndex("completed_follow_ups_communicationId_unique").on(table.communicationId),
+}));
+
 export const auditEvents = mysqlTable("audit_events", {
   id: int("id").autoincrement().primaryKey(),
   leadId: int("leadId"),

@@ -3,6 +3,7 @@ export const SUPPORTED_US_STATES = [
   ["AZ", "Arizona"],
   ["NV", "Nevada"],
   ["CA", "California"],
+  ["OR", "Oregon"],
 ] as const;
 
 export type SupportedStateCode = (typeof SUPPORTED_US_STATES)[number][0];
@@ -20,6 +21,7 @@ const STATE_ALIASES: Record<SupportedStateCode, string[]> = {
   AZ: ["AZ", "ARIZONA"],
   NV: ["NV", "NEVADA"],
   CA: ["CA", "CALIFORNIA"],
+  OR: ["OR", "OREGON"],
 };
 
 function normalized(value?: string | null) {
@@ -48,6 +50,7 @@ function stateFromZip(postalCode?: string | null): SupportedStateCode | null {
   if (zip >= 85000 && zip <= 86599) return "AZ";
   if (zip >= 88900 && zip <= 89899) return "NV";
   if (zip >= 90000 && zip <= 96199) return "CA";
+  if (zip >= 97000 && zip <= 97999) return "OR";
   return null;
 }
 

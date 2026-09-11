@@ -71,6 +71,13 @@
       "when": 1789057744739,
       "tag": "0009_blue_jamie_braddock",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1789115919376,
+      "tag": "0010_bent_shooting_star",
+      "breakpoints": true
     }
   ]
 }

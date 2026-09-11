@@ -96,7 +96,7 @@ export default function Scanner() {
           firstName: result.firstName, lastName: result.lastName, email: result.email || null,
           phone: result.phone || null, dateOfBirth: result.dateOfBirth || null, address: result.address || null,
           city: result.city || null, stateProvince: result.stateProvince || null, postalCode: result.postalCode || null,
-          country: result.country || null, diagnosis: result.diagnosis || null, diagnosisCategory: diagnosisCategory as "oncology" | "hematology", stateCode: stateCode as "FL" | "AZ" | "NV" | "CA", clinicalNotes: result.clinicalNotes || null,
+          country: result.country || null, diagnosis: result.diagnosis || null, diagnosisCategory: diagnosisCategory as "oncology" | "hematology", stateCode: stateCode as "FL" | "AZ" | "NV" | "CA" | "OR", clinicalNotes: result.clinicalNotes || null,
           sourceDocumentType: result.documentCategory as "referral_order" | "referral_form" | "regular",
           additionalInformation: JSON.stringify(buildReferralAdditionalInformation({ documentCategory: result.documentCategory, sex: result.sex, medicalRecordNumber: result.medicalRecordNumber, referral: result.referral, additionalInformation: result.additionalInformation })) || null,
           status: status as any, interestLevel: interestLevel as any, assignedTo: null,

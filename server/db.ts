@@ -7,6 +7,7 @@ import {
   authSessions,
   auditEvents,
   communications,
+  completedFollowUps,
   followUpReminders,
   InsertLead,
   InsertUser,
@@ -511,7 +512,7 @@ export type LeadListInput = {
   assignedTo?: number | "unassigned";
   followUpState?: "overdue" | "upcoming" | "none";
   contactState?: "contacted" | "not_contacted";
-  stateCode?: "FL" | "AZ" | "NV" | "CA";
+  stateCode?: "FL" | "AZ" | "NV" | "CA" | "OR";
   diagnosisCategory?: "oncology" | "hematology";
   groupId?: number;
   createdFrom?: number;
@@ -1068,22 +1069,37 @@ export async function addLeadDocument(input: typeof leadDocuments.$inferInsert) 
   await db.insert(leadDocuments).values(input);
 }
 
-export async function addCommunicationWithAudit(input: typeof communications.$inferInsert & { clearFollowUp?: boolean }) {
+export async function addCommunicationWithAudit(input: typeof communications.$inferInsert & { clearFollowUp?: boolean; completeFollowUp?: boolean }) {
   const db = await requireDb();
   return db.transaction(async tx => {
-    const { clearFollowUp, ...communication } = input;
+    const { clearFollowUp, completeFollowUp, ...communication } = input;
     const before = (await tx.select().from(leads).where(eq(leads.id, input.leadId)).limit(1).for("update"))[0];
     if (!before) return null;
+    if (completeFollowUp && !before.nextFollowUpAt) throw Object.assign(new Error("No active follow-up exists for this lead."), { code: "FOLLOW_UP_NOT_ACTIVE" });
     const leadUpdate = communicationLeadUpdate({ contactedAt: input.contactedAt, nextFollowUpAt: input.nextFollowUpAt, clearFollowUp });
     const after = { ...before, ...leadUpdate } as Lead;
-    await tx.insert(communications).values(communication);
+    const communicationResult = await tx.insert(communications).values(communication);
+    const communicationId = Number(communicationResult[0].insertId);
     await tx.update(leads).set(leadUpdate).where(eq(leads.id, input.leadId));
+    if (completeFollowUp) {
+      await tx.insert(completedFollowUps).values({
+        leadId: input.leadId,
+        communicationId,
+        completedBy: input.createdBy,
+        scheduledFor: before.nextFollowUpAt!,
+        completedAt: input.contactedAt,
+        method: input.method,
+        outcome: input.outcome,
+        notes: input.notes,
+        nextFollowUpAt: input.nextFollowUpAt ?? null,
+      });
+    }
     await tx.insert(auditEvents).values({
       leadId: input.leadId,
       actorId: input.createdBy,
-      action: "communication.logged",
-      source: "communication",
-      detail: `${input.method}: ${input.outcome}`,
+      action: completeFollowUp ? "follow_up.completed" : "communication.logged",
+      source: completeFollowUp ? "follow_up" : "communication",
+      detail: completeFollowUp ? `${input.method}: ${input.outcome}${input.nextFollowUpAt ? " · next follow-up scheduled" : " · reminder closed"}` : `${input.method}: ${input.outcome}`,
       changes: serializeAudit(leadChanges(before, after)),
       snapshotBefore: serializeAudit(leadSnapshot(before)),
       snapshotAfter: serializeAudit(leadSnapshot(after)),
@@ -1125,4 +1141,86 @@ export async function getUpcomingFollowUps(viewer: { userId: number; isSuperAdmi
   const db = await requireDb();
   const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
   return db.select().from(leads).where(and(visibility, sql`${leads.nextFollowUpAt} is not null`)).orderBy(asc(leads.nextFollowUpAt)).limit(100);
+}
+
+export async function getFollowUpCalendar(
+  viewer: { userId: number; isSuperAdmin: boolean },
+  range: { from: number; to: number },
+) {
+  const db = await requireDb();
+  const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
+  return db.select({
+    id: leads.id,
+    firstName: leads.firstName,
+    lastName: leads.lastName,
+    nextFollowUpAt: leads.nextFollowUpAt,
+    stateCode: leads.stateCode,
+    diagnosisCategory: leads.diagnosisCategory,
+    status: leads.status,
+    interestLevel: leads.interestLevel,
+  }).from(leads)
+    .where(and(visibility, gte(leads.nextFollowUpAt, range.from), lte(leads.nextFollowUpAt, range.to)))
+    .orderBy(asc(leads.nextFollowUpAt))
+    .limit(500);
+}
+
+export type FollowUpArchiveInput = {
+  search?: string;
+  method?: "phone" | "email" | "sms" | "in_person" | "other";
+  completedFrom?: number;
+  completedTo?: number;
+  page: number;
+  pageSize: number;
+};
+
+export async function getCompletedFollowUps(
+  viewer: { userId: number; isSuperAdmin: boolean },
+  input: FollowUpArchiveInput,
+) {
+  const db = await requireDb();
+  const filters = [];
+  const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
+  if (visibility) filters.push(visibility);
+  if (input.search) {
+    const term = `%${input.search}%`;
+    filters.push(or(
+      like(leads.firstName, term),
+      like(leads.lastName, term),
+      like(completedFollowUps.outcome, term),
+      like(completedFollowUps.notes, term),
+    )!);
+  }
+  if (input.method) filters.push(eq(completedFollowUps.method, input.method));
+  if (input.completedFrom) filters.push(gte(completedFollowUps.completedAt, input.completedFrom));
+  if (input.completedTo) filters.push(lte(completedFollowUps.completedAt, input.completedTo));
+  const condition = filters.length ? and(...filters) : undefined;
+  const countRows = await db.select({ total: sql<number>`count(*)` })
+    .from(completedFollowUps)
+    .innerJoin(leads, eq(leads.id, completedFollowUps.leadId))
+    .where(condition);
+  const pagination = normalizeLeadPagination(Number(countRows[0]?.total ?? 0), input.page, input.pageSize);
+  const items = await db.select({
+    id: completedFollowUps.id,
+    leadId: completedFollowUps.leadId,
+    firstName: leads.firstName,
+    lastName: leads.lastName,
+    stateCode: leads.stateCode,
+    diagnosisCategory: leads.diagnosisCategory,
+    status: leads.status,
+    scheduledFor: completedFollowUps.scheduledFor,
+    completedAt: completedFollowUps.completedAt,
+    method: completedFollowUps.method,
+    outcome: completedFollowUps.outcome,
+    notes: completedFollowUps.notes,
+    nextFollowUpAt: completedFollowUps.nextFollowUpAt,
+    completedBy: completedFollowUps.completedBy,
+    completedByName: users.name,
+  }).from(completedFollowUps)
+    .innerJoin(leads, eq(leads.id, completedFollowUps.leadId))
+    .leftJoin(users, eq(users.id, completedFollowUps.completedBy))
+    .where(condition)
+    .orderBy(desc(completedFollowUps.completedAt), desc(completedFollowUps.id))
+    .limit(pagination.pageSize)
+    .offset(pagination.offset);
+  return { items, ...pagination };
 }

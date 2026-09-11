@@ -1,7 +1,7 @@
 import * as db from "./db";
 
 type Delivery = Awaited<ReturnType<typeof db.getDueFollowUpReminderDeliveries>>[number];
-const stateTimeZones: Record<string, string> = { FL: "America/New_York", AZ: "America/Phoenix", NV: "America/Los_Angeles", CA: "America/Los_Angeles" };
+const stateTimeZones: Record<string, string> = { FL: "America/New_York", AZ: "America/Phoenix", NV: "America/Los_Angeles", CA: "America/Los_Angeles", OR: "America/Los_Angeles" };
 const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]!);
 
 function formattedTime(delivery: Delivery, language: "en" | "es") {

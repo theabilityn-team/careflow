@@ -49,9 +49,9 @@ const flows = [
     result: "Staff see only leads they created, leads assigned to them, directly shared leads, or leads inside a shared group. Super Admin can see and manage everything.",
   },
   {
-    number: "09", icon: BellRing, title: "Receive the two-hour follow-up reminder", action: "Open Follow-ups", path: "/follow-ups",
-    steps: ["Set a Scheduled follow-up from Log contact or Edit lead.", "CareFlow selects the assigned staff member as recipient; if unassigned, it uses the lead creator.", "Two hours before the appointment, an unread in-app notification appears in Follow-ups.", "When email delivery is configured, CareFlow sends one message to that staff member and one to the lead when the lead has an email.", "Staff choose English or Spanish reminder language from their account menu."],
-    result: "Reminder time, in-app read state, staff delivery, and lead delivery are tracked independently and safely retried without duplicate email sends.",
+    number: "09", icon: BellRing, title: "Plan, complete, and archive follow-ups", action: "Open Follow-ups", path: "/follow-ups",
+    steps: ["Set a Scheduled follow-up from Log contact or Edit lead.", "Use Queue for overdue and upcoming work, or Calendar to select a day and review its schedule.", "Two hours before the appointment, an unread in-app notification appears; configured email delivery also alerts the staff member and the lead when an email is available.", "After the call, email, or meeting, select Complete and record the method, outcome, notes, and optional next reminder.", "Use Archive to search and filter completed follow-ups while preserving the original scheduled time, completion time, staff actor, result, and reschedule decision."],
+    result: "Active reminders remain actionable and every completed follow-up becomes a permanent, permission-scoped history record without changing Business Status or Interest Signal.",
   },
   {
     number: "10", icon: FileHeart, title: "Review a medical referral document", action: "Open Add lead", path: "/scan",
@@ -63,7 +63,7 @@ const flows = [
 export default function SystemGuide() {
   const [, navigate] = useLocation();
   return <div className="mx-auto max-w-[1380px]">
-    <PageHeader eyebrow="CareFlow operating model" title="System guide" description="A single source of truth for lead ownership, image intake, classifications, sharing, statuses, and follow-up reminders." />
+    <PageHeader eyebrow="CareFlow operating model" title="System guide" description="A single source of truth for lead ownership, image intake, five supported states including Oregon, classifications, sharing, statuses, follow-up calendars, and archives." />
 
     <div className="mb-8 grid gap-4 md:grid-cols-3">
       <Card className="rounded-2xl border-0 bg-slate-950 text-white"><CardContent className="p-6"><ShieldCheck className="h-5 w-5 text-teal-300" /><p className="mt-5 font-semibold">Rule 1 — Human confirmation</p><p className="mt-2 text-sm leading-6 text-slate-400">AI extraction creates only a draft. A lead record exists only after an authorized person reviews and confirms it.</p></CardContent></Card>

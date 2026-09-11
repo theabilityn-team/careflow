@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { createCsv, createExcel, createLeadExport, createPdf, type ExportLeadRow } from "./leadExport";
+import { createCsv, createExcel, createLeadExport, createPdf, exportRowValues, type ExportLeadRow } from "./leadExport";
 
 const row: ExportLeadRow = {
   id: 42,
@@ -36,6 +36,12 @@ describe("lead exports", () => {
   it("neutralizes spreadsheet formulas in CSV cells", () => {
     const csv = createCsv([{ ...row, email: "=HYPERLINK(\"https://example.com\")" }]).toString("utf8");
     expect(csv).toContain("'=HYPERLINK");
+  });
+
+  it("includes Oregon in the shared row values used by CSV, Excel, and PDF exports", () => {
+    const oregon = { ...row, city: "Portland", stateCode: "OR", stateProvince: "Oregon", postalCode: "97201" };
+    expect(exportRowValues(oregon)[7]).toBe("OR");
+    expect(createCsv([oregon]).toString("utf8")).toContain('"OR","Oregon","97201"');
   });
 
   it("creates a formatted Excel workbook with a status column and summary", async () => {

@@ -16,7 +16,7 @@ const statusEnum = z.enum([
   "not_interested", "unable_to_reach", "archived",
 ]);
 const interestEnum = z.enum(["unknown", "cold", "warm", "hot"]);
-const stateCodeEnum = z.enum(["FL", "AZ", "NV", "CA"]);
+const stateCodeEnum = z.enum(["FL", "AZ", "NV", "CA", "OR"]);
 const diagnosisCategoryEnum = z.enum(["oncology", "hematology"]);
 const documentTypeEnum = z.enum(["referral_order", "referral_form", "regular"]);
 const nullableText = z.string().max(20_000).optional().nullable();
@@ -220,11 +220,18 @@ export const leadsRouter = router({
       contactedAt: z.number().int().positive(),
       nextFollowUpAt: z.number().int().positive().optional().nullable(),
       clearFollowUp: z.boolean().optional(),
+      completeFollowUp: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "manageContacts");
       if (!await db.canAccessLead(input.leadId, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
-      const result = await db.addCommunicationWithAudit({ ...input, createdBy: ctx.user.id });
+      let result;
+      try {
+        result = await db.addCommunicationWithAudit({ ...input, createdBy: ctx.user.id });
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "FOLLOW_UP_NOT_ACTIVE") throw new TRPCError({ code: "CONFLICT", message: error.message });
+        throw error;
+      }
       if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
       return { success: true };
     }),

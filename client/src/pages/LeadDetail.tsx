@@ -137,6 +137,7 @@ const auditActionLabels: Record<string, string> = {
   "lead.interest_changed": "Interest level changed",
   "lead.group_assigned": "Added to lead group",
   "communication.logged": "Communication logged",
+  "follow_up.completed": "Follow-up completed",
 };
 
 function auditValue(field: string, value: unknown, assignees: Array<{ id: number; name: string | null; email: string | null }>) {

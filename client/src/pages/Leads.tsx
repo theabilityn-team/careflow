@@ -58,7 +58,7 @@ export default function Leads() {
     assignedTo: assigned === "all" ? undefined : assigned === "unassigned" ? "unassigned" as const : Number(assigned),
     followUpState: followUp === "all" ? undefined : followUp as "overdue" | "upcoming" | "none",
     contactState: contact === "all" ? undefined : contact as "contacted" | "not_contacted",
-    stateCode: stateCode === "all" ? undefined : stateCode as "FL" | "AZ" | "NV" | "CA",
+    stateCode: stateCode === "all" ? undefined : stateCode as "FL" | "AZ" | "NV" | "CA" | "OR",
     diagnosisCategory: diagnosisCategory === "all" ? undefined : diagnosisCategory as "oncology" | "hematology",
     groupId: groupId === "all" ? undefined : Number(groupId),
     createdFrom: createdFrom ? new Date(`${createdFrom}T00:00:00`).getTime() : undefined,
