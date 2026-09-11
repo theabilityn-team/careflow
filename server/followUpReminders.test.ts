@@ -13,7 +13,7 @@ const delivery = {
   recipientUserId: 3,
   staffName: "Luis",
   staffEmail: "luis@example.com",
-  preferredLanguage: "es" as const,
+  leadPreferredLanguage: "es" as const,
   staffEmailStatus: "pending" as const,
   leadEmailStatus: "pending" as const,
   attempts: 0,
@@ -27,15 +27,16 @@ afterEach(() => {
 });
 
 describe("follow-up reminders", () => {
-  it("creates Spanish copy when staff selects Spanish", () => {
+  it("keeps staff copy in English and creates Spanish copy for a Spanish-speaking lead", () => {
     const copy = buildFollowUpMessages(delivery);
-    expect(copy.staffSubject).toContain("Recordatorio");
+    expect(copy.staffSubject).toContain("Reminder");
     expect(copy.staffText).toContain("Ana Diaz");
     expect(copy.leadSubject).toContain("seguimiento");
+    expect(copy.leadText).toContain("Hola Ana");
   });
 
   it("uses English copy by default", () => {
-    const copy = buildFollowUpMessages({ ...delivery, preferredLanguage: "en" });
+    const copy = buildFollowUpMessages({ ...delivery, leadPreferredLanguage: "en" });
     expect(copy.staffSubject).toContain("Reminder");
     expect(copy.leadText).toContain("scheduled follow-up");
   });

@@ -1,0 +1,1 @@
+ALTER TABLE `leads` ADD `preferredLanguage` enum('en','es') DEFAULT 'en' NOT NULL;

@@ -302,7 +302,6 @@ export async function listStaff() {
       lastSignedIn: users.lastSignedIn,
       jobTitle: staffPermissions.jobTitle,
       isActive: staffPermissions.isActive,
-      preferredLanguage: staffPermissions.preferredLanguage,
       permissions: staffPermissions.permissions,
     })
     .from(users)
@@ -317,17 +316,11 @@ export async function upsertStaffPermissions(input: {
   jobTitle: string;
   isActive: boolean;
   permissions: string;
-  preferredLanguage?: "en" | "es";
 }) {
   const db = await requireDb();
   await db.insert(staffPermissions).values(input).onDuplicateKeyUpdate({
-    set: { jobTitle: input.jobTitle, isActive: input.isActive, permissions: input.permissions, ...(input.preferredLanguage ? { preferredLanguage: input.preferredLanguage } : {}) },
+    set: { jobTitle: input.jobTitle, isActive: input.isActive, permissions: input.permissions },
   });
-}
-
-export async function updateStaffPreferredLanguage(userId: number, preferredLanguage: "en" | "es") {
-  const db = await requireDb();
-  await db.update(staffPermissions).set({ preferredLanguage }).where(eq(staffPermissions.userId, userId));
 }
 
 export async function createStaffInvite(input: typeof staffInvites.$inferInsert) {
@@ -509,6 +502,7 @@ export type LeadListInput = {
   search?: string;
   status?: string;
   interestLevel?: "unknown" | "cold" | "warm" | "hot";
+  preferredLanguage?: "en" | "es";
   assignedTo?: number | "unassigned";
   followUpState?: "overdue" | "upcoming" | "none";
   contactState?: "contacted" | "not_contacted";
@@ -571,6 +565,7 @@ export async function listLeads(input: LeadListInput, viewer: { userId: number; 
   }
   if (input.status && input.status !== "all") filters.push(eq(leads.status, input.status as typeof leads.status.enumValues[number]));
   if (input.interestLevel) filters.push(eq(leads.interestLevel, input.interestLevel));
+  if (input.preferredLanguage) filters.push(eq(leads.preferredLanguage, input.preferredLanguage));
   if (input.assignedTo === "unassigned") filters.push(isNull(leads.assignedTo));
   else if (input.assignedTo) filters.push(eq(leads.assignedTo, input.assignedTo));
   const now = Date.now();
@@ -620,6 +615,7 @@ export async function getLeadExportRows(statuses: Array<typeof leads.status.enum
       id: leads.id,
       firstName: leads.firstName,
       lastName: leads.lastName,
+      preferredLanguage: leads.preferredLanguage,
       email: leads.email,
       phone: leads.phone,
       address: leads.address,
@@ -904,14 +900,13 @@ export async function getDueFollowUpReminderDeliveries(now: number) {
     recipientUserId: followUpReminders.recipientUserId,
     staffName: users.name,
     staffEmail: users.email,
-    preferredLanguage: staffPermissions.preferredLanguage,
+    leadPreferredLanguage: leads.preferredLanguage,
     staffEmailStatus: followUpReminders.staffEmailStatus,
     leadEmailStatus: followUpReminders.leadEmailStatus,
     attempts: followUpReminders.attempts,
   }).from(followUpReminders)
     .innerJoin(leads, eq(leads.id, followUpReminders.leadId))
     .leftJoin(users, eq(users.id, followUpReminders.recipientUserId))
-    .leftJoin(staffPermissions, eq(staffPermissions.userId, users.id))
     .where(and(
       lte(followUpReminders.remindAt, now),
       gte(followUpReminders.scheduledFor, now - 24 * 60 * 60 * 1000),

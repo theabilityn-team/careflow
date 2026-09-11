@@ -69,11 +69,4 @@ export const dashboardRouter = router({
     return { success: true } as const;
   }),
   access: protectedProcedure.query(async ({ ctx }) => getUserAccess(ctx.user)),
-  setPreferredLanguage: protectedProcedure
-    .input(z.object({ preferredLanguage: z.enum(["en", "es"]) }))
-    .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role === "admin") return { success: true } as const;
-      await db.updateStaffPreferredLanguage(ctx.user.id, input.preferredLanguage);
-      return { success: true } as const;
-    }),
 });

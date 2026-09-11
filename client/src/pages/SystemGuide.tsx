@@ -10,12 +10,12 @@ import { useLocation } from "wouter";
 const flows = [
   {
     number: "01", icon: ScanLine, title: "Add a lead from document images", action: "Open Add lead", path: "/scan",
-    steps: ["Upload up to six images for one person, including referral orders and referral forms.", "AI classifies explicit referrals separately and labels every ordinary chart, demographic, clinical, or other non-referral image as Regular.", "Authorized staff reviews and corrects every field.", "First name, last name, and date of birth are required for the mandatory patient duplicate check.", "Confirm state, diagnosis group, initial Status, and Interest level, then save."],
+    steps: ["Upload up to six images for one person, including referral orders and referral forms. Native iPhone HEIC/HEIF photos and originals up to 25 MB are accepted at full resolution.", "JPG, PNG, and WebP images are scanned with their original bytes; HEIC/HEIF is decoded to a full-quality JPEG only because OCR cannot read the Apple container directly.", "AI classifies explicit referrals separately and labels every ordinary chart, demographic, clinical, or other non-referral image as Regular.", "Authorized staff reviews and corrects every field.", "First name, last name, and date of birth are required for the mandatory patient duplicate check.", "Confirm state, diagnosis group, lead language, initial Status, and Interest level, then save."],
     result: "One lead owned by its creator is created, automatically added to that creator's most recently created group when one exists, all source images are attached, and the complete reviewed state is written to the Audit trail.",
   },
   {
     number: "02", icon: Files, title: "Bulk import multiple leads from images", action: "Open Bulk image import", path: "/bulk-import",
-    steps: ["Create one image group for each person.", "Attach one to six images belonging to that person; never mix people inside one image group.", "Process all image groups. CareFlow extracts each person separately.", "Confirm first name, last name, date of birth, document type, diagnosis group, and state for each lead.", "Approve and import. Existing and in-batch name + date-of-birth duplicates are blocked."],
+    steps: ["Create one image group for each person.", "Attach one to six JPG, PNG, WebP, HEIC, or HEIF images belonging to that person; never mix people inside one image group.", "Process all image groups at full OCR quality. CareFlow extracts each person separately.", "Confirm first name, last name, date of birth, document type, diagnosis group, state, and lead language for each lead.", "Approve and import. Existing and in-batch name + date-of-birth duplicates are blocked."],
     result: "Multiple reviewed leads are created from one operation, automatically added to the creator's most recently created group when one exists, with every source image attached to the correct person and a separate audit trail for each lead.",
   },
   {
@@ -50,7 +50,7 @@ const flows = [
   },
   {
     number: "09", icon: BellRing, title: "Plan, complete, and archive follow-ups", action: "Open Follow-ups", path: "/follow-ups",
-    steps: ["Set a Scheduled follow-up from Log contact or Edit lead.", "Use Queue for overdue and upcoming work, or Calendar to select a day and review its schedule.", "Two hours before the appointment, an unread in-app notification appears; configured email delivery also alerts the staff member and the lead when an email is available.", "After the call, email, or meeting, select Complete and record the method, outcome, notes, and optional next reminder.", "Use Archive to search and filter completed follow-ups while preserving the original scheduled time, completion time, staff actor, result, and reschedule decision."],
+    steps: ["Set a Scheduled follow-up from Log contact or Edit lead.", "Select English or Spanish on the lead record; this is the lead's reminder language, not a staff preference.", "Use Queue for overdue and upcoming work, or Calendar to select a day and review its schedule.", "Two hours before the appointment, an unread in-app notification appears. The staff email is always English, while the lead email uses that lead's selected language.", "After the call, email, or meeting, select Complete and record the method, outcome, notes, and optional next reminder.", "Use Archive to search and filter completed follow-ups while preserving the original scheduled time, completion time, staff actor, result, and reschedule decision."],
     result: "Active reminders remain actionable and every completed follow-up becomes a permanent, permission-scoped history record without changing Business Status or Interest Signal.",
   },
   {

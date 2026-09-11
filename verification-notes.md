@@ -149,3 +149,12 @@ The Archive view was verified with a temporary completed record. Search, method 
 **Oregon** is now supported throughout the application. It appears through the shared state catalog used by dropdowns and filters; is accepted by lead APIs; is inferred from `Oregon`, `OR`, and ZIP codes from `97000` through `97999`; is included in scanner instructions; uses the Pacific time zone for reminder messages; and is preserved in the shared row values used by CSV, Excel, and PDF exports. The live regression flow created and removed an Oregon lead successfully, and export regression coverage verifies the `OR` code and `Oregon` source field.
 
 Final validation completed with **68 passing tests across 17 files**, a successful TypeScript check, a successful production build, healthy runtime status, healthy desktop visual verification, and no temporary verification scripts or database records.
+
+
+## Lead Reminder Language and iPhone Photo QA
+
+Reminder language is now a **lead-level setting**. Existing leads default to English. The setting is available during single-image intake, for every bulk image group, in Edit lead, prominently in the lead classification header, in the main Leads table, and as an always-visible Leads filter beside State. Staff accounts no longer expose a reminder-language preference. Staff reminder email copy remains English; only the lead email uses the lead's English or Spanish selection. Live authenticated API verification confirmed Spanish and Oregon filtering, independent language updates, and immutable before/after audit history; all temporary records were removed.
+
+The image intake now accepts JPG, PNG, WebP, HEIC, and HEIF originals up to 25 MB each. JPG, PNG, and WebP bytes are read unchanged for OCR—there is no resize or compression step. HEIC/HEIF is decoded because the vision service cannot consume the Apple container; it is converted to JPEG at quality 1 while preserving source dimensions, with no resize. Per-lead prepared OCR payloads are capped at 32 MB to stay safely below the request limit without silently degrading images. Browser verification successfully converted a real native HEIC fixture to a full-resolution JPEG and accepted a 6.7 MB JPEG with an unchanged 8.93 MB data URL payload. Neither test started OCR nor created a lead, and all temporary fixture files were deleted.
+
+The final TypeScript check, 71 unit tests across 18 files, and production build completed successfully.

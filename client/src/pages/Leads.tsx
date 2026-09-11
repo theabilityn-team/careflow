@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getFollowUpTiming } from "@/lib/contactTracking";
-import { DIAGNOSIS_CATEGORY_OPTIONS, INTEREST_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS, diagnosisCategoryLabel, documentTypeLabel, formatDate, initials, stateLabel } from "@/lib/crm";
+import { DIAGNOSIS_CATEGORY_OPTIONS, INTEREST_OPTIONS, LANGUAGE_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS, diagnosisCategoryLabel, documentTypeLabel, formatDate, initials, languageLabel, stateLabel } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
 import { ChevronLeft, ChevronRight, Files, Flame, Mail, Phone, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
@@ -39,6 +39,7 @@ export default function Leads() {
   const [followUp, setFollowUp] = useState("all");
   const [contact, setContact] = useState("all");
   const [stateCode, setStateCode] = useState("all");
+  const [preferredLanguage, setPreferredLanguage] = useState("all");
   const [diagnosisCategory, setDiagnosisCategory] = useState("all");
   const [groupId, setGroupId] = useState(() => new URLSearchParams(window.location.search).get("group") ?? "all");
   const [createdFrom, setCreatedFrom] = useState("");
@@ -58,6 +59,7 @@ export default function Leads() {
     assignedTo: assigned === "all" ? undefined : assigned === "unassigned" ? "unassigned" as const : Number(assigned),
     followUpState: followUp === "all" ? undefined : followUp as "overdue" | "upcoming" | "none",
     contactState: contact === "all" ? undefined : contact as "contacted" | "not_contacted",
+    preferredLanguage: preferredLanguage === "all" ? undefined : preferredLanguage as "en" | "es",
     stateCode: stateCode === "all" ? undefined : stateCode as "FL" | "AZ" | "NV" | "CA" | "OR",
     diagnosisCategory: diagnosisCategory === "all" ? undefined : diagnosisCategory as "oncology" | "hematology",
     groupId: groupId === "all" ? undefined : Number(groupId),
@@ -66,15 +68,15 @@ export default function Leads() {
     sort,
     page,
     pageSize,
-  }), [deferredSearch, status, interest, assigned, followUp, contact, stateCode, diagnosisCategory, groupId, createdFrom, createdTo, sort, page, pageSize]);
+  }), [deferredSearch, status, interest, assigned, followUp, contact, preferredLanguage, stateCode, diagnosisCategory, groupId, createdFrom, createdTo, sort, page, pageSize]);
   const { data, isLoading, error, isFetching } = trpc.leads.list.useQuery(queryInput, { placeholderData: previous => previous });
 
-  const advancedFilterCount = [assigned !== "all", followUp !== "all", contact !== "all", stateCode !== "all", diagnosisCategory !== "all", groupId !== "all", Boolean(createdFrom), Boolean(createdTo)].filter(Boolean).length;
-  const activeFilterCount = advancedFilterCount + Number(status !== "all") + Number(interest !== "all");
+  const advancedFilterCount = [assigned !== "all", followUp !== "all", contact !== "all", diagnosisCategory !== "all", groupId !== "all", Boolean(createdFrom), Boolean(createdTo)].filter(Boolean).length;
+  const activeFilterCount = advancedFilterCount + Number(status !== "all") + Number(interest !== "all") + Number(stateCode !== "all") + Number(preferredLanguage !== "all");
   const hasAnyFilter = Boolean(search) || activeFilterCount > 0;
   const setFilter = (setter: (value: string) => void) => (value: string) => { setter(value); setPage(1); };
   function resetFilters() {
-    setSearch(""); setStatus("all"); setInterest("all"); setAssigned("all"); setFollowUp("all"); setContact("all"); setStateCode("all"); setDiagnosisCategory("all"); setGroupId("all"); setCreatedFrom(""); setCreatedTo(""); setSort("updated_desc"); setPage(1);
+    setSearch(""); setStatus("all"); setInterest("all"); setAssigned("all"); setFollowUp("all"); setContact("all"); setStateCode("all"); setPreferredLanguage("all"); setDiagnosisCategory("all"); setGroupId("all"); setCreatedFrom(""); setCreatedTo(""); setSort("updated_desc"); setPage(1);
   }
 
   const items = data?.items ?? [];
@@ -100,12 +102,13 @@ export default function Leads() {
             <div className="relative flex-1"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} className="h-11 border-slate-200 pl-10" placeholder="Search name, email, phone, city, or address…" /></div>
             <Select value={status} onValueChange={setFilter(setStatus)}><SelectTrigger className="h-11 w-full lg:w-[190px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{STATUS_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
             <Select value={interest} onValueChange={setFilter(setInterest)}><SelectTrigger className="h-11 w-full lg:w-[180px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All interest levels</SelectItem>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+            <Select value={stateCode} onValueChange={setFilter(setStateCode)}><SelectTrigger className="h-11 w-full lg:w-[165px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All states</SelectItem>{STATE_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+            <Select value={preferredLanguage} onValueChange={setFilter(setPreferredLanguage)}><SelectTrigger className="h-11 w-full lg:w-[165px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All languages</SelectItem>{LANGUAGE_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
             <Button variant="outline" className="h-11 justify-between bg-white lg:min-w-40" onClick={() => setShowFilters(value => !value)}><span className="flex items-center"><SlidersHorizontal className="mr-2 h-4 w-4" />More filters</span>{advancedFilterCount > 0 && <Badge className="ml-3 bg-teal-700 text-white hover:bg-teal-700">{advancedFilterCount}</Badge>}</Button>
             {hasAnyFilter && <Button variant="ghost" className="h-11 text-slate-500" onClick={resetFilters}><X className="mr-2 h-4 w-4" />Clear</Button>}
           </div>
 
           {showFilters && <div className="mt-4 grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-            <div className="space-y-2"><Label>State</Label><Select value={stateCode} onValueChange={setFilter(setStateCode)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All states</SelectItem>{STATE_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Diagnosis group</Label><Select value={diagnosisCategory} onValueChange={setFilter(setDiagnosisCategory)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All diagnosis groups</SelectItem>{DIAGNOSIS_CATEGORY_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Lead group</Label><Select value={groupId} onValueChange={setFilter(setGroupId)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All accessible groups</SelectItem>{groups.map(group => <SelectItem key={group.id} value={String(group.id)}>{group.name}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Assigned staff</Label><Select value={assigned} onValueChange={setFilter(setAssigned)}><SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All assignees</SelectItem><SelectItem value="unassigned">Unassigned</SelectItem>{assignees.map(member => <SelectItem key={member.id} value={String(member.id)}>{member.name || member.email || `Staff #${member.id}`}</SelectItem>)}</SelectContent></Select></div>
@@ -121,12 +124,13 @@ export default function Leads() {
 
         {isLoading ? <div className="p-6"><PageLoading /></div> : error ? <div className="m-6 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error.message}</div> : !items.length ? <div className="p-6"><EmptyState title="No matching leads" description={hasAnyFilter ? "Clear or adjust filters to widen the result set." : "Add a reviewed lead from images or use Bulk image import."} action={hasAnyFilter ? <Button variant="outline" onClick={resetFilters}>Clear all filters</Button> : access?.permissions.scanDocuments && access.permissions.viewClinical ? <Button onClick={() => navigate("/bulk-import")} variant="outline">Bulk image import</Button> : undefined} /></div> : <div className="overflow-x-auto">
           <Table>
-            <TableHeader><TableRow className="border-slate-100 hover:bg-transparent"><TableHead className="pl-6">Lead</TableHead><TableHead>State</TableHead><TableHead>Diagnosis group</TableHead><TableHead>Status</TableHead><TableHead>Interest</TableHead><TableHead>Contact — click to copy</TableHead><TableHead>Follow-up reminder</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
+            <TableHeader><TableRow className="border-slate-100 hover:bg-transparent"><TableHead className="pl-6">Lead</TableHead><TableHead>State</TableHead><TableHead>Language</TableHead><TableHead>Diagnosis group</TableHead><TableHead>Status</TableHead><TableHead>Interest</TableHead><TableHead>Contact — click to copy</TableHead><TableHead>Follow-up reminder</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
             <TableBody>{items.map(lead => {
               const timing = getFollowUpTiming(lead.nextFollowUpAt);
               return <TableRow key={lead.id} onClick={() => navigate(`/leads/${lead.id}`)} className="cursor-pointer border-slate-100">
                 <TableCell className="py-4 pl-6"><div className="flex items-center gap-3"><Avatar className="h-10 w-10"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{initials(lead.firstName, lead.lastName)}</AvatarFallback></Avatar><div><p className="font-semibold text-slate-900">{lead.firstName} {lead.lastName}</p><p className="text-xs text-slate-400">Added {formatDate(lead.createdAt)} · {documentTypeLabel(lead.sourceDocumentType)}</p></div></div></TableCell>
                 <TableCell><Badge className="bg-indigo-50 text-indigo-700 hover:bg-indigo-50">{stateLabel(lead.stateCode)}</Badge></TableCell>
+                <TableCell><Badge variant="outline" className="bg-white">{languageLabel(lead.preferredLanguage)}</Badge></TableCell>
                 <TableCell><Badge className="bg-rose-50 text-rose-700 hover:bg-rose-50">{diagnosisCategoryLabel(lead.diagnosisCategory)}</Badge></TableCell>
                 <TableCell><StatusPill value={lead.status} /></TableCell>
                 <TableCell><span className={`inline-flex items-center gap-1.5 text-sm font-medium ${lead.interestLevel === "hot" ? "text-amber-700" : "text-slate-600"}`}>{lead.interestLevel === "hot" && <Flame className="h-3.5 w-3.5" />}{INTEREST_OPTIONS.find(([value]) => value === lead.interestLevel)?.[1]}</span></TableCell>

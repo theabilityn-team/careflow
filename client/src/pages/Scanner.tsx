@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { DIAGNOSIS_CATEGORY_OPTIONS, INTEREST_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS } from "@/lib/crm";
+import { DIAGNOSIS_CATEGORY_OPTIONS, INTEREST_OPTIONS, LANGUAGE_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS } from "@/lib/crm";
+import { IMAGE_FILE_ACCEPT, isSupportedImageInput, MAX_SCAN_BATCH_BYTES, MAX_SOURCE_IMAGE_BYTES, prepareUploadImage, totalOriginalBytes, type PreparedUploadImage } from "@/lib/imageUpload";
 import { trpc } from "@/lib/trpc";
 import { inferSupportedStateCode } from "@shared/leadClassification";
 import { buildReferralAdditionalInformation, EMPTY_REFERRAL_DATA, isReferralDocument, type ReferralData } from "@shared/referralDocuments";
@@ -18,7 +19,7 @@ import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
-type UploadFile = { name: string; mimeType: "image/jpeg" | "image/png" | "image/webp"; dataUrl: string; size: number };
+type UploadFile = PreparedUploadImage;
 type ExtraField = { section: string; label: string; value: string; confidence: number };
 type Extraction = {
   firstName: string; lastName: string; email: string; phone: string; dateOfBirth: string; sex: string; medicalRecordNumber: string;
@@ -28,13 +29,6 @@ type Extraction = {
 };
 
 const empty: Extraction = { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", sex: "", medicalRecordNumber: "", address: "", city: "", stateProvince: "", stateCode: "", postalCode: "", country: "", diagnosis: "", diagnosisCategory: "", clinicalNotes: "", documentCategory: "regular", referral: EMPTY_REFERRAL_DATA, documentTypes: [], additionalInformation: [], overallConfidence: 0, reviewWarnings: [] };
-
-const readFile = (file: File) => new Promise<UploadFile>((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve({ name: file.name, mimeType: file.type as UploadFile["mimeType"], dataUrl: String(reader.result), size: file.size });
-  reader.onerror = reject;
-  reader.readAsDataURL(file);
-});
 
 function Field({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string }) {
   return <div className="space-y-2"><Label>{label}</Label><Input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="h-11 border-slate-200" /></div>;
@@ -48,6 +42,7 @@ export default function Scanner() {
   const [duplicate, setDuplicate] = useState<{ leadId: number; firstName: string; lastName: string; matchedBy: string[] } | null>(null);
   const [status, setStatus] = useState("verified");
   const [interestLevel, setInterestLevel] = useState("unknown");
+  const [preferredLanguage, setPreferredLanguage] = useState("en");
   const [diagnosisCategory, setDiagnosisCategory] = useState("");
   const [stateCode, setStateCode] = useState("");
   const extract = trpc.scanner.extract.useMutation();
@@ -59,10 +54,18 @@ export default function Scanner() {
   async function addFiles(list: FileList | File[]) {
     const remaining = 6 - files.length;
     const selected = Array.from(list).slice(0, remaining);
-    const invalid = selected.find(file => !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 6_000_000);
-    if (invalid) return toast.error("Use JPG, PNG, or WebP images up to 6 MB each.");
-    const loaded = await Promise.all(selected.map(readFile));
-    setFiles(current => [...current, ...loaded]);
+    const invalid = selected.find(file => !isSupportedImageInput(file) || file.size > MAX_SOURCE_IMAGE_BYTES);
+    if (invalid) return toast.error("Use JPG, PNG, WebP, HEIC, or HEIF images up to 25 MB each.");
+    if (totalOriginalBytes(files) + selected.reduce((sum, file) => sum + file.size, 0) > MAX_SCAN_BATCH_BYTES) return toast.error("Keep one lead's selected originals under 32 MB so CareFlow can scan them at full quality.");
+    try {
+      const loaded = await Promise.all(selected.map(prepareUploadImage));
+      if (files.reduce((sum, file) => sum + file.size, 0) + loaded.reduce((sum, file) => sum + file.size, 0) > MAX_SCAN_BATCH_BYTES) return toast.error("The full-quality prepared images exceed 32 MB together. Upload fewer pages in this scan; CareFlow will not reduce OCR quality.");
+      setFiles(current => [...current, ...loaded]);
+      const converted = loaded.filter(file => file.convertedFromHeic).length;
+      if (converted) toast.success(`${converted} iPhone photo${converted === 1 ? " was" : "s were"} converted from HEIC/HEIF to JPEG.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The photo could not be prepared.");
+    }
   }
 
   async function startScan() {
@@ -94,6 +97,7 @@ export default function Scanner() {
       const saved = await create.mutateAsync({
         lead: {
           firstName: result.firstName, lastName: result.lastName, email: result.email || null,
+          preferredLanguage: preferredLanguage as "en" | "es",
           phone: result.phone || null, dateOfBirth: result.dateOfBirth || null, address: result.address || null,
           city: result.city || null, stateProvince: result.stateProvince || null, postalCode: result.postalCode || null,
           country: result.country || null, diagnosis: result.diagnosis || null, diagnosisCategory: diagnosisCategory as "oncology" | "hematology", stateCode: stateCode as "FL" | "AZ" | "NV" | "CA" | "OR", clinicalNotes: result.clinicalNotes || null,
@@ -118,9 +122,9 @@ export default function Scanner() {
 
     {!result ? <div className="grid gap-6 lg:grid-cols-[1.4fr_.6fr]">
       <Card className="rounded-[1.5rem] border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="p-6 sm:p-8">
-        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={e => e.target.files && addFiles(e.target.files)} />
+        <input ref={inputRef} type="file" accept={IMAGE_FILE_ACCEPT} multiple className="sr-only" aria-label="Upload lead document images" onChange={e => e.target.files && addFiles(e.target.files)} />
         <button onClick={() => inputRef.current?.click()} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); addFiles(e.dataTransfer.files); }} className="group grid min-h-72 w-full place-items-center rounded-2xl border border-dashed border-teal-300 bg-teal-50/40 p-8 text-center transition-all hover:border-teal-500 hover:bg-teal-50">
-          <div><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-white text-teal-700 shadow-sm ring-1 ring-teal-100"><UploadCloud className="h-6 w-6" /></div><h2 className="mt-5 text-lg font-semibold text-slate-900">Drop document images here</h2><p className="mt-2 text-sm text-slate-500">or click to browse · JPG, PNG, WebP · max 6 MB each</p><Badge variant="outline" className="mt-4 bg-white">{files.length}/6 images selected</Badge></div>
+          <div><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-white text-teal-700 shadow-sm ring-1 ring-teal-100"><UploadCloud className="h-6 w-6" /></div><h2 className="mt-5 text-lg font-semibold text-slate-900">Drop document images here</h2><p className="mt-2 text-sm text-slate-500">JPG, PNG, WebP, iPhone HEIC/HEIF · up to 25 MB originals</p><Badge variant="outline" className="mt-4 bg-white">{files.length}/6 images selected</Badge></div>
         </button>
         {files.length > 0 && <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{files.map((file, index) => <div key={`${file.name}-${index}`} className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50"><img src={file.dataUrl} alt="Document preview" className="h-36 w-full object-cover" /><div className="flex items-center gap-2 p-3"><FileImage className="h-4 w-4 shrink-0 text-slate-400" /><span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700">{file.name}</span><button onClick={() => setFiles(current => current.filter((_, i) => i !== index))} className="text-slate-400 hover:text-rose-600" aria-label={`Remove ${file.name}`}><Trash2 className="h-4 w-4" /></button></div></div>)}</div>}
         <Button onClick={startScan} disabled={!files.length || extract.isPending} size="lg" className="mt-6 w-full bg-teal-700 hover:bg-teal-800">{extract.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Reading {files.length} document{files.length === 1 ? "" : "s"}…</> : <><ScanLine className="mr-2 h-4 w-4" />Scan and extract information</>}</Button>
@@ -140,7 +144,7 @@ export default function Scanner() {
           {isReferralDocument(result.documentCategory) && <ReferralReview value={result.referral} onChange={updateReferral} documentCategory={result.documentCategory} onDocumentCategoryChange={value => update("documentCategory", value)} />}
           {result.additionalInformation.length > 0 && <section className="border-t border-slate-100 pt-8"><h2 className="mb-5 text-lg font-semibold tracking-tight">Additional extracted information</h2><div className="grid gap-4 sm:grid-cols-2">{result.additionalInformation.map((item, index) => <div key={`${item.label}-${index}`} className="rounded-xl bg-slate-50 p-4"><div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{item.label}</span><span className="text-xs text-slate-400">{Math.round(item.confidence * 100)}%</span></div><Input value={item.value} onChange={e => setResult(current => current ? { ...current, additionalInformation: current.additionalInformation.map((field, i) => i === index ? { ...field, value: e.target.value } : field) } : current)} className="mt-2 border-0 bg-white" /></div>)}</div></section>}
         </CardContent></Card>
-        <div className="space-y-5"><Card className="sticky top-6 rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="space-y-5 p-6"><div><h3 className="font-semibold">Confirm record</h3><p className="mt-1 text-sm leading-6 text-slate-500">Select the operational classification manually before saving. CareFlow then checks identity duplicates and attaches the source images.</p></div><div className={`rounded-xl p-3 text-xs leading-5 ${nameDobReady ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{nameDobReady ? "First name + last name + date of birth are ready for the mandatory duplicate check." : "Enter first name, last name, and date of birth before this lead can be created."}</div>{duplicate && <Alert className="border-amber-200 bg-amber-50"><AlertTriangle className="h-4 w-4 text-amber-700" /><AlertTitle>Possible duplicate blocked</AlertTitle><AlertDescription className="leading-6">{duplicate.leadId ? <>Matches Lead #{duplicate.leadId} — {duplicate.firstName} {duplicate.lastName} by {duplicate.matchedBy.join(", ")}.<Button variant="link" className="mt-1 h-auto p-0 text-amber-900" onClick={() => navigate(`/leads/${duplicate.leadId}`)}>Open existing lead</Button></> : <>A matching lead already exists, but you do not have access to that record. Contact the Super Admin.</>}</AlertDescription></Alert>}<div className="rounded-2xl bg-teal-50 p-4 ring-1 ring-teal-200"><p className="text-xs font-semibold uppercase tracking-[.14em] text-teal-700">Required classification</p><div className="mt-3 space-y-3"><div className="space-y-2"><Label>Diagnosis group</Label><Select value={diagnosisCategory} onValueChange={setDiagnosisCategory}><SelectTrigger className="bg-white"><SelectValue placeholder="Select Oncology or Hematology" /></SelectTrigger><SelectContent>{DIAGNOSIS_CATEGORY_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>State</Label><Select value={stateCode} onValueChange={setStateCode}><SelectTrigger className="bg-white"><SelectValue placeholder="Select state" /></SelectTrigger><SelectContent>{STATE_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div></div></div><div className="space-y-2"><Label>Initial business status</Label><Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUS_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select><p className="text-xs leading-5 text-slate-500">This is the only status set during creation. Later status changes are always manual and audited.</p></div><div className="space-y-2"><Label>Interest level</Label><Select value={interestLevel} onValueChange={setInterestLevel}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div><Button onClick={saveLead} disabled={create.isPending || duplicateCheck.isPending || !nameDobReady || !diagnosisCategory || !stateCode} className="w-full bg-teal-700 hover:bg-teal-800">{create.isPending || duplicateCheck.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Check duplicates and create lead</Button><Button variant="outline" className="w-full" onClick={() => { setDuplicate(null); setResult(null); }}><ArrowLeft className="mr-2 h-4 w-4" />Back to images</Button></CardContent></Card></div>
+        <div className="space-y-5"><Card className="sticky top-6 rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="space-y-5 p-6"><div><h3 className="font-semibold">Confirm record</h3><p className="mt-1 text-sm leading-6 text-slate-500">Select the operational classification manually before saving. CareFlow then checks identity duplicates and attaches the source images.</p></div><div className={`rounded-xl p-3 text-xs leading-5 ${nameDobReady ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{nameDobReady ? "First name + last name + date of birth are ready for the mandatory duplicate check." : "Enter first name, last name, and date of birth before this lead can be created."}</div>{duplicate && <Alert className="border-amber-200 bg-amber-50"><AlertTriangle className="h-4 w-4 text-amber-700" /><AlertTitle>Possible duplicate blocked</AlertTitle><AlertDescription className="leading-6">{duplicate.leadId ? <>Matches Lead #{duplicate.leadId} — {duplicate.firstName} {duplicate.lastName} by {duplicate.matchedBy.join(", ")}.<Button variant="link" className="mt-1 h-auto p-0 text-amber-900" onClick={() => navigate(`/leads/${duplicate.leadId}`)}>Open existing lead</Button></> : <>A matching lead already exists, but you do not have access to that record. Contact the Super Admin.</>}</AlertDescription></Alert>}<div className="rounded-2xl bg-teal-50 p-4 ring-1 ring-teal-200"><p className="text-xs font-semibold uppercase tracking-[.14em] text-teal-700">Required classification</p><div className="mt-3 space-y-3"><div className="space-y-2"><Label>Diagnosis group</Label><Select value={diagnosisCategory} onValueChange={setDiagnosisCategory}><SelectTrigger className="bg-white"><SelectValue placeholder="Select Oncology or Hematology" /></SelectTrigger><SelectContent>{DIAGNOSIS_CATEGORY_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>State</Label><Select value={stateCode} onValueChange={setStateCode}><SelectTrigger className="bg-white"><SelectValue placeholder="Select state" /></SelectTrigger><SelectContent>{STATE_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div></div></div><div className="space-y-2"><Label>Lead language</Label><Select value={preferredLanguage} onValueChange={setPreferredLanguage}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{LANGUAGE_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select><p className="text-xs leading-5 text-slate-500">Lead reminder emails use this language. Staff reminders stay in English.</p></div><div className="space-y-2"><Label>Initial business status</Label><Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUS_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select><p className="text-xs leading-5 text-slate-500">This is the only status set during creation. Later status changes are always manual and audited.</p></div><div className="space-y-2"><Label>Interest level</Label><Select value={interestLevel} onValueChange={setInterestLevel}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{INTEREST_OPTIONS.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent></Select></div><Button onClick={saveLead} disabled={create.isPending || duplicateCheck.isPending || !nameDobReady || !diagnosisCategory || !stateCode} className="w-full bg-teal-700 hover:bg-teal-800">{create.isPending || duplicateCheck.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Check duplicates and create lead</Button><Button variant="outline" className="w-full" onClick={() => { setDuplicate(null); setResult(null); }}><ArrowLeft className="mr-2 h-4 w-4" />Back to images</Button></CardContent></Card></div>
       </div>
     </div>}
   </div>;

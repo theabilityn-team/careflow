@@ -6,6 +6,7 @@ const row: ExportLeadRow = {
   id: 42,
   firstName: "Ana",
   lastName: "Stone",
+  preferredLanguage: "es",
   email: "ana@example.com",
   phone: "+1 555 0100",
   address: "10 Main Street",
@@ -27,6 +28,8 @@ describe("lead exports", () => {
     const csv = createCsv([row]).toString("utf8");
     expect(csv.startsWith("\uFEFF")).toBe(true);
     expect(csv).toContain('"Status"');
+    expect(csv).toContain('"Lead Language"');
+    expect(csv).toContain('"Spanish"');
     expect(csv).toContain('"Follow-up required"');
     expect(csv).toContain('"Ana"');
     expect(csv).not.toContain("Diagnosis");
@@ -40,7 +43,7 @@ describe("lead exports", () => {
 
   it("includes Oregon in the shared row values used by CSV, Excel, and PDF exports", () => {
     const oregon = { ...row, city: "Portland", stateCode: "OR", stateProvince: "Oregon", postalCode: "97201" };
-    expect(exportRowValues(oregon)[7]).toBe("OR");
+    expect(exportRowValues(oregon)[8]).toBe("OR");
     expect(createCsv([oregon]).toString("utf8")).toContain('"OR","Oregon","97201"');
   });
 
@@ -49,8 +52,8 @@ describe("lead exports", () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
     const leads = workbook.getWorksheet("Leads");
-    expect(leads?.getCell("L1").value).toBe("Status");
-    expect(leads?.getCell("L2").value).toBe("Follow-up required");
+    expect(leads?.getCell("M1").value).toBe("Status");
+    expect(leads?.getCell("M2").value).toBe("Follow-up required");
     expect(workbook.getWorksheet("Export Summary")?.getCell("B3").value).toBe(1);
   });
 

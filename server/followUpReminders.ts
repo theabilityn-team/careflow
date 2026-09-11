@@ -18,20 +18,17 @@ function formattedTime(delivery: Delivery, language: "en" | "es") {
 }
 
 export function buildFollowUpMessages(delivery: Delivery) {
-  const language = delivery.preferredLanguage === "es" ? "es" : "en";
+  const leadLanguage = delivery.leadPreferredLanguage === "es" ? "es" : "en";
   const leadName = `${delivery.firstName} ${delivery.lastName}`.trim();
-  const time = formattedTime(delivery, language);
-  if (language === "es") return {
-    staffSubject: `Recordatorio: seguimiento con ${leadName} en 2 horas`,
-    staffText: `Hola ${delivery.staffName || ""},\n\nTiene un seguimiento programado con ${leadName} el ${time}. Abra CareFlow para revisar el registro antes de la cita.`,
-    leadSubject: "Recordatorio de su seguimiento programado",
-    leadText: `Hola ${delivery.firstName},\n\nEste es un recordatorio de su seguimiento programado para el ${time}. Si necesita cambiar el horario, responda al miembro del equipo que le contactó.`,
-  };
+  const staffTime = formattedTime(delivery, "en");
+  const leadTime = formattedTime(delivery, leadLanguage);
   return {
     staffSubject: `Reminder: follow-up with ${leadName} in 2 hours`,
-    staffText: `Hello ${delivery.staffName || ""},\n\nYou have a follow-up scheduled with ${leadName} on ${time}. Open CareFlow to review the lead before the appointment.`,
-    leadSubject: "Reminder for your scheduled follow-up",
-    leadText: `Hello ${delivery.firstName},\n\nThis is a reminder for your scheduled follow-up on ${time}. If you need to change the time, please reply to the team member who contacted you.`,
+    staffText: `Hello ${delivery.staffName || ""},\n\nYou have a follow-up scheduled with ${leadName} on ${staffTime}. Open CareFlow to review the lead before the appointment.`,
+    leadSubject: leadLanguage === "es" ? "Recordatorio de su seguimiento programado" : "Reminder for your scheduled follow-up",
+    leadText: leadLanguage === "es"
+      ? `Hola ${delivery.firstName},\n\nEste es un recordatorio de su seguimiento programado para el ${leadTime}. Si necesita cambiar el horario, responda al miembro del equipo que le contactó.`
+      : `Hello ${delivery.firstName},\n\nThis is a reminder for your scheduled follow-up on ${leadTime}. If you need to change the time, please reply to the team member who contacted you.`,
   };
 }
 

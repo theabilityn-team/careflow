@@ -1,15 +1,17 @@
 # CareFlow CRM Feature Tracker
 
-## Completed update: Follow-up calendar, completion archive, and Oregon
+## Completed update: Lead reminder language and iPhone image intake
 
-- [x] Add durable, immutable follow-up completion records linked to communications and leads.
-- [x] Record original scheduled time, completion time, staff actor, outcome, notes, method, and optional next reminder.
-- [x] Add a permission-scoped calendar API for active follow-ups in a bounded date range.
-- [x] Add a searchable, filterable, paginated archive API for completed follow-ups.
-- [x] Build Queue, Calendar, and Archive tabs inside the Follow-ups workspace.
-- [x] Preserve existing completion behavior and populate the archive transactionally.
-- [x] Add Oregon to OCR inference, dropdowns, filters, APIs, exports, and reminder time zones.
-- [x] Update the English System guide.
+- [x] Add English/Spanish reminder language to each lead with English as default.
+- [x] Remove reminder-language controls and labels from staff accounts.
+- [x] Keep staff reminder emails in English.
+- [x] Send lead reminder emails in the selected lead language.
+- [x] Add lead language to single intake, bulk intake, lead profile, edit form, list filter, and exports.
+- [x] Keep State and Lead language immediately visible in the main Leads filter bar.
+- [x] Audit every lead-language change.
+- [x] Migrate existing leads safely to English.
+- [x] Accept native iPhone HEIC/HEIF photos and originals up to 25 MB.
+- [x] Preserve original JPEG/PNG/WebP bytes for OCR and decode HEIC/HEIF at full resolution without resizing.
 - [x] Add unit and end-to-end regression tests.
-- [x] Verify the desktop UI, production build, runtime health, and database cleanliness.
+- [x] Verify UI, production build, runtime health, and database cleanliness.
 - [x] Save the final checkpoint.

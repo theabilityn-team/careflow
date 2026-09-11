@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
-import { BookOpenCheck, Check, ClipboardCheck, ContactRound, Files, FolderKanban, KeyRound, Languages, LayoutDashboard, LogOut, PanelLeft, ScanLine, UsersRound } from "lucide-react";
+import { BookOpenCheck, ClipboardCheck, ContactRound, Files, FolderKanban, KeyRound, LayoutDashboard, LogOut, PanelLeft, ScanLine, UsersRound } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -37,8 +37,6 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
   const { data: access } = trpc.dashboard.access.useQuery();
   const { data: notifications = [] } = trpc.dashboard.notifications.useQuery(undefined, { enabled: Boolean(access?.permissions.viewLeads) });
   const unreadDue = notifications.filter(item => !item.readAt && item.remindAt <= Date.now()).length;
-  const utils = trpc.useUtils();
-  const setLanguage = trpc.dashboard.setPreferredLanguage.useMutation({ onSuccess: () => utils.dashboard.access.invalidate() });
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -97,7 +95,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
           <SidebarFooter className="border-t border-slate-100 p-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild><button className="flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-slate-50"><Avatar className="h-9 w-9 border border-slate-200"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{user?.name?.slice(0, 1).toUpperCase() ?? "U"}</AvatarFallback></Avatar>{!isCollapsed && <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user?.name ?? "Staff member"}</p><p className="truncate text-xs text-slate-400">{access?.jobTitle ?? "Loading access…"}</p></div>}</button></DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">{access?.role === "technical_staff" && <><div className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400"><Languages className="mr-2 inline h-3.5 w-3.5" />Reminder language</div>{([['en', 'English'], ['es', 'Spanish']] as const).map(([value, label]) => <DropdownMenuItem key={value} onClick={async () => { try { await setLanguage.mutateAsync({ preferredLanguage: value }); toast.success(`Reminder language set to ${label}.`); } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to update language."); } }} className="cursor-pointer">{access.preferredLanguage === value ? <Check className="mr-2 h-4 w-4 text-teal-700" /> : <span className="mr-2 h-4 w-4" />}{label}</DropdownMenuItem>)}</>}{access?.role === "super_admin" && <DropdownMenuItem onClick={() => setPasswordDialogOpen(true)} className="cursor-pointer"><KeyRound className="mr-2 h-4 w-4" />Change admin password</DropdownMenuItem>}<DropdownMenuItem onClick={logout} className="cursor-pointer text-rose-600 focus:text-rose-600"><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem></DropdownMenuContent>
+              <DropdownMenuContent align="end" className="w-64">{access?.role === "super_admin" && <DropdownMenuItem onClick={() => setPasswordDialogOpen(true)} className="cursor-pointer"><KeyRound className="mr-2 h-4 w-4" />Change admin password</DropdownMenuItem>}<DropdownMenuItem onClick={logout} className="cursor-pointer text-rose-600 focus:text-rose-600"><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem></DropdownMenuContent>
             </DropdownMenu>
           </SidebarFooter>
         </Sidebar>

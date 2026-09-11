@@ -30,6 +30,7 @@ export type ExportLeadRow = {
   id: number;
   firstName: string;
   lastName: string;
+  preferredLanguage: "en" | "es";
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -47,7 +48,7 @@ export type ExportLeadRow = {
 };
 
 const HEADERS = [
-  "Lead ID", "First Name", "Last Name", "Email", "Phone", "Address", "City",
+  "Lead ID", "First Name", "Last Name", "Lead Language", "Email", "Phone", "Address", "City",
   "Operational State", "State / Province", "Postal Code", "Country", "Status", "Interest Level",
   "Assigned Staff", "Next Follow-up (UTC)", "Created At (UTC)", "Last Updated (UTC)",
 ] as const;
@@ -56,7 +57,7 @@ const iso = (value: Date | number | null) => value ? new Date(value).toISOString
 
 export function exportRowValues(row: ExportLeadRow) {
   return [
-    row.id, row.firstName, row.lastName, row.email ?? "", row.phone ?? "", row.address ?? "",
+    row.id, row.firstName, row.lastName, row.preferredLanguage === "es" ? "Spanish" : "English", row.email ?? "", row.phone ?? "", row.address ?? "",
     row.city ?? "", row.stateCode ?? "", row.stateProvince ?? "", row.postalCode ?? "", row.country ?? "",
     LEAD_STATUS_LABELS[row.status], INTEREST_LABELS[row.interestLevel], row.assignedStaff ?? "Unassigned",
     iso(row.nextFollowUpAt), iso(row.createdAt), iso(row.updatedAt),
@@ -81,9 +82,9 @@ export async function createExcel(rows: ExportLeadRow[], selectedStatuses: strin
   const sheet = workbook.addWorksheet("Leads", { views: [{ state: "frozen", ySplit: 1 }] });
   sheet.addRow([...HEADERS]);
   rows.forEach(row => sheet.addRow(exportRowValues(row)));
-  sheet.autoFilter = { from: "A1", to: "Q1" };
+  sheet.autoFilter = { from: "A1", to: "R1" };
   sheet.columns = [
-    { width: 10 }, { width: 18 }, { width: 18 }, { width: 30 }, { width: 18 }, { width: 34 },
+    { width: 10 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 30 }, { width: 18 }, { width: 34 },
     { width: 18 }, { width: 18 }, { width: 20 }, { width: 14 }, { width: 18 }, { width: 22 }, { width: 16 },
     { width: 24 }, { width: 24 }, { width: 24 }, { width: 24 },
   ];
@@ -129,8 +130,8 @@ const pdfText = (value: unknown, max = 35) => {
 export async function createPdf(rows: ExportLeadRow[], selectedStatuses: string[]) {
   const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 28, bufferPages: true, info: { Title: "CareFlow CRM Lead Export", Author: "CareFlow CRM" } });
   const result = collectPdf(doc);
-  const widths = [28, 95, 120, 75, 85, 55, 85, 80, 75, 65];
-  const headers = ["ID", "Lead", "Email", "Phone", "Status", "Interest", "Assigned", "City / State", "Follow-up", "Created"];
+  const widths = [28, 88, 102, 62, 66, 70, 48, 77, 72, 70, 55];
+  const headers = ["ID", "Lead", "Email", "Phone", "Language", "Status", "Interest", "Assigned", "City / State", "Follow-up", "Created"];
   const startX = 28;
   const tableWidth = widths.reduce((sum, width) => sum + width, 0);
   const drawHeader = () => {
@@ -160,7 +161,7 @@ export async function createPdf(rows: ExportLeadRow[], selectedStatuses: string[
     const y = doc.y;
     if (rowIndex % 2 === 1) doc.rect(startX, y, tableWidth, 24).fill("#f3f7f6");
     const values = [
-      row.id, `${row.firstName} ${row.lastName}`, row.email, row.phone,
+      row.id, `${row.firstName} ${row.lastName}`, row.email, row.phone, row.preferredLanguage === "es" ? "Spanish" : "English",
       LEAD_STATUS_LABELS[row.status], INTEREST_LABELS[row.interestLevel],
       row.assignedStaff ?? "Unassigned", [row.city, row.stateCode || row.stateProvince].filter(Boolean).join(", "),
       row.nextFollowUpAt ? new Date(row.nextFollowUpAt).toISOString().slice(0, 10) : "—",

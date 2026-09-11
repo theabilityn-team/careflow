@@ -9,7 +9,7 @@ import { EMPTY_REFERRAL_DATA, inferDiagnosisCategory, isProhibitedSensitiveItem 
 const fileSchema = z.object({
   name: z.string().min(1).max(255),
   mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
-  dataUrl: z.string().max(9_000_000),
+  dataUrl: z.string().max(45_000_000),
 });
 
 const extractionSchema = {

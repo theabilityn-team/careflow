@@ -59,6 +59,10 @@ export const LANGUAGE_OPTIONS = [
   ["es", "Spanish"],
 ] as const;
 
+export function languageLabel(value?: string | null) {
+  return LANGUAGE_OPTIONS.find(([key]) => key === value)?.[1] ?? "English";
+}
+
 export function stateLabel(value?: string | null) {
   return STATE_OPTIONS.find(([key]) => key === value)?.[1] ?? value ?? "State not set";
 }

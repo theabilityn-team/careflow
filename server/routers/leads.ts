@@ -19,10 +19,12 @@ const interestEnum = z.enum(["unknown", "cold", "warm", "hot"]);
 const stateCodeEnum = z.enum(["FL", "AZ", "NV", "CA", "OR"]);
 const diagnosisCategoryEnum = z.enum(["oncology", "hematology"]);
 const documentTypeEnum = z.enum(["referral_order", "referral_form", "regular"]);
+const preferredLanguageEnum = z.enum(["en", "es"]);
 const nullableText = z.string().max(20_000).optional().nullable();
 const leadFields = z.object({
   firstName: z.string().trim().min(1).max(120),
   lastName: z.string().trim().min(1).max(120),
+  preferredLanguage: preferredLanguageEnum.default("en"),
   email: z.string().max(320).optional().nullable(),
   phone: z.string().max(80).optional().nullable(),
   dateOfBirth: z.string().max(80).optional().nullable(),
@@ -43,13 +45,14 @@ const leadFields = z.object({
   nextFollowUpAt: z.number().int().positive().optional().nullable(),
 });
 export const leadUpdateFields = leadFields.partial().extend({
+  preferredLanguage: preferredLanguageEnum.optional(),
   status: statusEnum.optional(),
   interestLevel: interestEnum.optional(),
 });
 const documentSchema = z.object({
   name: z.string().min(1).max(255),
   mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
-  dataUrl: z.string().max(9_000_000),
+  dataUrl: z.string().max(45_000_000),
 });
 
 function hideClinical<T extends { diagnosis: string | null; clinicalNotes: string | null; additionalInformation: string | null }>(lead: T) {
@@ -71,6 +74,7 @@ export const leadsRouter = router({
       assignedTo: z.union([z.number().int().positive(), z.literal("unassigned")]).optional(),
       followUpState: z.enum(["overdue", "upcoming", "none"]).optional(),
       contactState: z.enum(["contacted", "not_contacted"]).optional(),
+      preferredLanguage: preferredLanguageEnum.optional(),
       stateCode: stateCodeEnum.optional(),
       diagnosisCategory: diagnosisCategoryEnum.optional(),
       groupId: z.number().int().positive().optional(),

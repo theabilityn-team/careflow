@@ -114,6 +114,7 @@ export const leads = mysqlTable("leads", {
   id: int("id").autoincrement().primaryKey(),
   firstName: varchar("firstName", { length: 120 }).notNull(),
   lastName: varchar("lastName", { length: 120 }).notNull(),
+  preferredLanguage: mysqlEnum("preferredLanguage", ["en", "es"]).default("en").notNull(),
   email: varchar("email", { length: 320 }),
   phone: varchar("phone", { length: 80 }),
   dateOfBirth: varchar("dateOfBirth", { length: 80 }),
