@@ -158,3 +158,10 @@ Reminder language is now a **lead-level setting**. Existing leads default to Eng
 The image intake now accepts JPG, PNG, WebP, HEIC, and HEIF originals up to 25 MB each. JPG, PNG, and WebP bytes are read unchanged for OCR—there is no resize or compression step. HEIC/HEIF is decoded because the vision service cannot consume the Apple container; it is converted to JPEG at quality 1 while preserving source dimensions, with no resize. Per-lead prepared OCR payloads are capped at 32 MB to stay safely below the request limit without silently degrading images. Browser verification successfully converted a real native HEIC fixture to a full-resolution JPEG and accepted a 6.7 MB JPEG with an unchanged 8.93 MB data URL payload. Neither test started OCR nor created a lead, and all temporary fixture files were deleted.
 
 The final TypeScript check, 71 unit tests across 18 files, and production build completed successfully.
+
+
+## Save-time 25 MB Image Limit Fix QA
+
+The remaining production error was traced to a separate server-side guard inside lead creation that still rejected decoded document bytes above 6 MB after duplicate checking. That obsolete guard was removed. The save path now accepts each prepared JPG, PNG, or WebP document through **25,000,000 bytes**, matching the intake UI, while retaining the **32 MB combined per-lead transport boundary** needed for the 50 MB request envelope. All document payloads are fully validated before the lead record is created, preventing a failed upload from leaving a partial lead.
+
+Regression coverage confirms acceptance of a 6.7 MB iPhone JPEG and the exact 25 MB boundary, rejection at 25 MB + 1 byte, and rejection above 32 MB combined. The complete suite passes **75 tests across 19 files**, TypeScript validation passes, the production build succeeds, and the active source contains no `exceeds 6 MB` or `6_000_000` save-limit references.

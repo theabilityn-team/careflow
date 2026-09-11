@@ -55,6 +55,22 @@ const documentSchema = z.object({
   dataUrl: z.string().max(45_000_000),
 });
 
+export const MAX_LEAD_DOCUMENT_BYTES = 25_000_000;
+export const MAX_LEAD_DOCUMENT_BATCH_BYTES = 32_000_000;
+
+export function prepareLeadDocuments(files: Array<z.infer<typeof documentSchema>>) {
+  const prepared = files.map(file => {
+    const match = file.dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!match || match[1] !== file.mimeType) throw new TRPCError({ code: "BAD_REQUEST", message: `Invalid document: ${file.name}` });
+    const bytes = Buffer.from(match[2], "base64");
+    if (bytes.length > MAX_LEAD_DOCUMENT_BYTES) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `${file.name} exceeds 25 MB.` });
+    return { ...file, safeName: file.name.replace(/[^a-zA-Z0-9._-]/g, "_"), bytes };
+  });
+  const totalBytes = prepared.reduce((sum, file) => sum + file.bytes.length, 0);
+  if (totalBytes > MAX_LEAD_DOCUMENT_BATCH_BYTES) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "The selected images exceed 32 MB together. Upload fewer pages; CareFlow will not reduce OCR quality." });
+  return prepared;
+}
+
 function hideClinical<T extends { diagnosis: string | null; clinicalNotes: string | null; additionalInformation: string | null }>(lead: T) {
   return { ...lead, diagnosis: null, clinicalNotes: null, additionalInformation: null };
 }
@@ -171,6 +187,7 @@ export const leadsRouter = router({
         if (!normalizeDateOfBirth(input.lead.dateOfBirth)) throw new TRPCError({ code: "BAD_REQUEST", message: "Date of birth is required for image-created leads so name and date-of-birth duplicate protection can run." });
       }
       if (input.lead.diagnosis || input.lead.clinicalNotes || input.lead.additionalInformation) await assertPermission(ctx.user, "viewClinical");
+      const preparedDocuments = prepareLeadDocuments(input.documents);
       let leadId: number;
       try {
         leadId = await db.createLeadWithAudit(
@@ -179,13 +196,8 @@ export const leadsRouter = router({
         );
       } catch (error) { throwDuplicate(error); }
 
-      for (const file of input.documents) {
-        const match = file.dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
-        if (!match || match[1] !== file.mimeType) throw new TRPCError({ code: "BAD_REQUEST", message: `Invalid document: ${file.name}` });
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const bytes = Buffer.from(match[2], "base64");
-        if (bytes.length > 6_000_000) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `${file.name} exceeds 6 MB.` });
-        const stored = await storagePut(`leads/${leadId}/${safeName}`, bytes, file.mimeType);
+      for (const file of preparedDocuments) {
+        const stored = await storagePut(`leads/${leadId}/${file.safeName}`, file.bytes, file.mimeType);
         await db.addLeadDocument({ leadId, fileName: file.name, mimeType: file.mimeType, fileKey: stored.key, fileUrl: stored.url, uploadedBy: ctx.user.id });
       }
       return { id: leadId };
