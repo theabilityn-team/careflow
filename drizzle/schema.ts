@@ -134,6 +134,7 @@ export const leads = mysqlTable("leads", {
     "pending_review",
     "verified",
     "to_contact",
+    "voicemail_left",
     "contacted",
     "follow_up",
     "interested",

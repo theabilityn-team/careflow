@@ -6,6 +6,7 @@ export const LEAD_STATUS_LABELS = {
   pending_review: "Pending review",
   verified: "Verified",
   to_contact: "To be contacted",
+  voicemail_left: "Voicemail left",
   contacted: "Contacted",
   follow_up: "Follow-up required",
   interested: "Interested",

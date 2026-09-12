@@ -47,6 +47,12 @@ describe("lead exports", () => {
     expect(createCsv([oregon]).toString("utf8")).toContain('"OR","Oregon","97201"');
   });
 
+  it("exports the Voicemail left business status", () => {
+    const voicemail = { ...row, status: "voicemail_left" as const };
+    expect(exportRowValues(voicemail)[12]).toBe("Voicemail left");
+    expect(createCsv([voicemail]).toString("utf8")).toContain('"Voicemail left"');
+  });
+
   it("creates a formatted Excel workbook with a status column and summary", async () => {
     const buffer = await createExcel([row], ["follow_up"]);
     const workbook = new ExcelJS.Workbook();

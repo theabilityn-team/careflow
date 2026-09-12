@@ -165,3 +165,16 @@ The final TypeScript check, 71 unit tests across 18 files, and production build 
 The remaining production error was traced to a separate server-side guard inside lead creation that still rejected decoded document bytes above 6 MB after duplicate checking. That obsolete guard was removed. The save path now accepts each prepared JPG, PNG, or WebP document through **25,000,000 bytes**, matching the intake UI, while retaining the **32 MB combined per-lead transport boundary** needed for the 50 MB request envelope. All document payloads are fully validated before the lead record is created, preventing a failed upload from leaving a partial lead.
 
 Regression coverage confirms acceptance of a 6.7 MB iPhone JPEG and the exact 25 MB boundary, rejection at 25 MB + 1 byte, and rejection above 32 MB combined. The complete suite passes **75 tests across 19 files**, TypeScript validation passes, the production build succeeds, and the active source contains no `exceeds 6 MB` or `6_000_000` save-limit references.
+
+
+## Voicemail Left Status QA
+
+The default staff login and hidden Super Admin login remain visually stable before authenticated status verification. No application data was changed during these navigation checks.
+
+The Super Admin session was opened successfully for read-only **Voicemail left** status verification. An existing lead profile loaded normally, with Business Status and Interest Signal still presented as separate controls. No existing lead was changed during this step.
+
+The Business status dropdown now visibly includes **Voicemail left** between **To be contacted** and **Contacted**. The dropdown was inspected without selecting a value, and the existing lead remained unchanged. The Leads workspace also loaded normally with its status filter available for the expanded shared status catalog.
+
+The main Leads status filter visibly includes **Voicemail left**. Selecting it issued the normal server-side filtered query and displayed a clean zero-results state because no real lead currently uses that status. The separate temporary API regression had already confirmed that a lead set to this status is returned by the same filter and receives one audited before/after status event; that temporary lead and its audit row were deleted.
+
+The live database enum now contains `voicemail_left`. The status is available in creation review, quick Business status changes, Edit lead, Leads filtering, export selection, and the System guide dictionary. CSV, Excel, and PDF share the **Voicemail left** label. The complete suite passes **76 tests across 19 files**, TypeScript validation and the production build succeed, runtime checks report no errors, and the final database inspection confirms that no temporary Voicemail status records remain.

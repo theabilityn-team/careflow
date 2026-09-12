@@ -1,0 +1,1 @@
+ALTER TABLE `leads` MODIFY COLUMN `status` enum('new','pending_review','verified','to_contact','voicemail_left','contacted','follow_up','interested','highly_interested','qualified','customer','buyer','not_interested','unable_to_reach','archived') NOT NULL DEFAULT 'new';

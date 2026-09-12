@@ -5,6 +5,7 @@ export const STATUS_OPTIONS = [
   ["pending_review", "Pending review"],
   ["verified", "Verified"],
   ["to_contact", "To be contacted"],
+  ["voicemail_left", "Voicemail left"],
   ["contacted", "Contacted"],
   ["follow_up", "Follow-up required"],
   ["interested", "Interested"],
@@ -22,6 +23,7 @@ export const STATUS_DESCRIPTIONS: Record<(typeof STATUS_OPTIONS)[number][0], str
   pending_review: "Information needs human verification before outreach.",
   verified: "The profile has been reviewed and is ready for work.",
   to_contact: "The team should make the first outreach attempt.",
+  voicemail_left: "An outreach attempt reached voicemail and a voice message was left.",
   contacted: "At least one outreach or conversation has been completed.",
   follow_up: "A future conversation or action is required.",
   interested: "The lead has expressed general interest.",
@@ -94,7 +96,7 @@ export function statusLabel(value: string) {
 
 export function statusClass(value: string) {
   if (["buyer", "customer", "qualified"].includes(value)) return "bg-emerald-50 text-emerald-700 ring-emerald-600/15";
-  if (["interested", "highly_interested", "follow_up"].includes(value)) return "bg-amber-50 text-amber-800 ring-amber-600/15";
+  if (["interested", "highly_interested", "follow_up", "voicemail_left"].includes(value)) return "bg-amber-50 text-amber-800 ring-amber-600/15";
   if (["not_interested", "unable_to_reach", "archived"].includes(value)) return "bg-slate-100 text-slate-600 ring-slate-500/15";
   return "bg-sky-50 text-sky-700 ring-sky-600/15";
 }

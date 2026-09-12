@@ -11,7 +11,7 @@ import { storagePut } from "../storage";
 import { protectedProcedure, router } from "../_core/trpc";
 
 const statusEnum = z.enum([
-  "new", "pending_review", "verified", "to_contact", "contacted", "follow_up",
+  "new", "pending_review", "verified", "to_contact", "voicemail_left", "contacted", "follow_up",
   "interested", "highly_interested", "qualified", "customer", "buyer",
   "not_interested", "unable_to_reach", "archived",
 ]);
@@ -113,7 +113,7 @@ export const leadsRouter = router({
   }),
 
   export: protectedProcedure
-    .input(z.object({ statuses: z.array(statusEnum).min(1).max(14), format: z.enum(["csv", "xlsx", "pdf"]) }))
+    .input(z.object({ statuses: z.array(statusEnum).min(1).max(15), format: z.enum(["csv", "xlsx", "pdf"]) }))
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "exportData");
       const rows = await db.getLeadExportRows(input.statuses, { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
