@@ -24,6 +24,7 @@ import {
   scheduledJobs,
   staffInvites,
   staffPermissions,
+  staffSmtpSettings,
   systemAdminCredentials,
   systemAdminSessions,
   users,
@@ -303,12 +304,58 @@ export async function listStaff() {
       jobTitle: staffPermissions.jobTitle,
       isActive: staffPermissions.isActive,
       permissions: staffPermissions.permissions,
+      smtpEnabled: staffSmtpSettings.isEnabled,
+      smtpHost: staffSmtpSettings.smtpHost,
+      smtpFromEmail: staffSmtpSettings.fromEmail,
+      smtpVerifiedAt: staffSmtpSettings.verifiedAt,
+      smtpLastTestedAt: staffSmtpSettings.lastTestedAt,
+      smtpLastTestError: staffSmtpSettings.lastTestError,
     })
     .from(users)
     .innerJoin(localCredentials, eq(users.id, localCredentials.userId))
     .leftJoin(staffPermissions, eq(users.id, staffPermissions.userId))
+    .leftJoin(staffSmtpSettings, eq(users.id, staffSmtpSettings.userId))
     .where(eq(users.role, "user"))
     .orderBy(desc(users.lastSignedIn));
+}
+
+export async function getStaffSmtpSettings(userId: number) {
+  const db = await requireDb();
+  return (await db.select().from(staffSmtpSettings).where(eq(staffSmtpSettings.userId, userId)).limit(1))[0];
+}
+
+export async function upsertStaffSmtpSettings(input: typeof staffSmtpSettings.$inferInsert) {
+  const db = await requireDb();
+  const { userId, ...values } = input;
+  await db.insert(staffSmtpSettings).values(input).onDuplicateKeyUpdate({ set: values });
+  return getStaffSmtpSettings(userId);
+}
+
+export async function updateStaffSmtpTestResult(userId: number, input: { verifiedAt: number | null; lastTestedAt: number; lastTestError: string | null }) {
+  const db = await requireDb();
+  await db.update(staffSmtpSettings).set(input).where(eq(staffSmtpSettings.userId, userId));
+}
+
+export async function listStaffSmtpReadiness() {
+  const db = await requireDb();
+  return db.select({
+    userId: users.id,
+    name: users.name,
+    email: users.email,
+    isActive: staffPermissions.isActive,
+    smtpEnabled: staffSmtpSettings.isEnabled,
+    smtpHost: staffSmtpSettings.smtpHost,
+    smtpUsername: staffSmtpSettings.smtpUsername,
+    smtpPasswordPresent: sql<boolean>`${staffSmtpSettings.smtpPassword} <> ''`,
+    fromEmail: staffSmtpSettings.fromEmail,
+    verifiedAt: staffSmtpSettings.verifiedAt,
+    lastTestedAt: staffSmtpSettings.lastTestedAt,
+    lastTestError: staffSmtpSettings.lastTestError,
+  }).from(users)
+    .innerJoin(localCredentials, eq(users.id, localCredentials.userId))
+    .leftJoin(staffPermissions, eq(users.id, staffPermissions.userId))
+    .leftJoin(staffSmtpSettings, eq(users.id, staffSmtpSettings.userId))
+    .where(eq(users.role, "user"));
 }
 
 export async function upsertStaffPermissions(input: {
@@ -488,6 +535,17 @@ export async function createInvitedStaff(input: {
       jobTitle: input.jobTitle,
       permissions: input.permissions,
       isActive: true,
+    });
+    await tx.insert(staffSmtpSettings).values({
+      userId,
+      smtpHost: "",
+      smtpPort: 587,
+      smtpSecurity: "starttls",
+      smtpUsername: input.email.toLowerCase(),
+      smtpPassword: "",
+      fromEmail: input.email.toLowerCase(),
+      fromName: input.name,
+      isEnabled: false,
     });
     await tx.update(staffInvites).set({
       status: "accepted",
@@ -900,6 +958,16 @@ export async function getDueFollowUpReminderDeliveries(now: number) {
     recipientUserId: followUpReminders.recipientUserId,
     staffName: users.name,
     staffEmail: users.email,
+    smtpHost: staffSmtpSettings.smtpHost,
+    smtpPort: staffSmtpSettings.smtpPort,
+    smtpSecurity: staffSmtpSettings.smtpSecurity,
+    smtpUsername: staffSmtpSettings.smtpUsername,
+    smtpPassword: staffSmtpSettings.smtpPassword,
+    smtpFromEmail: staffSmtpSettings.fromEmail,
+    smtpFromName: staffSmtpSettings.fromName,
+    smtpReplyToEmail: staffSmtpSettings.replyToEmail,
+    smtpEnabled: staffSmtpSettings.isEnabled,
+    smtpVerifiedAt: staffSmtpSettings.verifiedAt,
     leadPreferredLanguage: leads.preferredLanguage,
     staffEmailStatus: followUpReminders.staffEmailStatus,
     leadEmailStatus: followUpReminders.leadEmailStatus,
@@ -907,6 +975,7 @@ export async function getDueFollowUpReminderDeliveries(now: number) {
   }).from(followUpReminders)
     .innerJoin(leads, eq(leads.id, followUpReminders.leadId))
     .leftJoin(users, eq(users.id, followUpReminders.recipientUserId))
+    .leftJoin(staffSmtpSettings, eq(staffSmtpSettings.userId, followUpReminders.recipientUserId))
     .where(and(
       lte(followUpReminders.remindAt, now),
       gte(followUpReminders.scheduledFor, now - 24 * 60 * 60 * 1000),

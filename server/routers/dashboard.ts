@@ -55,10 +55,26 @@ export const dashboardRouter = router({
   }),
   reminderAutomationStatus: protectedProcedure.query(async ({ ctx }) => {
     const access = await getUserAccess(ctx.user);
-    if (access.role !== "super_admin") return null;
     const job = await db.getScheduledJobByKey("follow-up-reminders");
+    if (access.role === "technical_staff") {
+      const settings = await db.getStaffSmtpSettings(ctx.user.id);
+      return {
+        scope: "staff" as const,
+        emailConfigured: Boolean(settings?.isEnabled && settings.smtpHost && settings.smtpUsername && settings.smtpPassword && settings.fromEmail && settings.verifiedAt),
+        configuredStaff: 0,
+        totalStaff: 0,
+        scheduleConfigured: Boolean(job),
+        timing: "Every 15 minutes; messages become due two hours before the appointment.",
+      };
+    }
+    const staff = await db.listStaffSmtpReadiness();
+    const active = staff.filter(member => member.isActive !== false);
+    const configuredStaff = active.filter(member => Boolean(member.smtpEnabled && member.smtpHost && member.smtpUsername && member.smtpPasswordPresent && member.fromEmail && member.verifiedAt)).length;
     return {
-      emailConfigured: Boolean(process.env.RESEND_API_KEY && process.env.REMINDER_FROM_EMAIL),
+      scope: "admin" as const,
+      emailConfigured: active.length > 0 && configuredStaff === active.length,
+      configuredStaff,
+      totalStaff: active.length,
       scheduleConfigured: Boolean(job),
       timing: "Every 15 minutes; messages become due two hours before the appointment.",
     };

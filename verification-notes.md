@@ -178,3 +178,28 @@ The Business status dropdown now visibly includes **Voicemail left** between **T
 The main Leads status filter visibly includes **Voicemail left**. Selecting it issued the normal server-side filtered query and displayed a clean zero-results state because no real lead currently uses that status. The separate temporary API regression had already confirmed that a lead set to this status is returned by the same filter and receives one audited before/after status event; that temporary lead and its audit row were deleted.
 
 The live database enum now contains `voicemail_left`. The status is available in creation review, quick Business status changes, Edit lead, Leads filtering, export selection, and the System guide dictionary. CSV, Excel, and PDF share the **Voicemail left** label. The complete suite passes **76 tests across 19 files**, TypeScript validation and the production build succeed, runtime checks report no errors, and the final database inspection confirms that no temporary Voicemail status records remain.
+
+
+## Per-staff SMTP Sender QA
+
+Browser QA used a temporary technical-staff account and disposable nonworking SMTP values only; no real mailbox credentials or emails were used. Staff login succeeded and the **Email settings** navigation item appeared in the technical-staff workspace. The page rendered host, port, TLS mode, username, password, sender identity, reply-to, enabled switch, connection test, test-email, and save controls.
+
+Enabling SMTP with missing required credentials was rejected with the exact validation message **Host, port, username, password, and sender email are required before enabling SMTP.** Saving a disabled disposable configuration succeeded, and the password field was immediately cleared in the browser. The page explicitly states that settings are stored in `staff_smtp_settings` and that saved passwords are never returned by the API.
+
+Pending final checks at this point: reload/API secret-absence verification, Follow-ups and Super Admin visual checks, browser console review, temporary QA-account cleanup, final database audit, and checkpoint.
+
+The saved-page reload displayed **Saved — leave blank to keep it** while the actual password input value remained empty. An authenticated `emailSettings.get` API check returned HTTP 200, reported only `hasPassword: true`, contained no `smtpPassword` field, and did not contain the disposable saved secret.
+
+The technical-staff **Follow-ups** page showed the correct per-user readiness warning, explained that reminders for assigned leads will come from the staff member's own address, retained in-app reminders, and provided a working **Open Email settings** shortcut. Queue, Calendar, and Archive remained visually intact.
+
+The temporary technical-staff session was ended before administrator-side verification.
+
+The existing hidden `/?super-login=1` administrator entry point remained intact and separate from the normal staff login during this update.
+
+Super Admin login succeeded. **Staff & access** displayed one SMTP readiness badge per technical staff member (`SMTP not configured` for the existing unverified rows) and showed no SMTP password, username, host, or editable SMTP credentials. The separate technical-staff Email settings route remained absent from the Super Admin sidebar.
+
+The Super Admin **Follow-ups** page correctly reported the aggregate readiness count (`0 of 3 active staff SMTP accounts are verified`) while the temporary QA account still existed, and it did not offer Super Admin a mailbox configuration page. No application runtime errors appeared in the browser console during the staff or administrator SMTP checks.
+
+Final verification passed with **84 tests across 21 files**, a clean TypeScript check, and a successful production build. The build emitted only the existing non-blocking Vite bundle-size advisory. The development runtime returned HTTP 200 and the latest server log contained no new runtime or TypeScript errors.
+
+The live database contains the `staff_smtp_settings` table with all expected plaintext SMTP and verification columns. After cleanup, there are exactly two real technical staff accounts and two matching SMTP rows, zero missing staff rows, zero enabled or verified SMTP rows, and zero QA users or QA credentials. No real SMTP delivery was attempted because no staff mailbox credentials have been configured. All temporary QA files, sessions, users, permissions, and disposable SMTP data were removed.

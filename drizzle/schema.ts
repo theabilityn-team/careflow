@@ -75,6 +75,24 @@ export const staffPermissions = mysqlTable("staff_permissions", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const staffSmtpSettings = mysqlTable("staff_smtp_settings", {
+  userId: int("userId").primaryKey(),
+  smtpHost: varchar("smtpHost", { length: 255 }).notNull(),
+  smtpPort: int("smtpPort").notNull(),
+  smtpSecurity: mysqlEnum("smtpSecurity", ["tls", "starttls", "none"]).default("tls").notNull(),
+  smtpUsername: varchar("smtpUsername", { length: 320 }).notNull(),
+  smtpPassword: text("smtpPassword").notNull(),
+  fromEmail: varchar("fromEmail", { length: 320 }).notNull(),
+  fromName: varchar("fromName", { length: 160 }).default("CareFlow").notNull(),
+  replyToEmail: varchar("replyToEmail", { length: 320 }),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  verifiedAt: bigint("verifiedAt", { mode: "number" }),
+  lastTestedAt: bigint("lastTestedAt", { mode: "number" }),
+  lastTestError: text("lastTestError"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const staffInvites = mysqlTable("staff_invites", {
   id: int("id").autoincrement().primaryKey(),
   email: varchar("email", { length: 320 }).notNull(),
