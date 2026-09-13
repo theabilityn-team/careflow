@@ -62,7 +62,7 @@ export async function processDueFollowUpReminders(now = Date.now()) {
     const settings = deliverySmtpSettings(row);
     const send = (message: Parameters<typeof sendStaffSmtpEmail>[1]) => isReady(row)
       ? sendStaffSmtpEmail(settings, message)
-      : Promise.resolve({ configured: false, sent: false, error: "The assigned technical staff SMTP account is not enabled, complete, and verified.", messageId: null });
+      : Promise.resolve({ configured: false, sent: false, error: "The responsible account SMTP profile is not enabled, complete, and verified.", messageId: null });
     const values: Parameters<typeof db.updateFollowUpDelivery>[1] = { attempts: row.attempts + (isReady(row) ? 1 : 0), lastError: null };
     const errors: string[] = [];
     if (["pending", "failed"].includes(row.staffEmailStatus)) {

@@ -8,6 +8,7 @@ import { dashboardRouter } from "./routers/dashboard";
 import { emailSettingsRouter } from "./routers/emailSettings";
 import { groupsRouter } from "./routers/groups";
 import { leadsRouter } from "./routers/leads";
+import { mailRouter } from "./routers/mail";
 import { scannerRouter } from "./routers/scanner";
 import { staffRouter } from "./routers/staff";
 import { superAdminPasswordSchema } from "./passwordSecurity";
@@ -60,6 +61,7 @@ export const appRouter = router({
   emailSettings: emailSettingsRouter,
   groups: groupsRouter,
   leads: leadsRouter,
+  mail: mailRouter,
   scanner: scannerRouter,
   staff: staffRouter,
 });

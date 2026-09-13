@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
 import { getUserAccess } from "../permissions";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -16,14 +17,41 @@ const smtpInput = z.object({
   replyToEmail: z.union([z.string().trim().email().max(320), z.literal("")]).optional(),
   isEnabled: z.boolean(),
 });
+const ownerInput = z.object({ userId: z.number().int().positive().optional() }).optional();
+const managedSmtpInput = smtpInput.extend({ userId: z.number().int().positive().optional() });
 type SmtpInput = z.infer<typeof smtpInput>;
 type StoredSmtpSettings = Awaited<ReturnType<typeof db.getStaffSmtpSettings>>;
 
-async function assertTechnicalStaff(user: Parameters<typeof getUserAccess>[0]) {
+type SmtpOwner = {
+  ownerId: number;
+  accountEmail: string | null;
+  ownerName: string;
+  isActive: boolean;
+  isSuperAdmin: boolean;
+};
+
+async function resolveSmtpOwner(user: Parameters<typeof getUserAccess>[0], requestedUserId?: number): Promise<SmtpOwner> {
   const access = await getUserAccess(user);
-  if (access.role !== "technical_staff") throw new TRPCError({ code: "FORBIDDEN", message: "SMTP settings belong to technical staff accounts." });
-  if (!access.isActive) throw new TRPCError({ code: "FORBIDDEN", message: "Your staff account is inactive." });
-  return access;
+  if (access.role === "technical_staff") {
+    if (!access.isActive) throw new TRPCError({ code: "FORBIDDEN", message: "Your staff account is inactive." });
+    if (requestedUserId && requestedUserId !== user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Staff can access only their assigned SMTP status." });
+    return { ownerId: user.id, accountEmail: user.email, ownerName: user.name || "Technical Staff", isActive: true, isSuperAdmin: false };
+  }
+
+  const ownerId = requestedUserId ?? SYSTEM_ADMIN_ACTOR_ID;
+  if (ownerId === SYSTEM_ADMIN_ACTOR_ID) {
+    return { ownerId, accountEmail: SUPER_ADMIN_EMAIL, ownerName: "Super Administrator", isActive: true, isSuperAdmin: true };
+  }
+  const target = await db.getUserById(ownerId);
+  if (!target || target.role !== "user") throw new TRPCError({ code: "NOT_FOUND", message: "Technical staff account not found." });
+  const permissions = await db.getStaffPermissionRecord(ownerId);
+  return {
+    ownerId,
+    accountEmail: target.email,
+    ownerName: target.name || "Technical Staff",
+    isActive: permissions?.isActive ?? false,
+    isSuperAdmin: false,
+  };
 }
 
 export function publicStaffSmtpSettings(settings: StoredSmtpSettings, accountEmail: string | null) {
@@ -59,6 +87,21 @@ export function publicStaffSmtpSettings(settings: StoredSmtpSettings, accountEma
   };
 }
 
+export function publicStaffSmtpStatus(settings: StoredSmtpSettings, owner: SmtpOwner) {
+  return {
+    mode: "readonly" as const,
+    userId: owner.ownerId,
+    ownerName: owner.ownerName,
+    accountEmail: owner.accountEmail,
+    fromEmail: settings?.fromEmail || owner.accountEmail || "",
+    isEnabled: settings?.isEnabled ?? false,
+    configured: isSmtpConfigured(settings),
+    verifiedAt: settings?.verifiedAt ?? null,
+    lastTestedAt: settings?.lastTestedAt ?? null,
+    lastTestError: settings?.lastTestError ? "The last SMTP test failed. Ask Super Admin to review the assigned settings." : null,
+  };
+}
+
 export function mergeStaffSmtpSettings(input: SmtpInput, existing: StoredSmtpSettings, fallbackName: string | null) {
   return {
     ...input,
@@ -69,16 +112,55 @@ export function mergeStaffSmtpSettings(input: SmtpInput, existing: StoredSmtpSet
 }
 
 export const emailSettingsRouter = router({
-  get: protectedProcedure.query(async ({ ctx }) => {
-    await assertTechnicalStaff(ctx.user);
-    const settings = await db.getStaffSmtpSettings(ctx.user.id);
-    return publicStaffSmtpSettings(settings, ctx.user.email);
+  managedAccounts: protectedProcedure.query(async ({ ctx }) => {
+    const access = await getUserAccess(ctx.user);
+    if (access.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN", message: "Only Super Admin can manage SMTP accounts." });
+    const [systemSettings, staff] = await Promise.all([db.getStaffSmtpSettings(SYSTEM_ADMIN_ACTOR_ID), db.listStaff()]);
+    return [{
+      userId: SYSTEM_ADMIN_ACTOR_ID,
+      name: "Super Administrator",
+      accountEmail: SUPER_ADMIN_EMAIL,
+      isActive: true,
+      isSuperAdmin: true,
+      smtpEnabled: systemSettings?.isEnabled ?? false,
+      smtpFromEmail: systemSettings?.fromEmail || SUPER_ADMIN_EMAIL,
+      smtpVerifiedAt: systemSettings?.verifiedAt ?? null,
+      smtpLastTestedAt: systemSettings?.lastTestedAt ?? null,
+      smtpLastTestError: systemSettings?.lastTestError ?? null,
+    }, ...staff.map(member => ({
+      userId: member.id,
+      name: member.name || "Technical Staff",
+      accountEmail: member.email,
+      isActive: member.isActive ?? false,
+      isSuperAdmin: false,
+      smtpEnabled: member.smtpEnabled ?? false,
+      smtpFromEmail: member.smtpFromEmail || member.email || "",
+      smtpVerifiedAt: member.smtpVerifiedAt,
+      smtpLastTestedAt: member.smtpLastTestedAt,
+      smtpLastTestError: member.smtpLastTestError,
+    }))];
   }),
 
-  save: protectedProcedure.input(smtpInput).mutation(async ({ ctx, input }) => {
-    await assertTechnicalStaff(ctx.user);
-    const existing = await db.getStaffSmtpSettings(ctx.user.id);
-    const candidate = mergeStaffSmtpSettings(input, existing, ctx.user.name);
+  get: protectedProcedure.input(ownerInput).query(async ({ ctx, input }) => {
+    const owner = await resolveSmtpOwner(ctx.user, input?.userId);
+    const settings = await db.getStaffSmtpSettings(owner.ownerId);
+    if (ctx.user.role !== "admin") return publicStaffSmtpStatus(settings, owner);
+    return {
+      mode: "manage" as const,
+      userId: owner.ownerId,
+      ownerName: owner.ownerName,
+      accountEmail: owner.accountEmail,
+      accountActive: owner.isActive,
+      isSuperAdmin: owner.isSuperAdmin,
+      ...publicStaffSmtpSettings(settings, owner.accountEmail),
+    };
+  }),
+
+  save: protectedProcedure.input(managedSmtpInput).mutation(async ({ ctx, input }) => {
+    if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Only Super Admin can change SMTP settings." });
+    const owner = await resolveSmtpOwner(ctx.user, input.userId);
+    const existing = await db.getStaffSmtpSettings(owner.ownerId);
+    const candidate = mergeStaffSmtpSettings(input, existing, owner.ownerName);
     if (input.isEnabled && !isSmtpConfigured(candidate)) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "Host, port, username, password, and sender email are required before enabling SMTP." });
     }
@@ -86,49 +168,57 @@ export const emailSettingsRouter = router({
       "smtpHost", "smtpPort", "smtpSecurity", "smtpUsername", "fromEmail", "fromName", "replyToEmail", "isEnabled",
     ].some(field => String(existing[field as keyof typeof existing] ?? "") !== String(candidate[field as keyof typeof candidate] ?? "")) || Boolean(input.smtpPassword);
     const saved = await db.upsertStaffSmtpSettings({
-      userId: ctx.user.id,
+      userId: owner.ownerId,
       ...candidate,
       verifiedAt: materialChanged ? null : existing?.verifiedAt ?? null,
       lastTestedAt: materialChanged ? null : existing?.lastTestedAt ?? null,
       lastTestError: materialChanged ? null : existing?.lastTestError ?? null,
     });
-    return publicStaffSmtpSettings(saved, ctx.user.email);
+    return {
+      mode: "manage" as const,
+      userId: owner.ownerId,
+      ownerName: owner.ownerName,
+      accountEmail: owner.accountEmail,
+      accountActive: owner.isActive,
+      isSuperAdmin: owner.isSuperAdmin,
+      ...publicStaffSmtpSettings(saved, owner.accountEmail),
+    };
   }),
 
-  testConnection: protectedProcedure.mutation(async ({ ctx }) => {
-    await assertTechnicalStaff(ctx.user);
-    const settings = await db.getStaffSmtpSettings(ctx.user.id);
-    if (!settings) throw new TRPCError({ code: "BAD_REQUEST", message: "Save SMTP settings before testing the connection." });
+  testConnection: protectedProcedure.input(ownerInput).mutation(async ({ ctx, input }) => {
+    const owner = await resolveSmtpOwner(ctx.user, input?.userId);
+    const settings = await db.getStaffSmtpSettings(owner.ownerId);
+    if (!settings) throw new TRPCError({ code: "BAD_REQUEST", message: "Super Admin must save SMTP settings before testing the connection." });
     const testedAt = Date.now();
     const result = await verifyStaffSmtp(settings);
-    await db.updateStaffSmtpTestResult(ctx.user.id, {
+    await db.updateStaffSmtpTestResult(owner.ownerId, {
       verifiedAt: result.ok ? testedAt : null,
       lastTestedAt: testedAt,
       lastTestError: result.error,
     });
-    if (!result.ok) throw new TRPCError({ code: "BAD_REQUEST", message: result.error });
+    if (!result.ok) throw new TRPCError({ code: "BAD_REQUEST", message: owner.isSuperAdmin ? result.error : "SMTP connection failed. Ask Super Admin to review your assigned settings." });
     return { success: true, verifiedAt: testedAt } as const;
   }),
 
-  sendTestEmail: protectedProcedure.mutation(async ({ ctx }) => {
-    await assertTechnicalStaff(ctx.user);
-    const settings = await db.getStaffSmtpSettings(ctx.user.id);
-    if (!settings) throw new TRPCError({ code: "BAD_REQUEST", message: "Save SMTP settings before sending a test email." });
+  sendTestEmail: protectedProcedure.input(ownerInput).mutation(async ({ ctx, input }) => {
+    const owner = await resolveSmtpOwner(ctx.user, input?.userId);
+    const settings = await db.getStaffSmtpSettings(owner.ownerId);
+    if (!settings) throw new TRPCError({ code: "BAD_REQUEST", message: "Super Admin must save SMTP settings before sending a test email." });
     const testedAt = Date.now();
-    const recipient = ctx.user.email || settings.fromEmail;
-    if (!recipient) throw new TRPCError({ code: "BAD_REQUEST", message: "This staff account does not have an email address." });
+    const recipient = owner.accountEmail || settings.fromEmail;
+    if (!recipient) throw new TRPCError({ code: "BAD_REQUEST", message: "This account does not have an email address." });
     const result = await sendStaffSmtpEmail(settings, {
       to: recipient,
       subject: "CareFlow SMTP test",
-      text: `Hello ${ctx.user.name || "CareFlow staff member"},\n\nYour personal SMTP account is connected and can send CareFlow email reminders.`,
-      html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;max-width:620px"><h2 style="color:#0f766e">CareFlow SMTP test</h2><p>Your personal SMTP account is connected and can send CareFlow email reminders.</p></div>`,
+      text: `Hello ${owner.ownerName},\n\nYour CareFlow SMTP account is connected and can send follow-up email reminders.`,
+      html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;max-width:620px"><h2 style="color:#0f766e">CareFlow SMTP test</h2><p>Your CareFlow SMTP account is connected and can send follow-up email reminders.</p></div>`,
     });
-    await db.updateStaffSmtpTestResult(ctx.user.id, {
+    await db.updateStaffSmtpTestResult(owner.ownerId, {
       verifiedAt: result.sent ? testedAt : null,
       lastTestedAt: testedAt,
       lastTestError: result.error,
     });
-    if (!result.sent) throw new TRPCError({ code: "BAD_REQUEST", message: result.error || "The test email could not be sent." });
+    if (!result.sent) throw new TRPCError({ code: "BAD_REQUEST", message: owner.isSuperAdmin ? result.error || "The test email could not be sent." : "The test email could not be sent. Ask Super Admin to review your assigned settings." });
     return { success: true, verifiedAt: testedAt } as const;
   }),
 });

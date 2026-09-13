@@ -8,6 +8,7 @@ import Invite from "@/pages/Invite";
 import LeadDetail from "@/pages/LeadDetail";
 import LeadGroups from "@/pages/LeadGroups";
 import Leads from "@/pages/Leads";
+import Mails from "@/pages/Mails";
 import NotFound from "@/pages/NotFound";
 import ResetPassword from "@/pages/ResetPassword";
 import Scanner from "@/pages/Scanner";
@@ -33,6 +34,7 @@ function Router() {
     <Route path="/groups/:id"><DashboardPage><LeadGroups /></DashboardPage></Route>
     <Route path="/scan"><DashboardPage><Scanner /></DashboardPage></Route>
     <Route path="/bulk-import"><DashboardPage><BulkImageImport /></DashboardPage></Route>
+    <Route path="/mails"><DashboardPage><Mails /></DashboardPage></Route>
     <Route path="/email-settings"><DashboardPage><EmailSettings /></DashboardPage></Route>
     <Route path="/follow-ups"><DashboardPage><FollowUps /></DashboardPage></Route>
     <Route path="/guide"><DashboardPage><SystemGuide /></DashboardPage></Route>

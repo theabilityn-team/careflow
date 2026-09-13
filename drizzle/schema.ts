@@ -2,6 +2,8 @@ import {
   bigint,
   boolean,
   int,
+  index,
+  mediumtext,
   mysqlEnum,
   mysqlTable,
   text,
@@ -89,6 +91,15 @@ export const staffSmtpSettings = mysqlTable("staff_smtp_settings", {
   verifiedAt: bigint("verifiedAt", { mode: "number" }),
   lastTestedAt: bigint("lastTestedAt", { mode: "number" }),
   lastTestError: text("lastTestError"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const emailTemplates = mysqlTable("email_templates", {
+  userId: int("userId").primaryKey(),
+  headerHtml: mediumtext("headerHtml").notNull(),
+  footerHtml: mediumtext("footerHtml").notNull(),
+  updatedBy: int("updatedBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -277,6 +288,25 @@ export const communications = mysqlTable("communications", {
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
+
+export const outboundEmails = mysqlTable("outbound_emails", {
+  id: int("id").autoincrement().primaryKey(),
+  senderUserId: int("senderUserId").notNull(),
+  leadId: int("leadId").notNull(),
+  recipientEmail: varchar("recipientEmail", { length: 320 }).notNull(),
+  recipientName: varchar("recipientName", { length: 241 }).notNull(),
+  fromEmail: varchar("fromEmail", { length: 320 }).notNull(),
+  subject: varchar("subject", { length: 240 }).notNull(),
+  bodyHtml: mediumtext("bodyHtml").notNull(),
+  status: mysqlEnum("status", ["sent", "failed"]).notNull(),
+  providerMessageId: varchar("providerMessageId", { length: 255 }),
+  error: text("error"),
+  sentAt: bigint("sentAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  senderSent: index("outbound_emails_senderUserId_sentAt_idx").on(table.senderUserId, table.sentAt),
+  leadSent: index("outbound_emails_leadId_sentAt_idx").on(table.leadId, table.sentAt),
+}));
 
 export const completedFollowUps = mysqlTable("completed_follow_ups", {
   id: int("id").autoincrement().primaryKey(),

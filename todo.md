@@ -1,20 +1,22 @@
 # CareFlow CRM Feature Tracker
 
-## Completed update: Per-staff SMTP email accounts
+## Completed update: Central SMTP management and Mails workspace
 
 | Task | Status |
 | --- | --- |
-| Add one `staff_smtp_settings` row per technical staff member | Completed |
-| Store SMTP host, port, security mode, username, plaintext password, sender identity, enabled state, and verification metadata | Completed |
-| Keep the stored password hidden from every API response and UI field | Completed |
-| Build staff-owned Email settings with Save, Connection test, and Test email actions | Completed |
-| Use the assigned staff member's verified SMTP account for both staff and lead reminder emails | Completed |
-| Keep unconfigured reminders retryable and report missing assigned-staff SMTP clearly | Completed |
-| Show SMTP readiness in Follow-ups and Super Admin Staff & access | Completed |
-| Update the English System guide | Completed |
-| Run migration, 84 tests, TypeScript, production build, runtime, browser QA, and database cleanup checks | Completed |
+| Add a dedicated Super Admin SMTP profile | Completed |
+| Let Super Admin select and edit SMTP settings for every staff account | Completed |
+| Restrict technical staff to assigned email, active/verified status, and test actions | Completed |
+| Keep SMTP host, username, password, sender identity, and reply-to hidden from staff APIs and UI | Completed |
+| Use the Super Admin mailbox for administrator-owned automatic reminders | Completed |
+| Add access-scoped lead email composition through the logged-in account's verified SMTP | Completed |
+| Add per-account predefined and editable sanitized HTML header/footer | Completed |
+| Add sent/failed outbound email history and successful lead Communication entries | Completed |
+| Add a prominent notice that received email requires direct mailbox login | Completed |
+| Add database migrations for email templates and outbound history | Completed |
+| Run authorization, HTML safety, delivery, regression, build, runtime, database, browser, and cleanup checks | Completed |
 | Save the final checkpoint | Completed |
 
 ## Operational next step
 
-Each technical staff member must enter, enable, and verify their real mailbox in **Email settings**. Automatic delivery also requires the existing 15-minute scheduled reminder processor to be activated for the deployed version.
+Super Admin must configure, enable, and verify the real administrator and staff SMTP profiles under **Email settings**. No real email is sent until a profile is complete and verified. CareFlow records outbound mail only; staff must sign in directly to the assigned mailbox to read received messages.

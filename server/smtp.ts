@@ -60,7 +60,7 @@ export async function verifyStaffSmtp(settings: StaffSmtpConfig) {
 }
 
 export async function sendStaffSmtpEmail(settings: StaffSmtpConfig, input: { to: string; subject: string; text: string; html?: string }) {
-  if (!isSmtpConfigured(settings)) return { configured: false as const, sent: false as const, error: "The assigned staff SMTP account is not configured and enabled." };
+  if (!isSmtpConfigured(settings)) return { configured: false as const, sent: false as const, error: "The responsible SMTP account is not configured and enabled." };
   try {
     const result = await transporter(settings).sendMail({
       from: { name: settings.fromName.trim() || "CareFlow", address: settings.fromEmail.trim() },

@@ -8,6 +8,7 @@ import {
   auditEvents,
   communications,
   completedFollowUps,
+  emailTemplates,
   followUpReminders,
   InsertLead,
   InsertUser,
@@ -20,6 +21,7 @@ import {
   leadShares,
   leads,
   localCredentials,
+  outboundEmails,
   passwordResetRequests,
   scheduledJobs,
   staffInvites,
@@ -324,6 +326,21 @@ export async function getStaffSmtpSettings(userId: number) {
   return (await db.select().from(staffSmtpSettings).where(eq(staffSmtpSettings.userId, userId)).limit(1))[0];
 }
 
+export async function ensureSystemAdminSmtpSettings() {
+  const db = await requireDb();
+  await db.insert(staffSmtpSettings).values({
+    userId: SYSTEM_ADMIN_ACTOR_ID,
+    smtpHost: "",
+    smtpPort: 587,
+    smtpSecurity: "starttls",
+    smtpUsername: SUPER_ADMIN_EMAIL,
+    smtpPassword: "",
+    fromEmail: SUPER_ADMIN_EMAIL,
+    fromName: "Super Administrator",
+    isEnabled: false,
+  }).onDuplicateKeyUpdate({ set: { userId: SYSTEM_ADMIN_ACTOR_ID } });
+}
+
 export async function upsertStaffSmtpSettings(input: typeof staffSmtpSettings.$inferInsert) {
   const db = await requireDb();
   const { userId, ...values } = input;
@@ -356,6 +373,51 @@ export async function listStaffSmtpReadiness() {
     .leftJoin(staffPermissions, eq(users.id, staffPermissions.userId))
     .leftJoin(staffSmtpSettings, eq(users.id, staffSmtpSettings.userId))
     .where(eq(users.role, "user"));
+}
+
+export async function getEmailTemplate(userId: number) {
+  const db = await requireDb();
+  return (await db.select().from(emailTemplates).where(eq(emailTemplates.userId, userId)).limit(1))[0];
+}
+
+export async function upsertEmailTemplate(input: typeof emailTemplates.$inferInsert) {
+  const db = await requireDb();
+  const { userId, ...values } = input;
+  await db.insert(emailTemplates).values(input).onDuplicateKeyUpdate({ set: values });
+  return getEmailTemplate(userId);
+}
+
+export async function addOutboundEmail(input: typeof outboundEmails.$inferInsert) {
+  const db = await requireDb();
+  const result = await db.insert(outboundEmails).values(input);
+  return Number(result[0].insertId);
+}
+
+export async function listOutboundEmails(viewer: { userId: number; isSuperAdmin: boolean }) {
+  const db = await requireDb();
+  const visibility = viewer.isSuperAdmin ? undefined : eq(outboundEmails.senderUserId, viewer.userId);
+  return db.select({
+    id: outboundEmails.id,
+    leadId: outboundEmails.leadId,
+    recipientEmail: outboundEmails.recipientEmail,
+    recipientName: outboundEmails.recipientName,
+    fromEmail: outboundEmails.fromEmail,
+    subject: outboundEmails.subject,
+    status: outboundEmails.status,
+    error: outboundEmails.error,
+    sentAt: outboundEmails.sentAt,
+    senderName: sql<string>`coalesce(${users.name}, case when ${outboundEmails.senderUserId} = ${SYSTEM_ADMIN_ACTOR_ID} then 'Super Administrator' else 'CareFlow user' end)`,
+  }).from(outboundEmails)
+    .leftJoin(users, eq(users.id, outboundEmails.senderUserId))
+    .where(visibility)
+    .orderBy(desc(outboundEmails.sentAt))
+    .limit(200);
+}
+
+export async function getOutboundEmail(id: number, viewer: { userId: number; isSuperAdmin: boolean }) {
+  const db = await requireDb();
+  const visibility = viewer.isSuperAdmin ? undefined : eq(outboundEmails.senderUserId, viewer.userId);
+  return (await db.select().from(outboundEmails).where(and(eq(outboundEmails.id, id), visibility)).limit(1))[0];
 }
 
 export async function upsertStaffPermissions(input: {
@@ -604,6 +666,34 @@ export async function canAccessLead(leadId: number, userId: number, isSuperAdmin
   const visibility = leadVisibilityCondition(userId, isSuperAdmin);
   const result = await db.select({ id: leads.id }).from(leads).where(and(eq(leads.id, leadId), visibility)).limit(1);
   return Boolean(result[0]);
+}
+
+export async function getEmailRecipient(leadId: number, viewer: { userId: number; isSuperAdmin: boolean }) {
+  const db = await requireDb();
+  const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
+  return (await db.select({
+    id: leads.id,
+    firstName: leads.firstName,
+    lastName: leads.lastName,
+    email: leads.email,
+  }).from(leads).where(and(eq(leads.id, leadId), visibility)).limit(1))[0];
+}
+
+export async function listEmailRecipients(viewer: { userId: number; isSuperAdmin: boolean }, search?: string) {
+  const db = await requireDb();
+  const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
+  const filters = [visibility, isNotNull(leads.email), sql<boolean>`trim(${leads.email}) <> ''`].filter(Boolean);
+  if (search?.trim()) {
+    const term = `%${search.trim()}%`;
+    filters.push(or(like(leads.firstName, term), like(leads.lastName, term), like(leads.email, term))!);
+  }
+  return db.select({
+    id: leads.id,
+    firstName: leads.firstName,
+    lastName: leads.lastName,
+    email: leads.email,
+    stateCode: leads.stateCode,
+  }).from(leads).where(and(...filters)).orderBy(asc(leads.lastName), asc(leads.firstName)).limit(200);
 }
 
 export async function canManageLeadSharing(leadId: number, userId: number, isSuperAdmin: boolean) {
@@ -956,8 +1046,8 @@ export async function getDueFollowUpReminderDeliveries(now: number) {
     stateCode: leads.stateCode,
     scheduledFor: followUpReminders.scheduledFor,
     recipientUserId: followUpReminders.recipientUserId,
-    staffName: users.name,
-    staffEmail: users.email,
+    staffName: sql<string>`coalesce(${users.name}, case when ${followUpReminders.recipientUserId} = ${SYSTEM_ADMIN_ACTOR_ID} then 'Super Administrator' else 'CareFlow staff' end)`,
+    staffEmail: sql<string | null>`coalesce(${users.email}, case when ${followUpReminders.recipientUserId} = ${SYSTEM_ADMIN_ACTOR_ID} then ${staffSmtpSettings.fromEmail} else null end)`,
     smtpHost: staffSmtpSettings.smtpHost,
     smtpPort: staffSmtpSettings.smtpPort,
     smtpSecurity: staffSmtpSettings.smtpSecurity,

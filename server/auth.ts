@@ -45,6 +45,7 @@ export async function ensureSuperAdmin() {
   if (!adminPassword || adminPassword.length < 10) {
     throw new Error("SUPER_ADMIN_PASSWORD must be configured with at least 10 characters");
   }
+  await db.ensureSystemAdminSmtpSettings();
   const existing = await db.getSystemAdminCredential();
   if (existing) {
     if (existing.identifier !== SUPER_ADMIN_EMAIL) await db.updateSystemAdminIdentifier();

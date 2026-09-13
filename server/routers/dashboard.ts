@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
 import { assertPermission, getUserAccess } from "../permissions";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -70,9 +71,12 @@ export const dashboardRouter = router({
     const staff = await db.listStaffSmtpReadiness();
     const active = staff.filter(member => member.isActive !== false);
     const configuredStaff = active.filter(member => Boolean(member.smtpEnabled && member.smtpHost && member.smtpUsername && member.smtpPasswordPresent && member.fromEmail && member.verifiedAt)).length;
+    const adminSettings = await db.getStaffSmtpSettings(SYSTEM_ADMIN_ACTOR_ID);
+    const adminEmailConfigured = Boolean(adminSettings?.isEnabled && adminSettings.smtpHost && adminSettings.smtpUsername && adminSettings.smtpPassword && adminSettings.fromEmail && adminSettings.verifiedAt);
     return {
       scope: "admin" as const,
-      emailConfigured: active.length > 0 && configuredStaff === active.length,
+      emailConfigured: adminEmailConfigured && active.length > 0 && configuredStaff === active.length,
+      adminEmailConfigured,
       configuredStaff,
       totalStaff: active.length,
       scheduleConfigured: Boolean(job),

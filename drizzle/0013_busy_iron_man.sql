@@ -21,3 +21,6 @@ INSERT INTO `staff_smtp_settings` (`userId`, `smtpHost`, `smtpPort`, `smtpSecuri
 SELECT `id`, '', 587, 'starttls', COALESCE(`email`, ''), '', COALESCE(`email`, ''), COALESCE(`name`, 'CareFlow'), false
 FROM `users`
 WHERE `role` = 'user';
+
+INSERT INTO `staff_smtp_settings` (`userId`, `smtpHost`, `smtpPort`, `smtpSecurity`, `smtpUsername`, `smtpPassword`, `fromEmail`, `fromName`, `isEnabled`)
+VALUES (30001, '', 587, 'starttls', 'admin@admin.com', '', 'admin@admin.com', 'Super Administrator', false);

@@ -58,7 +58,7 @@ describe("follow-up reminders", () => {
       staffEmailStatus: "failed",
       leadEmailStatus: "failed",
       attempts: 0,
-      lastError: expect.stringContaining("assigned technical staff SMTP account"),
+      lastError: expect.stringContaining("responsible account SMTP profile"),
     }));
   });
 

@@ -203,3 +203,28 @@ The Super Admin **Follow-ups** page correctly reported the aggregate readiness c
 Final verification passed with **84 tests across 21 files**, a clean TypeScript check, and a successful production build. The build emitted only the existing non-blocking Vite bundle-size advisory. The development runtime returned HTTP 200 and the latest server log contained no new runtime or TypeScript errors.
 
 The live database contains the `staff_smtp_settings` table with all expected plaintext SMTP and verification columns. After cleanup, there are exactly two real technical staff accounts and two matching SMTP rows, zero missing staff rows, zero enabled or verified SMTP rows, and zero QA users or QA credentials. No real SMTP delivery was attempted because no staff mailbox credentials have been configured. All temporary QA files, sessions, users, permissions, and disposable SMTP data were removed.
+
+
+## Super Admin SMTP Management Update QA
+
+Super Admin now sees **Email settings** in the sidebar. The page opens in management mode with an account selector, defaults to **Super Administrator · admin@admin.com**, and exposes the complete SMTP form, enable switch, connection test, test-email action, and save action. No real SMTP credentials were entered during visual verification.
+
+After adding the Mails workspace, Super Admin navigation showed both **Mails** and **Email settings**. The SMTP page rendered the account selector and full editable form only in administrator mode.
+
+The Super Admin SMTP selector listed the dedicated administrator profile and both real technical staff accounts. Selecting a staff member loaded that person's centrally managed SMTP form and preserved an empty password input; no settings were changed.
+
+The new **Mails** workspace rendered correctly for Super Admin with the prominent received-mail login notice, Compose, Sent history, and Header & footer tabs. The composer showed access-scoped lead selection and personalization tokens. The template tab loaded the predefined CareFlow HTML header and footer without creating a database record or sending an email.
+
+Super Admin session was ended before staff-role QA. The normal login continued to expose only the staff sign-in flow.
+
+A removable technical staff account signed in successfully. Its sidebar included **Mails** and **Email settings**, while Super Admin-only Staff & access remained hidden.
+
+The staff **Email status** page showed only the assigned sender email, Active/Inactive state, verification state, last test time, and Test connection / Send test email actions. No SMTP host, port, username, password, sender-name, reply-to, enable switch, or save action was present. The connection test returned a generic instruction to ask Super Admin, without exposing SMTP diagnostics.
+
+The technical staff **Mails** page showed the outbound-only inbox notice, Compose, Sent history, and Header & footer tabs. Staff could edit their own predefined HTML header/footer while SMTP credentials remained unavailable. The QA staff had no accessible leads, confirming recipient selection stayed access-scoped. No email or template was saved during browser QA.
+
+Browser console QA showed no runtime errors. The authenticated staff Email settings API returned HTTP 200 in read-only mode with `fromEmail`, but omitted `smtpHost`, `smtpUsername`, `smtpPassword`, `fromName`, and `replyToEmail` entirely.
+
+Final validation passed with **94 tests across 23 files**, a clean TypeScript check, a successful production build, HTTP 200 runtime health, and no recent runtime errors. The build emitted only the existing non-blocking Vite bundle-size advisory.
+
+The live database contains two real staff accounts, three SMTP rows including exactly one dedicated Super Admin profile, and the new `email_templates` and `outbound_emails` tables. HTML template and sent-body columns are `MEDIUMTEXT`. There are zero email template rows and zero outbound history rows because QA did not save a template or send an email. All temporary QA users, credentials, sessions, SMTP settings, templates, history, and scripts were removed. No real SMTP credentials were entered and no external email was sent.
