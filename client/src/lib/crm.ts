@@ -53,6 +53,8 @@ export const DIAGNOSIS_CATEGORY_OPTIONS = [
 export const DOCUMENT_TYPE_OPTIONS = [
   ["referral_order", "Referral order"],
   ["referral_form", "Referral form"],
+  ["hospital_facesheet_standard", "Hospital Facesheet — standard layout"],
+  ["hospital_facesheet_extended", "Hospital Facesheet — extended layout"],
   ["regular", "Regular"],
 ] as const;
 

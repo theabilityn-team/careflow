@@ -10,7 +10,7 @@ import { useLocation } from "wouter";
 const flows = [
   {
     number: "01", icon: ScanLine, title: "Add a lead from document images", action: "Open Add lead", path: "/scan",
-    steps: ["Upload up to six images for one person, including referral orders and referral forms. Native iPhone HEIC/HEIF photos and originals up to 25 MB are accepted at full resolution.", "JPG, PNG, and WebP images are scanned with their original bytes; HEIC/HEIF is decoded to a full-quality JPEG only because OCR cannot read the Apple container directly.", "AI classifies explicit referrals separately and labels every ordinary chart, demographic, clinical, or other non-referral image as Regular.", "Authorized staff reviews and corrects every field.", "First name, last name, and date of birth are required for the mandatory patient duplicate check.", "Confirm state, diagnosis group, lead language, initial Status, and Interest level, then save."],
+    steps: ["Upload up to six images for one person, including referral orders, referral forms, and Hospital Facesheets. Native iPhone HEIC/HEIF photos and originals up to 25 MB are accepted at full resolution.", "JPG, PNG, and WebP images are scanned with their original bytes; HEIC/HEIF is decoded to a full-quality JPEG only because OCR cannot read the Apple container directly.", "AI classifies explicit referrals separately, detects standard and extended Hospital Facesheet layouts, and labels every other non-referral image as Regular.", "Authorized staff reviews and corrects every field.", "First name, last name, and date of birth are required for the mandatory patient duplicate check.", "Confirm state, diagnosis group, lead language, initial Status, and Interest level, then save."],
     result: "One lead owned by its creator is created, automatically added to that creator's most recently created group when one exists, all source images are attached, and the complete reviewed state is written to the Audit trail.",
   },
   {
@@ -68,12 +68,17 @@ const flows = [
     steps: ["Open Mails and select a lead that has an email address; staff can choose only leads they are permitted to access.", "Write the subject and message, using optional lead and sender personalization tokens.", "CareFlow automatically wraps the message with that account's saved HTML header and footer.", "Send the email through the logged-in user's active, verified SMTP account.", "Review successful and failed attempts under Sent history; successful sends are also recorded in the lead's Communication history.", "To read replies or any received email, sign in directly to the assigned email mailbox."],
     result: "Staff can send tracked outbound email without seeing SMTP credentials, maintain their own sanitized HTML header and footer, and review who received each message. CareFlow does not act as an inbox.",
   },
+  {
+    number: "13", icon: FileHeart, title: "Review a Hospital Facesheet", action: "Open Add lead", path: "/scan",
+    steps: ["Upload the Hospital Facesheet image; standard legacy and extended multi-insurance layouts are supported.", "CareFlow identifies the patient and keeps the patient's phone, address, and email separate from next of kin, emergency contact, guarantor, provider, insurer, and facility values.", "Review encounter dates, account number, room / bed, demographics, contacts, primary and secondary insurance, care team, visit reason, diagnoses, procedures, and ICD codes.", "Check every warning for handwritten, unclear, cut-off, placeholder, or screen-photographed values.", "Confirm the document layout, patient identity, state, and diagnosis group before saving."],
+    result: "The lead is saved with Hospital Facesheet — standard layout or Hospital Facesheet — extended layout, structured protected information, and attached source images. Social Security numbers and mother's maiden names are never extracted or stored.",
+  },
 ];
 
 export default function SystemGuide() {
   const [, navigate] = useLocation();
   return <div className="mx-auto max-w-[1380px]">
-    <PageHeader eyebrow="CareFlow operating model" title="System guide" description="A single source of truth for lead ownership, image intake, five supported states including Oregon, classifications, sharing, statuses, follow-up calendars, and archives." />
+    <PageHeader eyebrow="CareFlow operating model" title="System guide" description="A single source of truth for lead ownership, image intake, supported medical document types, five states including Oregon, sharing, statuses, follow-up calendars, and archives." />
 
     <div className="mb-8 grid gap-4 md:grid-cols-3">
       <Card className="rounded-2xl border-0 bg-slate-950 text-white"><CardContent className="p-6"><ShieldCheck className="h-5 w-5 text-teal-300" /><p className="mt-5 font-semibold">Rule 1 — Human confirmation</p><p className="mt-2 text-sm leading-6 text-slate-400">AI extraction creates only a draft. A lead record exists only after an authorized person reviews and confirms it.</p></CardContent></Card>

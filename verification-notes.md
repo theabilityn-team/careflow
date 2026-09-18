@@ -228,3 +228,12 @@ Browser console QA showed no runtime errors. The authenticated staff Email setti
 Final validation passed with **94 tests across 23 files**, a clean TypeScript check, a successful production build, HTTP 200 runtime health, and no recent runtime errors. The build emitted only the existing non-blocking Vite bundle-size advisory.
 
 The live database contains two real staff accounts, three SMTP rows including exactly one dedicated Super Admin profile, and the new `email_templates` and `outbound_emails` tables. HTML template and sent-body columns are `MEDIUMTEXT`. There are zero email template rows and zero outbound history rows because QA did not save a template or send an email. All temporary QA users, credentials, sessions, SMTP settings, templates, history, and scripts were removed. No real SMTP credentials were entered and no external email was sent.
+
+
+## Hospital Facesheet update — 2026-09-18
+
+Two supplied Jackson Health System Facesheet examples were treated as **Hospital Facesheet — standard layout** and **Hospital Facesheet — extended layout**. Development browser QA used the existing hidden Super Admin login and will not save a lead or source document.
+The latest Add lead page loaded successfully and now explicitly states that referrals and Hospital Facesheets are supported across both layouts, with patient details separated from hospital contacts, guarantors, insurers, facilities, providers, admissions, diagnoses, and procedures.
+The scanner accepted automation access to its existing image input without changing application code. The supplied standard-layout sample was prepared for a non-saving end-to-end extraction check.
+The real scanner accepted `scanNew1.jpeg`, showed the preview at 1/6 images, and began the OCR request without client-side upload or size errors. The extraction remained in progress during the initial browser wait; no Create lead action was taken.
+End-to-end browser extraction completed successfully at 95% confidence and classified the sample as **Hospital Facesheet — standard layout**. The review screen separated patient identity and contact data from hospital encounter, next of kin, emergency contact, guarantor, primary/secondary insurance, care team, and clinical sections. It extracted the handwritten diagnosis as `Colon Cancer`, suggested Oncology, and displayed warnings for the handwritten source and unknown address. No lead was created, no document was stored, and the browser console had no runtime errors.

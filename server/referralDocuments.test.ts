@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReferralAdditionalInformation, EMPTY_REFERRAL_DATA, inferDiagnosisCategory, inferStoredDocumentType, isProhibitedSensitiveItem } from "../shared/referralDocuments";
+import { buildReferralAdditionalInformation, EMPTY_FACESHEET_DATA, EMPTY_REFERRAL_DATA, inferDiagnosisCategory, inferStoredDocumentType, isHospitalFacesheet, isProhibitedSensitiveItem } from "../shared/referralDocuments";
 
 describe("referral document classification", () => {
   it("classifies anemia and blood disorders as hematology", () => {
@@ -51,6 +51,7 @@ describe("referral structured information", () => {
     });
     expect(rows.some(item => item.label === "SSN")).toBe(false);
     expect(rows.some(item => item.label === "Preferred language")).toBe(true);
+    expect(isProhibitedSensitiveItem({ label: "Mother's maiden name", value: "Private" })).toBe(true);
   });
 
   it("keeps explicit referrals separate and classifies all other records as regular", () => {
@@ -58,5 +59,39 @@ describe("referral structured information", () => {
     expect(inferStoredDocumentType(null, ["american-care-referral-form-page-1.jpg"])).toBe("referral_form");
     expect(inferStoredDocumentType(null, ["patient-medical-record.png"])).toBe("regular");
     expect(inferStoredDocumentType(null, ["scan-001.jpg"])).toBe("regular");
+  });
+
+  it("classifies both Hospital Facesheet layouts separately", () => {
+    expect(inferStoredDocumentType(JSON.stringify([{ label: "Document type", value: "Hospital Facesheet Standard" }]))).toBe("hospital_facesheet_standard");
+    expect(inferStoredDocumentType(JSON.stringify([{ label: "Document type", value: "Hospital Facesheet Extended" }]))).toBe("hospital_facesheet_extended");
+    expect(inferStoredDocumentType(null, ["jackson-facesheet-barcode-page.jpg"])).toBe("hospital_facesheet_extended");
+    expect(isHospitalFacesheet("hospital_facesheet_standard")).toBe(true);
+    expect(isHospitalFacesheet("hospital_facesheet_extended")).toBe(true);
+    expect(isHospitalFacesheet("regular")).toBe(false);
+  });
+
+  it("groups structured facesheet encounter, contact, insurance, care-team, and clinical fields", () => {
+    const rows = buildReferralAdditionalInformation({
+      documentCategory: "hospital_facesheet_extended",
+      medicalRecordNumber: "5197472",
+      facesheet: {
+        ...EMPTY_FACESHEET_DATA,
+        facilityName: "Jackson Health System",
+        financialAccountNumber: "40026756831",
+        emergencyContactName: "Jeni Gonzalez",
+        primaryInsuranceCarrier: "Aetna Medicare",
+        secondaryInsuranceCarrier: "Medicare",
+        attendingPhysician: "Joseph Shanifa",
+        admitDiagnosis: "Dengue fever",
+      },
+    });
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ section: "Hospital encounter", label: "Facility", value: "Jackson Health System" }),
+      expect.objectContaining({ section: "Emergency contact", label: "Name", value: "Jeni Gonzalez" }),
+      expect.objectContaining({ section: "Primary insurance", label: "Carrier", value: "Aetna Medicare" }),
+      expect.objectContaining({ section: "Secondary insurance", label: "Carrier", value: "Medicare" }),
+      expect.objectContaining({ section: "Care team", label: "Attending physician", value: "Joseph Shanifa" }),
+      expect.objectContaining({ section: "Clinical", label: "Admit diagnosis", value: "Dengue fever" }),
+    ]));
   });
 });

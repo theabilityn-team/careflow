@@ -20,3 +20,26 @@
 ## Operational next step
 
 Super Admin must configure, enable, and verify the real administrator and staff SMTP profiles under **Email settings**. No real email is sent until a profile is complete and verified. CareFlow records outbound mail only; staff must sign in directly to the assigned mailbox to read received messages.
+
+
+## Completed update: Hospital Facesheet OCR support
+
+| Task | Status |
+| --- | --- |
+| Add **Hospital Facesheet — standard layout** document type | Completed |
+| Add **Hospital Facesheet — extended layout** document type | Completed |
+| Extend structured OCR for encounter, demographics, contacts, guarantor, insurance, providers, diagnoses, procedures, and ICD codes | Completed |
+| Keep patient phone/address/email separate from contact, guarantor, insurer, provider, and facility values | Completed |
+| Exclude Social Security numbers and mother's maiden names | Completed |
+| Add editable Facesheet review sections to single and bulk image intake | Completed |
+| Save reviewed Facesheet fields in protected structured additional information | Completed |
+| Show the Facesheet layout on review and lead classification screens | Completed |
+| Update the English System guide | Completed |
+| Validate both supplied examples directly with the production OCR model | Completed |
+| Complete a non-saving browser scan of the standard layout | Completed |
+| Run 99 tests, TypeScript, production build, runtime, log, and cleanup checks | Completed |
+| Save the final checkpoint | Completed |
+
+## Hospital Facesheet review caveats
+
+The supplied images are photographs of a screen and contain visible moiré, so staff must review every extracted character. The first example includes a handwritten diagnosis and placeholder/unknown address values; CareFlow now extracts the legible handwritten diagnosis and displays a warning. The second example contains a non-Oncology/non-Hematology diagnosis, so CareFlow intentionally leaves the required diagnosis group unselected rather than misclassifying it; staff must choose one of the currently supported business groups before saving.
