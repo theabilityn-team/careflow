@@ -4,6 +4,7 @@ import type { TrpcContext } from "./_core/context";
 import * as db from "./db";
 import { appRouter } from "./routers";
 import { mergeStaffSmtpSettings, publicStaffSmtpSettings } from "./routers/emailSettings";
+import * as smtp from "./smtp";
 
 const stored = {
   userId: 17,
@@ -104,5 +105,29 @@ describe("SMTP settings authorization and API shaping", () => {
   it("replaces the stored password only when Super Admin submits a new password", () => {
     const merged = mergeStaffSmtpSettings({ ...input, smtpPassword: "replacement-secret" }, stored, "Fallback Name");
     expect(merged.smtpPassword).toBe("replacement-secret");
+  });
+
+  it("sends a test email only to the entered recipient using the selected template", async () => {
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en", permissions: "{}", createdAt: new Date(), updatedAt: new Date() });
+    vi.spyOn(db, "getStaffSmtpSettings").mockResolvedValue(stored);
+    vi.spyOn(db, "getSelectableEmailMessageTemplate").mockResolvedValue({ id: 8, productId: 3, productName: "Recovery Mat", productIsActive: true, name: "SMTP test design", description: null, subject: "Test from {{senderName}}", contentMode: "html", bodyText: "Hello Test Recipient", bodyHtml: "<h1>Hello {{leadFullName}}</h1>", sourceFileName: "smtp-test.html", isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: new Date(), updatedAt: new Date() });
+    vi.spyOn(db, "getEmailTemplate").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateStaffSmtpTestResult").mockResolvedValue(undefined);
+    const send = vi.spyOn(smtp, "sendStaffSmtpEmail").mockResolvedValue({ configured: true, sent: true, error: null, messageId: "test-message" });
+
+    const result = await appRouter.createCaller(context("user", 17)).emailSettings.sendTestEmail({ recipientEmail: "destination@example.com", messageTemplateId: 8 });
+
+    expect(result).toMatchObject({ success: true, recipientEmail: "destination@example.com", templateName: "SMTP test design" });
+    expect(send).toHaveBeenCalledWith(stored, expect.objectContaining({ to: "destination@example.com", subject: "Test from Staff Member", html: expect.stringContaining("Hello Test Recipient") }));
+  });
+
+  it("rejects a test email when no active selected template exists", async () => {
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en", permissions: "{}", createdAt: new Date(), updatedAt: new Date() });
+    vi.spyOn(db, "getStaffSmtpSettings").mockResolvedValue(stored);
+    vi.spyOn(db, "getSelectableEmailMessageTemplate").mockResolvedValue(undefined);
+    const send = vi.spyOn(smtp, "sendStaffSmtpEmail");
+
+    await expect(appRouter.createCaller(context("user", 17)).emailSettings.sendTestEmail({ recipientEmail: "destination@example.com", messageTemplateId: 99 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(send).not.toHaveBeenCalled();
   });
 });

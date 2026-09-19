@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
+import { composeEmailHtml, composeRichEmailHtml, DEFAULT_EMAIL_FOOTER_HTML, DEFAULT_EMAIL_HEADER_HTML, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "../mailContent";
 import { getUserAccess } from "../permissions";
 import { protectedProcedure, router } from "../_core/trpc";
 import { isSmtpConfigured, sendStaffSmtpEmail, verifyStaffSmtp } from "../smtp";
@@ -19,6 +20,11 @@ const smtpInput = z.object({
 });
 const ownerInput = z.object({ userId: z.number().int().positive().optional() }).optional();
 const managedSmtpInput = smtpInput.extend({ userId: z.number().int().positive().optional() });
+const testEmailInput = z.object({
+  userId: z.number().int().positive().optional(),
+  recipientEmail: z.string().trim().email().max(320),
+  messageTemplateId: z.number().int().positive(),
+});
 type SmtpInput = z.infer<typeof smtpInput>;
 type StoredSmtpSettings = Awaited<ReturnType<typeof db.getStaffSmtpSettings>>;
 
@@ -200,18 +206,48 @@ export const emailSettingsRouter = router({
     return { success: true, verifiedAt: testedAt } as const;
   }),
 
-  sendTestEmail: protectedProcedure.input(ownerInput).mutation(async ({ ctx, input }) => {
-    const owner = await resolveSmtpOwner(ctx.user, input?.userId);
+  testEmailTemplates: protectedProcedure.input(ownerInput).query(async ({ ctx, input }) => {
+    await resolveSmtpOwner(ctx.user, input?.userId);
+    const [products, templates] = await Promise.all([db.listEmailProducts(false), db.listEmailMessageTemplates(false)]);
+    return products.map(product => ({
+      id: product.id,
+      name: product.name,
+      templates: templates.filter(template => template.productId === product.id).map(template => ({
+        id: template.id,
+        name: template.name,
+        subject: template.subject,
+        contentMode: template.contentMode,
+      })),
+    })).filter(product => product.templates.length > 0);
+  }),
+
+  sendTestEmail: protectedProcedure.input(testEmailInput).mutation(async ({ ctx, input }) => {
+    const owner = await resolveSmtpOwner(ctx.user, input.userId);
     const settings = await db.getStaffSmtpSettings(owner.ownerId);
     if (!settings) throw new TRPCError({ code: "BAD_REQUEST", message: "Super Admin must save SMTP settings before sending a test email." });
+    const selectedTemplate = await db.getSelectableEmailMessageTemplate(input.messageTemplateId);
+    if (!selectedTemplate) throw new TRPCError({ code: "BAD_REQUEST", message: "Select an active email template." });
     const testedAt = Date.now();
-    const recipient = owner.accountEmail || settings.fromEmail;
-    if (!recipient) throw new TRPCError({ code: "BAD_REQUEST", message: "This account does not have an email address." });
+    const frame = await db.getEmailTemplate(owner.ownerId);
+    const variables = {
+      leadFirstName: "Test",
+      leadFullName: "Test Recipient",
+      senderName: settings.fromName || owner.ownerName || "CareFlow",
+      senderEmail: settings.fromEmail,
+    };
+    const subject = renderTextTokens(selectedTemplate.subject, variables).replace(/[\r\n]+/g, " ").trim();
+    const safeTemplateHtml = selectedTemplate.contentMode === "html" ? sanitizeTemplateHtml(selectedTemplate.bodyHtml ?? "") : null;
+    if (selectedTemplate.contentMode === "html" && (!safeTemplateHtml || !htmlToPlainText(safeTemplateHtml))) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "The selected HTML template does not contain visible content." });
+    }
+    const html = selectedTemplate.contentMode === "html"
+      ? composeRichEmailHtml(frame?.headerHtml ?? DEFAULT_EMAIL_HEADER_HTML, safeTemplateHtml!, frame?.footerHtml ?? DEFAULT_EMAIL_FOOTER_HTML, variables)
+      : composeEmailHtml(frame?.headerHtml ?? DEFAULT_EMAIL_HEADER_HTML, selectedTemplate.bodyText, frame?.footerHtml ?? DEFAULT_EMAIL_FOOTER_HTML, variables);
     const result = await sendStaffSmtpEmail(settings, {
-      to: recipient,
-      subject: "CareFlow SMTP test",
-      text: `Hello ${owner.ownerName},\n\nYour CareFlow SMTP account is connected and can send follow-up email reminders.`,
-      html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;max-width:620px"><h2 style="color:#0f766e">CareFlow SMTP test</h2><p>Your CareFlow SMTP account is connected and can send follow-up email reminders.</p></div>`,
+      to: input.recipientEmail,
+      subject,
+      text: htmlToPlainText(html),
+      html,
     });
     await db.updateStaffSmtpTestResult(owner.ownerId, {
       verifiedAt: result.sent ? testedAt : null,
@@ -219,6 +255,6 @@ export const emailSettingsRouter = router({
       lastTestError: result.error,
     });
     if (!result.sent) throw new TRPCError({ code: "BAD_REQUEST", message: owner.isSuperAdmin ? result.error || "The test email could not be sent." : "The test email could not be sent. Ask Super Admin to review your assigned settings." });
-    return { success: true, verifiedAt: testedAt } as const;
+    return { success: true, verifiedAt: testedAt, recipientEmail: input.recipientEmail, templateName: selectedTemplate.name } as const;
   }),
 });

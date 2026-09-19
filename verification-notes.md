@@ -258,3 +258,25 @@ Technical staff selected the active product and template successfully; subject a
 Cleanup removed the temporary product, template, technical-staff user, credentials, permissions, SMTP row, and sessions. Final counts were `qaProducts=0`, `qaTemplates=0`, `qaUsers=0`, and `qaOutbound=0`.
 After QA cleanup, the browser returned to normal staff login and the console contained no warnings or errors from the Super Admin or staff template workflows.
 Final validation passed with **104 tests across 25 files**, a clean TypeScript check, a successful production build, HTTP 200 runtime health, migration 0016 registered, live `email_products` and `email_message_templates` tables present, all four immutable sent-history snapshot columns present, no runtime log errors, and zero temporary QA products, templates, users, or outbound messages.
+
+
+## HTML email template upload and test-recipient update — 2026-09-19
+
+Browser QA began through the existing hidden Super Admin login. A temporary `.html` file containing valid email markup plus intentionally unsafe script/event-handler content was prepared to verify upload, sandboxed preview, server-side sanitization, and cleanup without sending a real email.
+Super Admin HTML-upload QA opened the updated Email templates page successfully. An existing real product, **MB Aura Vortex K-1**, with the plain-text template **BOGO Deal** was preserved and not modified; the page now clearly distinguishes plain text from uploaded HTML templates.
+The updated Add email template dialog rendered both **Plain text** and **HTML design** formats under the existing real product without changing its current template.
+The `.html` file uploaded successfully, switched the editor to Preview automatically, preserved all four personalization tokens, and rendered the design inside a sandboxed iframe. The original file remains local to the save operation and is not publicly hosted.
+Saving succeeded. The product count increased to two templates, the new entry displayed **HTML**, retained the source filename, and remained separate from the existing BOGO Deal plain-text template.
+A privacy-safe database check confirmed the saved template had `contentMode=html`, retained the table layout and filename, generated a plain-text fallback, and contained neither `<script>` nor `onclick`.
+The Mails composer clearly stated that both plain-text and HTML templates are supported, and listed the existing active product for selection. No lead was selected and no email send was attempted.
+After choosing the product, Compose listed both the real template as **Plain text** and the removable QA template as **HTML**, making the format explicit before staff applies a draft.
+Applying the HTML template filled the subject, opened a sandboxed visual preview, and provided an Edit HTML source view. The loaded source already showed server sanitization: the script and inline event handler were absent, while valid layout, links, token placeholders, and a safe `rel` attribute remained. No lead was selected and no email was sent.
+The Send test email action now opened a required dialog with an editable recipient email, Product selector, and Email template selector. It no longer immediately sends to the account address or uses a fixed default message; the Send button remained disabled until a template was chosen.
+The recipient field accepted a different address, and the test-email Product selector listed the active real product. No request was submitted.
+The test-email dialog required a product before enabling its template list and showed both active templates with explicit Plain text/HTML labels. The fixed default message is no longer available.
+After recipient, product, and HTML template were selected, Send test email became enabled. QA used Cancel, so no message was sent and the verified SMTP account state was not changed.
+A removable technical-staff account was created for role-specific Email status verification. Super Admin logged out cleanly and the normal staff-only sign-in page appeared.
+The removable technical-staff account signed in successfully. Its navigation included Mails and Email settings but excluded the Super Admin-only Email templates library.
+The same required recipient, Product, and Email template dialog opened from the technical-staff read-only Email status page. Staff still saw no SMTP credential fields or template-management controls. QA cancelled before selecting or sending, so no SMTP request was made.\n
+Cleanup removed the temporary HTML template, temporary staff user, credentials, permissions, SMTP row, session, local QA files, and related browser artifacts. The real **MB Aura Vortex K-1** product and **BOGO Deal** template were explicitly rechecked and preserved.
+Final validation passed with **110 tests across 25 files**, a clean TypeScript check, a successful production build, HTTP 200 runtime health, no recent runtime/TypeScript log errors, a registered and applied migration 0017, all three live HTML-template columns present, zero temporary QA users/templates/outbound messages, and the existing real product/plain-text template preserved.

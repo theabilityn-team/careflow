@@ -18,7 +18,7 @@ describe("product email template library", () => {
   it("returns only the active library to authorized staff and nests templates by product", async () => {
     vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue(permissions);
     const products = [{ id: 3, name: "Recovery Mat", description: "Product A", isActive: true, sortOrder: 1, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now }];
-    const templates = [{ id: 8, productId: 3, productName: "Recovery Mat", productIsActive: true, name: "Initial introduction", description: "First contact", subject: "Hello {{leadFirstName}}", bodyText: "Welcome", isActive: true, sortOrder: 1, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now }];
+    const templates = [{ id: 8, productId: 3, productName: "Recovery Mat", productIsActive: true, name: "Initial introduction", description: "First contact", subject: "Hello {{leadFirstName}}", contentMode: "plain" as const, bodyText: "Welcome", bodyHtml: null, sourceFileName: null, isActive: true, sortOrder: 1, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now }];
     const listProducts = vi.spyOn(db, "listEmailProducts").mockResolvedValue(products);
     const listTemplates = vi.spyOn(db, "listEmailMessageTemplates").mockResolvedValue(templates);
 
@@ -48,12 +48,38 @@ describe("product email template library", () => {
 
   it("lets Super Admin create an active template only under an existing product", async () => {
     vi.spyOn(db, "getEmailProduct").mockResolvedValue({ id: 4, name: "MB Aura", description: null, isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now });
-    const created = { id: 9, productId: 4, productName: "MB Aura", productIsActive: true, name: "Welcome", description: null, subject: "Hello {{leadFirstName}}", bodyText: "Welcome to MB Aura.", isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now };
+    const created = { id: 9, productId: 4, productName: "MB Aura", productIsActive: true, name: "Welcome", description: null, subject: "Hello {{leadFirstName}}", contentMode: "plain" as const, bodyText: "Welcome to MB Aura.", bodyHtml: null, sourceFileName: null, isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now };
     const create = vi.spyOn(db, "createEmailMessageTemplate").mockResolvedValue(created);
 
     const result = await appRouter.createCaller(context(admin)).emailLibrary.createTemplate({ productId: 4, name: "Welcome", description: null, subject: "Hello {{leadFirstName}}", bodyText: "Welcome to MB Aura.", isActive: true, sortOrder: 0 });
 
     expect(result).toEqual(created);
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ productId: 4, name: "Welcome", createdBy: 1, updatedBy: 1 }));
+  });
+
+  it("sanitizes an uploaded HTML template and derives its text fallback", async () => {
+    vi.spyOn(db, "getEmailProduct").mockResolvedValue({ id: 4, name: "MB Aura", description: null, isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now });
+    const create = vi.spyOn(db, "createEmailMessageTemplate").mockImplementation(async input => ({ id: 10, productName: "MB Aura", productIsActive: true, createdAt: now, updatedAt: now, ...input }));
+
+    await appRouter.createCaller(context(admin)).emailLibrary.createTemplate({
+      productId: 4,
+      name: "Designed welcome",
+      description: null,
+      subject: "Welcome {{leadFirstName}}",
+      contentMode: "html",
+      bodyText: "",
+      bodyHtml: '<div onclick="bad()"><h1>Welcome {{leadFirstName}}</h1><script>steal()</script></div>',
+      sourceFileName: "../welcome.html",
+      isActive: true,
+      sortOrder: 0,
+    });
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      contentMode: "html",
+      bodyHtml: expect.not.stringContaining("script"),
+      bodyText: "Welcome {{leadFirstName}}",
+      sourceFileName: "welcome.html",
+    }));
+    expect(String(create.mock.calls[0]?.[0].bodyHtml)).not.toContain("onclick");
   });
 });

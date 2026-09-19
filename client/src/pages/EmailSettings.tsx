@@ -3,6 +3,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -35,7 +36,14 @@ export default function EmailSettings() {
   const settings = trpc.emailSettings.get.useQuery(settingsInput, {
     enabled: Boolean(canUseSmtp && (!isSuperAdmin || selectedUserId)),
   });
+  const testEmailTemplates = trpc.emailSettings.testEmailTemplates.useQuery(settingsInput, {
+    enabled: Boolean(canUseSmtp && (!isSuperAdmin || selectedUserId)),
+  });
   const [form, setForm] = useState(empty);
+  const [testDialog, setTestDialog] = useState(false);
+  const [testRecipient, setTestRecipient] = useState("");
+  const [testProductId, setTestProductId] = useState("");
+  const [testTemplateId, setTestTemplateId] = useState("");
   const save = trpc.emailSettings.save.useMutation();
   const test = trpc.emailSettings.testConnection.useMutation();
   const sendTest = trpc.emailSettings.sendTestEmail.useMutation();
@@ -96,20 +104,38 @@ export default function EmailSettings() {
   }
 
   async function sendTestEmail() {
+    if (!testRecipient.trim()) return toast.error("Enter a recipient email address.");
+    if (!testTemplateId) return toast.error("Select an email template.");
     try {
-      await sendTest.mutateAsync(selectedUserId ? { userId: selectedUserId } : {});
+      const result = await sendTest.mutateAsync({
+        userId: selectedUserId,
+        recipientEmail: testRecipient.trim(),
+        messageTemplateId: Number(testTemplateId),
+      });
       await refresh();
-      toast.success("Test email sent to the account email address.");
+      setTestDialog(false);
+      toast.success(`Test email sent to ${result.recipientEmail} using ${result.templateName}.`);
     } catch (error) {
       await settings.refetch();
       toast.error(error instanceof Error ? error.message : "Test email could not be sent.");
     }
   }
 
+  function openTestEmailDialog() {
+    const current = settings.data;
+    setTestRecipient(current?.accountEmail || current?.fromEmail || "");
+    setTestProductId("");
+    setTestTemplateId("");
+    setTestDialog(true);
+  }
+
   if (access.isLoading || (isSuperAdmin && accounts.isLoading)) return <PageLoading />;
   if (!canUseSmtp) return <div className="mx-auto max-w-3xl"><Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-8"><h1 className="text-xl font-semibold">Email settings unavailable</h1><p className="mt-2 text-sm leading-6 text-slate-500">An active CareFlow account is required to view SMTP status.</p></CardContent></Card></div>;
   if (settings.isLoading || (isSuperAdmin && !selectedUserId)) return <PageLoading />;
   if (settings.error || accounts.error) return <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Unable to load email settings</AlertTitle><AlertDescription>{settings.error?.message || accounts.error?.message}</AlertDescription></Alert>;
+
+  const selectedTestProduct = testEmailTemplates.data?.find(product => product.id.toString() === testProductId);
+  const testEmailDialog = <Dialog open={testDialog} onOpenChange={setTestDialog}><DialogContent><DialogHeader><DialogTitle>Send test email</DialogTitle><DialogDescription>Choose exactly where to send the test and which active Super Admin template to use. Lead tokens render as “Test Recipient.”</DialogDescription></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Recipient email *</Label><Input type="email" value={testRecipient} onChange={event => setTestRecipient(event.target.value)} placeholder="recipient@example.com" /></div><div className="space-y-2"><Label>Product *</Label><Select value={testProductId} onValueChange={value => { setTestProductId(value); setTestTemplateId(""); }}><SelectTrigger><SelectValue placeholder={testEmailTemplates.isLoading ? "Loading products…" : "Select a product"} /></SelectTrigger><SelectContent>{testEmailTemplates.data?.map(product => <SelectItem key={product.id} value={String(product.id)}>{product.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Email template *</Label><Select value={testTemplateId} onValueChange={setTestTemplateId} disabled={!testProductId}><SelectTrigger><SelectValue placeholder={!testProductId ? "Select a product first" : selectedTestProduct?.templates.length ? "Select a template" : "No active templates"} /></SelectTrigger><SelectContent>{selectedTestProduct?.templates.map(template => <SelectItem key={template.id} value={String(template.id)}>{template.name} · {template.contentMode === "html" ? "HTML" : "Plain text"}</SelectItem>)}</SelectContent></Select></div>{!testEmailTemplates.isLoading && !testEmailTemplates.data?.length && <Alert><AlertTriangle className="h-4 w-4" /><AlertTitle>No active email templates</AlertTitle><AlertDescription>Super Admin must create and activate a product template before a test email can be sent.</AlertDescription></Alert>}</div><DialogFooter><Button variant="outline" onClick={() => setTestDialog(false)}>Cancel</Button><Button onClick={sendTestEmail} disabled={sendTest.isPending || !testRecipient.trim() || !testTemplateId} className="bg-teal-700 hover:bg-teal-800">{sendTest.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Send test email</Button></DialogFooter></DialogContent></Dialog>;
 
   if (settings.data?.mode === "readonly") {
     const status = settings.data;
@@ -120,9 +146,10 @@ export default function EmailSettings() {
         <CardContent className="space-y-6 p-6">
           <div className="grid gap-4 sm:grid-cols-2"><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs font-medium uppercase tracking-[.14em] text-slate-400">Sender email</p><p className="mt-2 break-all font-medium text-slate-900">{status.fromEmail || "Not assigned"}</p></div><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs font-medium uppercase tracking-[.14em] text-slate-400">Connection</p><p className="mt-2 font-medium text-slate-900">{status.verifiedAt ? "Verified" : "Not verified"}</p><p className="mt-1 text-xs text-slate-400">{status.lastTestedAt ? `Last tested ${new Date(status.lastTestedAt).toLocaleString()}` : "Not tested yet"}</p></div></div>
           {status.lastTestError && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Last SMTP test failed</AlertTitle><AlertDescription>{status.lastTestError}</AlertDescription></Alert>}
-          <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end"><Button variant="outline" disabled={test.isPending} onClick={testConnection}>{test.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MailCheck className="mr-2 h-4 w-4" />}Test connection</Button><Button disabled={sendTest.isPending} onClick={sendTestEmail} className="bg-teal-700 hover:bg-teal-800">{sendTest.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Send test email</Button></div>
+          <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end"><Button variant="outline" disabled={test.isPending} onClick={testConnection}>{test.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MailCheck className="mr-2 h-4 w-4" />}Test connection</Button><Button disabled={sendTest.isPending} onClick={openTestEmailDialog} className="bg-teal-700 hover:bg-teal-800"><Send className="mr-2 h-4 w-4" />Send test email</Button></div>
         </CardContent>
       </Card>
+      {testEmailDialog}
     </div>;
   }
 
@@ -154,9 +181,10 @@ export default function EmailSettings() {
         <div className="space-y-2"><Label>Sender email</Label><Input type="email" value={form.fromEmail} onChange={event => update("fromEmail", event.target.value)} placeholder="user@example.com" /></div>
         <div className="space-y-2"><Label>Sender name</Label><Input value={form.fromName} onChange={event => update("fromName", event.target.value)} placeholder="Sender name" /></div>
         <div className="space-y-2 sm:col-span-2"><Label>Reply-to email (optional)</Label><Input type="email" value={form.replyToEmail} onChange={event => update("replyToEmail", event.target.value)} placeholder="Defaults to sender email" /></div>
-        <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:col-span-2 sm:flex-row sm:justify-end"><Button variant="outline" disabled={test.isPending || save.isPending} onClick={testConnection}>{test.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MailCheck className="mr-2 h-4 w-4" />}Test connection</Button><Button variant="outline" disabled={sendTest.isPending || save.isPending} onClick={sendTestEmail}>{sendTest.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Send test email</Button><Button disabled={save.isPending} onClick={saveSettings} className="bg-teal-700 hover:bg-teal-800">{save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save settings</Button></div>
+        <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:col-span-2 sm:flex-row sm:justify-end"><Button variant="outline" disabled={test.isPending || save.isPending} onClick={testConnection}>{test.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MailCheck className="mr-2 h-4 w-4" />}Test connection</Button><Button variant="outline" disabled={sendTest.isPending || save.isPending} onClick={openTestEmailDialog}><Send className="mr-2 h-4 w-4" />Send test email</Button><Button disabled={save.isPending} onClick={saveSettings} className="bg-teal-700 hover:bg-teal-800">{save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save settings</Button></div>
       </CardContent>
     </Card>
     {verified && <div className="mt-5 flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 className="h-4 w-4" />Verified SMTP settings are ready for scheduled follow-up emails.</div>}
+    {testEmailDialog}
   </div>;
 }

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { AlertTriangle, CheckCircle2, Code2, Inbox, Library, Loader2, Mail, Search, Send } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Code2, Eye, FileCode2, Inbox, Library, Loader2, Mail, Search, Send } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -32,7 +32,10 @@ export default function Mails() {
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [selectedMessageTemplateId, setSelectedMessageTemplateId] = useState<string>("");
   const [subject, setSubject] = useState(starterSubject);
+  const [contentMode, setContentMode] = useState<"plain" | "html">("plain");
   const [bodyText, setBodyText] = useState(starterBody);
+  const [bodyHtml, setBodyHtml] = useState("");
+  const [htmlPreview, setHtmlPreview] = useState(true);
   const [headerHtml, setHeaderHtml] = useState("");
   const [footerHtml, setFooterHtml] = useState("");
   const [selectedMessageId, setSelectedMessageId] = useState<number>();
@@ -63,17 +66,30 @@ export default function Mails() {
     const selected = selectedProduct?.templates.find(item => item.id.toString() === templateId);
     if (!selected) return;
     setSubject(selected.subject);
+    setContentMode(selected.contentMode);
     setBodyText(selected.bodyText);
+    setBodyHtml(selected.bodyHtml ?? "");
+    setHtmlPreview(selected.contentMode === "html");
     toast.success(`Applied ${selected.name}. Review and personalize it before sending.`);
+  }
+
+  function clearMessageTemplate() {
+    setSelectedMessageTemplateId("");
+    if (contentMode === "html") setBodyText(selectedMessageTemplate?.bodyText || starterBody);
+    setContentMode("plain");
+    setBodyHtml("");
+    toast.success("Template detached. The readable message remains editable as plain text.");
   }
 
   async function sendEmail() {
     if (!selectedLeadId) return toast.error("Select a lead with an email address.");
     try {
-      const result = await send.mutateAsync({ leadId: Number(selectedLeadId), messageTemplateId: selectedMessageTemplateId ? Number(selectedMessageTemplateId) : null, subject, bodyText });
+      const result = await send.mutateAsync({ leadId: Number(selectedLeadId), messageTemplateId: selectedMessageTemplateId ? Number(selectedMessageTemplateId) : null, subject, contentMode, bodyText, bodyHtml: contentMode === "html" ? bodyHtml : null });
       await Promise.all([history.refetch(), utils.leads.invalidate(), utils.dashboard.invalidate()]);
       setSubject(starterSubject);
+      setContentMode("plain");
       setBodyText(starterBody);
+      setBodyHtml("");
       setSelectedProductId("");
       setSelectedMessageTemplateId("");
       if (result.communicationLogged) toast.success("Email sent and added to Communication history.");
@@ -108,10 +124,11 @@ export default function Mails() {
         <Card className="rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardHeader><CardTitle>New lead email</CardTitle><p className="text-sm text-slate-500">The selected lead must be accessible to you and have an email address.</p></CardHeader><CardContent className="space-y-5">
           <div className="space-y-2"><Label>Find recipient</Label><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><Input className="pl-9" value={recipientSearch} onChange={event => setRecipientSearch(event.target.value)} placeholder="Search by lead name or email" /></div></div>
           <div className="space-y-2"><Label>Lead recipient</Label><Select value={selectedLeadId} onValueChange={setSelectedLeadId}><SelectTrigger><SelectValue placeholder={recipients.isLoading ? "Loading leads…" : "Select a lead"} /></SelectTrigger><SelectContent>{recipients.data?.map(lead => <SelectItem key={lead.id} value={lead.id.toString()}>{lead.firstName} {lead.lastName} · {lead.email}</SelectItem>)}</SelectContent></Select>{selectedRecipient && <p className="text-xs text-slate-500">To: <strong>{selectedRecipient.email}</strong></p>}</div>
-          <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4"><div className="mb-4 flex items-start gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-cyan-800 shadow-sm"><Library className="h-4 w-4" /></div><div><p className="font-semibold text-slate-900">Start from an approved template</p><p className="text-sm leading-6 text-slate-600">Choose a product, then a Super Admin template. Subject and message remain editable before sending.</p></div></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Product</Label><Select value={selectedProductId} onValueChange={selectProduct}><SelectTrigger className="bg-white"><SelectValue placeholder={emailLibrary.isLoading ? "Loading products…" : "Select a product"} /></SelectTrigger><SelectContent>{emailLibrary.data?.map(product => <SelectItem key={product.id} value={String(product.id)}>{product.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Email template</Label><Select value={selectedMessageTemplateId} onValueChange={applyMessageTemplate} disabled={!selectedProductId || !selectedProduct?.templates.length}><SelectTrigger className="bg-white"><SelectValue placeholder={!selectedProductId ? "Select a product first" : selectedProduct?.templates.length ? "Select a template" : "No active templates"} /></SelectTrigger><SelectContent>{selectedProduct?.templates.map(item => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}</SelectContent></Select></div></div>{selectedMessageTemplate && <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-cyan-900"><strong>Applied:</strong> {selectedMessageTemplate.name}{selectedMessageTemplate.description ? ` · ${selectedMessageTemplate.description}` : ""}</p><Button type="button" variant="ghost" size="sm" className="h-7 justify-start px-2 text-xs text-cyan-900 hover:bg-cyan-100" onClick={() => setSelectedMessageTemplateId("")}>Clear template</Button></div>}</div>
+          <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4"><div className="mb-4 flex items-start gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-cyan-800 shadow-sm"><Library className="h-4 w-4" /></div><div><p className="font-semibold text-slate-900">Start from an approved template</p><p className="text-sm leading-6 text-slate-600">Choose a product, then a Super Admin plain-text or HTML template. Review and personalize it before sending.</p></div></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Product</Label><Select value={selectedProductId} onValueChange={selectProduct}><SelectTrigger className="bg-white"><SelectValue placeholder={emailLibrary.isLoading ? "Loading products…" : "Select a product"} /></SelectTrigger><SelectContent>{emailLibrary.data?.map(product => <SelectItem key={product.id} value={String(product.id)}>{product.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Email template</Label><Select value={selectedMessageTemplateId} onValueChange={applyMessageTemplate} disabled={!selectedProductId || !selectedProduct?.templates.length}><SelectTrigger className="bg-white"><SelectValue placeholder={!selectedProductId ? "Select a product first" : selectedProduct?.templates.length ? "Select a template" : "No active templates"} /></SelectTrigger><SelectContent>{selectedProduct?.templates.map(item => <SelectItem key={item.id} value={String(item.id)}>{item.name} · {item.contentMode === "html" ? "HTML" : "Plain text"}</SelectItem>)}</SelectContent></Select></div></div>{selectedMessageTemplate && <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="flex items-center gap-1.5 text-xs leading-5 text-cyan-900">{selectedMessageTemplate.contentMode === "html" && <FileCode2 className="h-3.5 w-3.5" />}<span><strong>Applied:</strong> {selectedMessageTemplate.name}{selectedMessageTemplate.description ? ` · ${selectedMessageTemplate.description}` : ""}</span></p><Button type="button" variant="ghost" size="sm" className="h-7 justify-start px-2 text-xs text-cyan-900 hover:bg-cyan-100" onClick={clearMessageTemplate}>Clear template</Button></div>}</div>
           <div className="space-y-2"><Label>Subject</Label><Input value={subject} onChange={event => setSubject(event.target.value)} maxLength={240} /></div>
-          <div className="space-y-2"><Label>Message</Label><Textarea value={bodyText} onChange={event => setBodyText(event.target.value)} rows={11} maxLength={20_000} placeholder="Write the email message" /><p className="text-xs leading-5 text-slate-400">Available tokens: <code>{"{{leadFirstName}}"}</code>, <code>{"{{leadFullName}}"}</code>, <code>{"{{senderName}}"}</code>, <code>{"{{senderEmail}}"}</code>. You may edit an applied template. Your saved HTML header and footer are added automatically.</p></div>
-          <div className="flex justify-end"><Button onClick={sendEmail} disabled={send.isPending || !selectedLeadId || !subject.trim() || !bodyText.trim()} className="bg-teal-700 hover:bg-teal-800">{send.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Send email</Button></div>
+          {contentMode === "html" ? <div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><div><Label>HTML message</Label><p className="mt-1 text-xs text-slate-400">This source is sanitized again when the email is sent.</p></div><div className="flex gap-2"><Button type="button" variant={!htmlPreview ? "default" : "outline"} size="sm" onClick={() => setHtmlPreview(false)}><Code2 className="mr-2 h-3.5 w-3.5" />Edit HTML</Button><Button type="button" variant={htmlPreview ? "default" : "outline"} size="sm" onClick={() => setHtmlPreview(true)}><Eye className="mr-2 h-3.5 w-3.5" />Preview</Button></div></div>{htmlPreview ? <iframe title="Email draft preview" sandbox="" srcDoc={bodyHtml} className="h-[460px] w-full rounded-xl border border-slate-200 bg-white" /> : <Textarea className="font-mono text-xs" value={bodyHtml} onChange={event => setBodyHtml(event.target.value)} rows={20} maxLength={250_000} />}</div> : <div className="space-y-2"><Label>Message</Label><Textarea value={bodyText} onChange={event => setBodyText(event.target.value)} rows={11} maxLength={50_000} placeholder="Write the email message" /></div>}
+          <p className="text-xs leading-5 text-slate-400">Available tokens: <code>{"{{leadFirstName}}"}</code>, <code>{"{{leadFullName}}"}</code>, <code>{"{{senderName}}"}</code>, <code>{"{{senderEmail}}"}</code>. Your saved HTML header and footer are added automatically.</p>
+          <div className="flex justify-end"><Button onClick={sendEmail} disabled={send.isPending || !selectedLeadId || !subject.trim() || (contentMode === "html" ? !bodyHtml.trim() : !bodyText.trim())} className="bg-teal-700 hover:bg-teal-800">{send.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Send email</Button></div>
         </CardContent></Card>
       </TabsContent>
 

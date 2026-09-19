@@ -62,3 +62,23 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Apply migration 0016 and verify the live database structure | Completed |
 | Run unit, authorization, browser, cleanup, runtime, TypeScript, and production build checks | Completed |
 | Save the final checkpoint | Completed |
+
+
+## Completed update: Uploaded HTML templates and explicit SMTP test recipients
+
+| Task | Status |
+| --- | --- |
+| Add Plain text / HTML format to reusable product templates | Completed |
+| Let Super Admin attach `.html` / `.htm` files up to 250 KB | Completed |
+| Store the sanitized HTML source, source filename, and generated text fallback | Completed |
+| Remove scripts, document head metadata, forms, event handlers, embedded objects, and unsupported styles | Completed |
+| Add sandboxed HTML preview and source editing to Super Admin template management | Completed |
+| Let staff select, preview, and edit approved HTML drafts in Mails | Completed |
+| Sanitize edited HTML again immediately before SMTP delivery | Completed |
+| Require an active approved HTML template before HTML sending | Completed |
+| Replace the fixed SMTP test message with required recipient, product, and template selection | Completed |
+| Support both plain-text and HTML templates in Send test email | Completed |
+| Apply migration 0017 and verify the live database columns | Completed |
+| Preserve existing MB Aura Vortex K-1 and BOGO Deal records | Completed |
+| Run 110 tests, TypeScript, production build, browser QA, runtime/log checks, and complete QA cleanup | Completed |
+| Save the final checkpoint | Completed |

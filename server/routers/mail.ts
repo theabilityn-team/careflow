@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
-import { composeEmailHtml, DEFAULT_EMAIL_FOOTER_HTML, DEFAULT_EMAIL_HEADER_HTML, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "../mailContent";
+import { composeEmailHtml, composeRichEmailHtml, DEFAULT_EMAIL_FOOTER_HTML, DEFAULT_EMAIL_HEADER_HTML, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "../mailContent";
 import { assertPermission } from "../permissions";
 import { isSmtpConfigured, sendStaffSmtpEmail } from "../smtp";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -57,7 +57,9 @@ export const mailRouter = router({
     leadId: z.number().int().positive(),
     messageTemplateId: z.number().int().positive().optional().nullable(),
     subject: z.string().trim().min(1).max(240),
-    bodyText: z.string().trim().min(1).max(20_000),
+    contentMode: z.enum(["plain", "html"]).default("plain"),
+    bodyText: z.string().max(50_000).default(""),
+    bodyHtml: z.string().max(250_000).optional().nullable(),
   })).mutation(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "manageContacts");
     const viewer = { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" };
@@ -69,6 +71,12 @@ export const mailRouter = router({
     const selectedTemplate = input.messageTemplateId ? await db.getSelectableEmailMessageTemplate(input.messageTemplateId) : undefined;
     if (input.messageTemplateId && !selectedTemplate) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "The selected email template is inactive or no longer available." });
+    }
+    if (input.contentMode === "html" && (!selectedTemplate || selectedTemplate.contentMode !== "html")) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Select an active HTML email template before sending HTML content." });
+    }
+    if (selectedTemplate && selectedTemplate.contentMode !== input.contentMode) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "The selected template format changed. Reapply the template before sending." });
     }
     const settings = await db.getStaffSmtpSettings(ownerId);
     if (!settings || !isSmtpConfigured(settings) || !settings.verifiedAt) {
@@ -82,7 +90,17 @@ export const mailRouter = router({
       senderEmail: settings.fromEmail,
     };
     const subject = renderTextTokens(input.subject, variables).replace(/[\r\n]+/g, " ").trim();
-    const html = composeEmailHtml(template?.headerHtml ?? DEFAULT_EMAIL_HEADER_HTML, input.bodyText, template?.footerHtml ?? DEFAULT_EMAIL_FOOTER_HTML, variables);
+    const headerHtml = template?.headerHtml ?? DEFAULT_EMAIL_HEADER_HTML;
+    const footerHtml = template?.footerHtml ?? DEFAULT_EMAIL_FOOTER_HTML;
+    const sanitizedBodyHtml = input.contentMode === "html" ? sanitizeTemplateHtml(input.bodyHtml ?? "") : null;
+    if (input.contentMode === "html" && (!sanitizedBodyHtml || !htmlToPlainText(sanitizedBodyHtml))) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "The HTML email must contain visible content." });
+    }
+    const bodyText = input.contentMode === "html" ? htmlToPlainText(sanitizedBodyHtml!) : input.bodyText.trim();
+    if (!bodyText) throw new TRPCError({ code: "BAD_REQUEST", message: "Enter the email message." });
+    const html = input.contentMode === "html"
+      ? composeRichEmailHtml(headerHtml, sanitizedBodyHtml!, footerHtml, variables)
+      : composeEmailHtml(headerHtml, bodyText, footerHtml, variables);
     const result = await sendStaffSmtpEmail(settings, { to: recipient.email.trim(), subject, text: htmlToPlainText(html), html });
     const sentAt = Date.now();
     await db.addOutboundEmail({
@@ -112,7 +130,7 @@ export const mailRouter = router({
         method: "email",
         direction: "outbound",
         outcome: `Email sent: ${subject}`.slice(0, 160),
-        notes: input.bodyText,
+        notes: bodyText,
         contactedAt: sentAt,
         createdBy: ctx.user.id,
       });
