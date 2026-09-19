@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
+import { formatEasternDate } from "../shared/time";
 
 export const LEAD_STATUS_LABELS = {
   new: "New",
@@ -51,17 +52,17 @@ export type ExportLeadRow = {
 const HEADERS = [
   "Lead ID", "First Name", "Last Name", "Lead Language", "Email", "Phone", "Address", "City",
   "Operational State", "State / Province", "Postal Code", "Country", "Status", "Interest Level",
-  "Assigned Staff", "Next Follow-up (UTC)", "Created At (UTC)", "Last Updated (UTC)",
+  "Assigned Staff", "Next Follow-up (ET)", "Created At (ET)", "Last Updated (ET)",
 ] as const;
 
-const iso = (value: Date | number | null) => value ? new Date(value).toISOString() : "";
+const eastern = (value: Date | number | null) => value ? formatEasternDate(value, true) : "";
 
 export function exportRowValues(row: ExportLeadRow) {
   return [
     row.id, row.firstName, row.lastName, row.preferredLanguage === "es" ? "Spanish" : "English", row.email ?? "", row.phone ?? "", row.address ?? "",
     row.city ?? "", row.stateCode ?? "", row.stateProvince ?? "", row.postalCode ?? "", row.country ?? "",
     LEAD_STATUS_LABELS[row.status], INTEREST_LABELS[row.interestLevel], row.assignedStaff ?? "Unassigned",
-    iso(row.nextFollowUpAt), iso(row.createdAt), iso(row.updatedAt),
+    eastern(row.nextFollowUpAt), eastern(row.createdAt), eastern(row.updatedAt),
   ];
 }
 
@@ -104,7 +105,7 @@ export async function createExcel(rows: ExportLeadRow[], selectedStatuses: strin
   summary.columns = [{ width: 24 }, { width: 70 }];
   summary.addRows([
     ["CareFlow CRM", "Lead export"],
-    ["Generated at (UTC)", new Date().toISOString()],
+    ["Generated at (ET)", formatEasternDate(Date.now(), true)],
     ["Lead count", rows.length],
     ["Status filters", selectedStatuses.map(status => LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_LABELS]).join(", ")],
     ["Privacy", "Basic lead information only. Clinical data and source documents are excluded."],
@@ -151,7 +152,7 @@ export async function createPdf(rows: ExportLeadRow[], selectedStatuses: string[
 
   doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(18).text("CareFlow CRM — Lead Export");
   doc.moveDown(0.25).fillColor("#475569").font("Helvetica").fontSize(8.5)
-    .text(`Generated: ${new Date().toISOString()}  |  Leads: ${rows.length}`)
+    .text(`Generated (ET): ${formatEasternDate(Date.now(), true)}  |  Leads: ${rows.length}`)
     .text(`Statuses: ${selectedStatuses.map(status => LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_LABELS]).join(", ")}`)
     .text("Basic lead information only. Clinical data and source documents are excluded.");
   doc.moveDown(0.7);
@@ -165,8 +166,8 @@ export async function createPdf(rows: ExportLeadRow[], selectedStatuses: string[
       row.id, `${row.firstName} ${row.lastName}`, row.email, row.phone, row.preferredLanguage === "es" ? "Spanish" : "English",
       LEAD_STATUS_LABELS[row.status], INTEREST_LABELS[row.interestLevel],
       row.assignedStaff ?? "Unassigned", [row.city, row.stateCode || row.stateProvince].filter(Boolean).join(", "),
-      row.nextFollowUpAt ? new Date(row.nextFollowUpAt).toISOString().slice(0, 10) : "—",
-      row.createdAt.toISOString().slice(0, 10),
+      row.nextFollowUpAt ? formatEasternDate(row.nextFollowUpAt) : "—",
+      formatEasternDate(row.createdAt),
     ];
     doc.fillColor("#0f172a").font("Helvetica").fontSize(7.5);
     let x = startX;

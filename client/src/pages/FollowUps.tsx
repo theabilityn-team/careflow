@@ -1,4 +1,5 @@
 import { EmptyState, PageHeader, PageLoading, StatusPill } from "@/components/crm/CrmUi";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,16 +15,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { diagnosisCategoryLabel, formatDate, initials, stateLabel } from "@/lib/crm";
 import { archivePeriodStart, calendarRangeForMonth, countFollowUpsByDay, localDayKey, type ArchivePeriod } from "@/lib/followUpViews";
 import { trpc } from "@/lib/trpc";
-import { AlertTriangle, ArrowRight, BellRing, CalendarClock, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock3, History, Mail, Search } from "lucide-react";
+import { CAREFLOW_TIME_ZONE, easternDateTimeInputValue, formatEasternLongDate, parseEasternDateTimeInput } from "@shared/time";
+import { AlertTriangle, ArrowRight, BellRing, CalendarClock, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock3, History, Mail, Pencil, Search, Trash2 } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
-type FollowUpLead = {
-  id: number;
+type FollowUpItem = {
+  followUpId: number;
+  leadId: number;
   firstName: string;
   lastName: string;
-  nextFollowUpAt: number | null;
+  scheduledFor: number;
   stateCode: string | null;
   diagnosisCategory: string | null;
   status: string;
@@ -39,8 +42,8 @@ const METHOD_OPTIONS = [
 
 const methodLabel = (value: string) => METHOD_OPTIONS.find(([key]) => key === value)?.[1] ?? value;
 
-function CompleteFollowUpDialog({ lead, onClose, onCompleted }: {
-  lead: FollowUpLead | null;
+function CompleteFollowUpDialog({ item, onClose, onCompleted }: {
+  item: FollowUpItem | null;
   onClose: () => void;
   onCompleted: () => Promise<void>;
 }) {
@@ -59,61 +62,100 @@ function CompleteFollowUpDialog({ lead, onClose, onCompleted }: {
   }
 
   async function save() {
-    if (!lead || !outcome.trim()) return toast.error("Add the contact outcome.");
+    if (!item || !outcome.trim()) return toast.error("Add the contact outcome.");
+    const nextTimestamp = nextFollowUp ? parseEasternDateTimeInput(nextFollowUp) : null;
+    if (nextFollowUp && !Number.isFinite(nextTimestamp)) return toast.error("Select a valid Eastern Time date and time.");
     try {
       await complete.mutateAsync({
-        leadId: lead.id,
+        leadId: item.leadId,
+        followUpId: item.followUpId,
         method: method as "phone" | "email" | "sms" | "in_person" | "other",
         direction: "outbound",
         outcome: outcome.trim(),
         notes: notes.trim() || null,
         contactedAt: Date.now(),
-        nextFollowUpAt: nextFollowUp ? new Date(nextFollowUp).getTime() : null,
-        clearFollowUp: !nextFollowUp,
+        nextFollowUpAt: nextTimestamp,
         completeFollowUp: true,
       });
       await onCompleted();
-      toast.success(nextFollowUp ? "Follow-up archived and the next reminder was scheduled." : "Follow-up completed, archived, and removed from active reminders.");
+      toast.success(nextFollowUp ? "Selected follow-up completed; another independent follow-up was scheduled." : "Selected follow-up completed and archived.");
       close();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to complete the follow-up.");
     }
   }
 
-  return <Dialog open={Boolean(lead)} onOpenChange={open => { if (!open) close(); }}>
+  return <Dialog open={Boolean(item)} onOpenChange={open => { if (!open) close(); }}>
     <DialogContent>
       <DialogHeader>
         <DialogTitle>Complete follow-up</DialogTitle>
-        <DialogDescription>
-          This records the performed contact in Communications, Audit trail, and the completed Follow-up archive. Add a new date only when another follow-up is needed.
-        </DialogDescription>
+        <DialogDescription>Only the selected reminder at {item ? formatDate(item.scheduledFor, true) : "the selected time"} will be completed. Other reminders for this lead remain active.</DialogDescription>
       </DialogHeader>
       <div className="grid gap-4 py-2 sm:grid-cols-2">
         <div className="space-y-2"><Label>Contact method</Label><Select value={method} onValueChange={setMethod}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{METHOD_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
-        <div className="space-y-2"><Label>Next follow-up (optional)</Label><Input type="datetime-local" value={nextFollowUp} onChange={event => setNextFollowUp(event.target.value)} /></div>
+        <div className="space-y-2"><Label>Another follow-up (optional, ET)</Label><Input type="datetime-local" value={nextFollowUp} onChange={event => setNextFollowUp(event.target.value)} /></div>
         <div className="space-y-2 sm:col-span-2"><Label>Outcome *</Label><Input value={outcome} onChange={event => setOutcome(event.target.value)} placeholder="Reached the lead and discussed next steps" /></div>
         <div className="space-y-2 sm:col-span-2"><Label>Notes</Label><Textarea value={notes} onChange={event => setNotes(event.target.value)} rows={4} placeholder="Optional details from the conversation" /></div>
       </div>
-      <div className="rounded-xl bg-teal-50 p-3 text-sm leading-6 text-teal-950">{nextFollowUp ? "The current reminder will move to the archive and be replaced with the new date." : "No new date selected: the current reminder will move to the archive and disappear from active and overdue follow-ups."}</div>
+      <div className="rounded-xl bg-teal-50 p-3 text-sm leading-6 text-teal-950">All date/time values are interpreted in America/New_York (Eastern Time), regardless of the device location.</div>
       <DialogFooter><Button variant="outline" onClick={close}>Cancel</Button><Button onClick={save} disabled={complete.isPending || !outcome.trim()} className="bg-teal-700 hover:bg-teal-800">{complete.isPending ? "Completing…" : "Complete follow-up"}</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }
 
-function FollowUpRow({ lead, overdue, canComplete, onOpen, onComplete }: {
-  lead: FollowUpLead;
+function EditFollowUpDialog({ item, onClose, onSaved }: {
+  item: FollowUpItem | null;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [scheduledFor, setScheduledFor] = useState("");
+  const update = trpc.dashboard.updateFollowUp.useMutation();
+
+  useEffect(() => setScheduledFor(item ? easternDateTimeInputValue(item.scheduledFor) : ""), [item]);
+
+  async function save() {
+    if (!item) return;
+    const timestamp = parseEasternDateTimeInput(scheduledFor);
+    if (!Number.isFinite(timestamp)) return toast.error("Select a valid Eastern Time date and time.");
+    try {
+      await update.mutateAsync({ id: item.followUpId, scheduledFor: timestamp });
+      await onSaved();
+      toast.success("Follow-up rescheduled and reminder delivery reset.");
+      onClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update the follow-up.");
+    }
+  }
+
+  return <Dialog open={Boolean(item)} onOpenChange={open => { if (!open) onClose(); }}>
+    <DialogContent>
+      <DialogHeader><DialogTitle>Edit follow-up</DialogTitle><DialogDescription>Change only this reminder. Other follow-ups for the same lead are not affected.</DialogDescription></DialogHeader>
+      <div className="space-y-2 py-2"><Label>Scheduled date and time (ET)</Label><Input type="datetime-local" value={scheduledFor} onChange={event => setScheduledFor(event.target.value)} /><p className="text-xs leading-5 text-slate-500">Saved in UTC internally and always shown as America/New_York Eastern Time.</p></div>
+      <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={update.isPending || !scheduledFor} className="bg-teal-700 hover:bg-teal-800">{update.isPending ? "Saving…" : "Save changes"}</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
+}
+
+function FollowUpRow({ item, overdue, canManage, onOpen, onComplete, onEdit, onDelete }: {
+  item: FollowUpItem;
   overdue?: boolean;
-  canComplete: boolean;
+  canManage: boolean;
   onOpen: () => void;
   onComplete: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   return <div className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center">
     <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-4 text-left transition-opacity hover:opacity-75">
-      <Avatar className="h-10 w-10"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{initials(lead.firstName, lead.lastName)}</AvatarFallback></Avatar>
-      <div className="min-w-0 flex-1"><p className="font-semibold text-slate-900">{lead.firstName} {lead.lastName}</p><div className="mt-1 flex flex-wrap items-center gap-2 text-xs"><span className={overdue ? "font-medium text-rose-600" : "text-slate-500"}>{formatDate(lead.nextFollowUpAt, true)}</span><span className="text-slate-300">·</span><span className="text-indigo-600">{stateLabel(lead.stateCode)}</span><span className="text-slate-300">·</span><span className="text-rose-600">{diagnosisCategoryLabel(lead.diagnosisCategory)}</span></div></div>
-      <StatusPill value={lead.status} /><ArrowRight className="h-4 w-4 text-slate-300" />
+      <Avatar className="h-10 w-10"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{initials(item.firstName, item.lastName)}</AvatarFallback></Avatar>
+      <div className="min-w-0 flex-1"><p className="font-semibold text-slate-900">{item.firstName} {item.lastName}</p><div className="mt-1 flex flex-wrap items-center gap-2 text-xs"><span className={overdue ? "font-medium text-rose-600" : "text-slate-500"}>{formatDate(item.scheduledFor, true)}</span><span className="text-slate-300">·</span><span className="text-indigo-600">{stateLabel(item.stateCode)}</span><span className="text-slate-300">·</span><span className="text-rose-600">{diagnosisCategoryLabel(item.diagnosisCategory)}</span></div></div>
+      <StatusPill value={item.status} /><ArrowRight className="h-4 w-4 text-slate-300" />
     </button>
-    {canComplete && <Button size="sm" variant={overdue ? "default" : "outline"} className={overdue ? "bg-teal-700 hover:bg-teal-800" : "bg-white"} onClick={onComplete}><Check className="mr-2 h-4 w-4" />Complete</Button>}
+    {canManage && <div className="flex flex-wrap gap-2">
+      <Button size="sm" variant={overdue ? "default" : "outline"} className={overdue ? "bg-teal-700 hover:bg-teal-800" : "bg-white"} onClick={onComplete}><Check className="mr-2 h-4 w-4" />Complete</Button>
+      <Button size="sm" variant="outline" className="bg-white" onClick={onEdit}><Pencil className="mr-2 h-4 w-4" />Edit</Button>
+      <Button size="sm" variant="outline" className="bg-white text-rose-700 hover:text-rose-800" onClick={onDelete}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
+    </div>}
   </div>;
 }
 
@@ -121,7 +163,9 @@ export default function FollowUps() {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
   const [tab, setTab] = useState("queue");
-  const [selectedLead, setSelectedLead] = useState<FollowUpLead | null>(null);
+  const [completing, setCompleting] = useState<FollowUpItem | null>(null);
+  const [editing, setEditing] = useState<FollowUpItem | null>(null);
+  const [deleting, setDeleting] = useState<FollowUpItem | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => new Date());
   const [archiveSearch, setArchiveSearch] = useState("");
@@ -131,7 +175,7 @@ export default function FollowUps() {
   const [archivePage, setArchivePage] = useState(1);
   const archivePageSize = 20;
 
-  const { data, isLoading, error } = trpc.dashboard.followUps.useQuery();
+  const { data = [], isLoading, error } = trpc.dashboard.followUps.useQuery();
   const { data: notifications = [] } = trpc.dashboard.notifications.useQuery();
   const { data: automationStatus } = trpc.dashboard.reminderAutomationStatus.useQuery();
   const { data: access } = trpc.dashboard.access.useQuery();
@@ -146,18 +190,19 @@ export default function FollowUps() {
   }), [deferredArchiveSearch, archiveMethod, archivePeriod, archivePage]);
   const { data: archive, isLoading: archiveLoading, isFetching: archiveFetching, error: archiveError } = trpc.dashboard.followUpArchive.useQuery(archiveInput, { enabled: tab === "archive", placeholderData: previous => previous });
   const markRead = trpc.dashboard.markNotificationRead.useMutation({ onSuccess: () => utils.dashboard.notifications.invalidate() });
+  const deleteFollowUp = trpc.dashboard.deleteFollowUp.useMutation();
   const now = Date.now();
-  const overdue = data?.filter(item => item.nextFollowUpAt && item.nextFollowUpAt < now) ?? [];
-  const upcoming = data?.filter(item => item.nextFollowUpAt && item.nextFollowUpAt >= now) ?? [];
+  const overdue = data.filter(item => item.scheduledFor < now);
+  const upcoming = data.filter(item => item.scheduledFor >= now);
   const dueNotifications = notifications.filter(item => item.remindAt <= now && !item.readAt);
   const countsByDay = useMemo(() => countFollowUpsByDay(calendarItems), [calendarItems]);
-  const eventDates = useMemo(() => calendarItems.filter(item => item.nextFollowUpAt).map(item => new Date(item.nextFollowUpAt!)), [calendarItems]);
+  const eventDates = useMemo(() => calendarItems.map(item => new Date(item.scheduledFor)), [calendarItems]);
   const selectedKey = selectedDate ? localDayKey(selectedDate) : "";
-  const selectedItems = calendarItems.filter(item => item.nextFollowUpAt && localDayKey(item.nextFollowUpAt) === selectedKey);
+  const selectedItems = calendarItems.filter(item => localDayKey(item.scheduledFor) === selectedKey);
 
   useEffect(() => setArchivePage(1), [deferredArchiveSearch, archiveMethod, archivePeriod]);
 
-  async function refreshAfterCompletion() {
+  async function refreshFollowUps() {
     await Promise.all([
       utils.dashboard.followUps.invalidate(),
       utils.dashboard.followUpCalendar.invalidate(),
@@ -168,38 +213,46 @@ export default function FollowUps() {
     ]);
   }
 
-  const Group = ({ title, items, overdue = false }: { title: string; items: typeof upcoming; overdue?: boolean }) => <Card className="rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="p-0"><div className="flex items-center justify-between border-b border-slate-100 px-6 py-5"><div className="flex items-center gap-3">{overdue ? <Clock3 className="h-5 w-5 text-rose-600" /> : <CalendarClock className="h-5 w-5 text-teal-700" />}<h2 className="font-semibold">{title}</h2></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{items.length}</span></div>{!items.length ? <div className="p-6"><EmptyState title={overdue ? "Nothing overdue" : "No upcoming follow-ups"} description={overdue ? "You are caught up with scheduled conversations." : "Follow-up dates appear here after a communication is logged."} /></div> : <div className="divide-y divide-slate-100">{items.map(lead => <FollowUpRow key={lead.id} lead={lead as FollowUpLead} overdue={overdue} canComplete={Boolean(access?.permissions.manageContacts)} onOpen={() => navigate(`/leads/${lead.id}`)} onComplete={() => setSelectedLead(lead as FollowUpLead)} />)}</div>}</CardContent></Card>;
+  async function confirmDelete() {
+    if (!deleting) return;
+    try {
+      await deleteFollowUp.mutateAsync({ id: deleting.followUpId });
+      await refreshFollowUps();
+      toast.success("Selected follow-up deleted. Other reminders remain active.");
+      setDeleting(null);
+    } catch (deleteError) {
+      toast.error(deleteError instanceof Error ? deleteError.message : "Unable to delete the follow-up.");
+    }
+  }
+
+  const Group = ({ title, items, isOverdue = false }: { title: string; items: FollowUpItem[]; isOverdue?: boolean }) => <Card className="rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardContent className="p-0"><div className="flex items-center justify-between border-b border-slate-100 px-6 py-5"><div className="flex items-center gap-3">{isOverdue ? <Clock3 className="h-5 w-5 text-rose-600" /> : <CalendarClock className="h-5 w-5 text-teal-700" />}<h2 className="font-semibold">{title}</h2></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{items.length}</span></div>{!items.length ? <div className="p-6"><EmptyState title={isOverdue ? "Nothing overdue" : "No upcoming follow-ups"} description={isOverdue ? "You are caught up with scheduled conversations." : "Every date scheduled while logging a communication appears here independently."} /></div> : <div className="divide-y divide-slate-100">{items.map(item => <FollowUpRow key={item.followUpId} item={item} overdue={isOverdue} canManage={Boolean(access?.permissions.manageContacts)} onOpen={() => navigate(`/leads/${item.leadId}`)} onComplete={() => setCompleting(item)} onEdit={() => setEditing(item)} onDelete={() => setDeleting(item)} />)}</div>}</CardContent></Card>;
 
   if (isLoading) return <PageLoading />;
 
   return <div className="mx-auto max-w-[1280px]">
-    <PageHeader eyebrow="Personal contact planning" title="Your follow-ups and reminders" description="Plan active reminders in a queue or calendar, then review every completed follow-up in the permanent archive." actions={<Button onClick={() => navigate("/leads")} variant="outline"><CheckCircle2 className="mr-2 h-4 w-4" />View accessible leads</Button>} />
-    <div className="mb-6 rounded-2xl border border-teal-100 bg-teal-50/70 p-4 text-sm leading-6 text-teal-950"><strong>Workflow:</strong> Select <strong>Complete</strong> after the call, email, or meeting. CareFlow logs the contact and moves the original reminder into Archive. Leave the next date blank to close it, or select a new date to schedule another follow-up.</div>
+    <PageHeader eyebrow="Personal contact planning" title="Your follow-ups and reminders" description="Every scheduled follow-up is independent. All dates and times use America/New_York Eastern Time, regardless of your device location." actions={<Button onClick={() => navigate("/leads")} variant="outline"><CheckCircle2 className="mr-2 h-4 w-4" />View accessible leads</Button>} />
+    <div className="mb-6 rounded-2xl border border-teal-100 bg-teal-50/70 p-4 text-sm leading-6 text-teal-950"><strong>Workflow:</strong> A lead can have multiple active follow-ups. Use <strong>Edit</strong>, <strong>Delete</strong>, or <strong>Complete</strong> on the exact reminder you want; the others stay unchanged.</div>
     {automationStatus && (!automationStatus.emailConfigured || !automationStatus.scheduleConfigured) && <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 sm:flex-row sm:items-start"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div className="flex-1"><p className="font-semibold">Email reminder automation is not fully activated</p><p className="mt-1 leading-6">{automationStatus.scope === "staff" ? "In-app reminders are working. Super Admin must activate your assigned SMTP mailbox; you can review and test it under Email settings." : `Super Admin SMTP is ${automationStatus.adminEmailConfigured ? "verified" : "not verified"}. ${automationStatus.configuredStaff} of ${automationStatus.totalStaff} active staff SMTP accounts are verified. Super Admin manages every sender.`}{!automationStatus.scheduleConfigured ? " The scheduled reminder processor must also be activated after deployment." : ""}</p></div><Button size="sm" variant="outline" className="bg-white" onClick={() => navigate("/email-settings")}>{automationStatus.scope === "staff" ? "View Email status" : "Manage SMTP"}</Button></div>}
     {dueNotifications.length > 0 && <Card className="mb-6 overflow-hidden rounded-2xl border-0 bg-slate-950 text-white shadow-[0_12px_40px_rgba(15,23,42,.15)]"><CardContent className="p-0"><div className="flex items-center justify-between border-b border-slate-800 px-6 py-5"><div className="flex items-center gap-3"><BellRing className="h-5 w-5 text-amber-300" /><div><h2 className="font-semibold">Two-hour notifications</h2><p className="mt-1 text-xs text-slate-400">Appointments requiring your attention now</p></div></div><Badge className="bg-amber-300 text-slate-950 hover:bg-amber-300">{dueNotifications.length} unread</Badge></div><div className="divide-y divide-slate-800">{dueNotifications.map(item => <div key={item.id} className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center"><button onClick={() => navigate(`/leads/${item.leadId}`)} className="min-w-0 flex-1 text-left"><p className="font-semibold">{item.firstName} {item.lastName}</p><p className="mt-1 text-sm text-slate-400">Scheduled {formatDate(item.scheduledFor, true)} · {stateLabel(item.stateCode)} · {diagnosisCategoryLabel(item.diagnosisCategory)}</p><p className="mt-2 flex items-center gap-2 text-xs text-slate-500"><Mail className="h-3.5 w-3.5" />Staff email: {item.staffEmailStatus} · Lead email: {item.leadEmailStatus}</p></button><Button size="sm" variant="outline" className="border-slate-700 bg-slate-900 text-white hover:bg-slate-800 hover:text-white" onClick={async () => { try { await markRead.mutateAsync({ id: item.id }); toast.success("Notification marked as read."); } catch (markError) { toast.error(markError instanceof Error ? markError.message : "Unable to mark notification."); } }}><Check className="mr-2 h-4 w-4" />Mark read</Button></div>)}</div></CardContent></Card>}
 
     <Tabs value={tab} onValueChange={setTab} className="gap-5">
       <TabsList className="h-11 w-full justify-start rounded-xl bg-white p-1 shadow-sm sm:w-fit"><TabsTrigger value="queue" className="px-4"><Clock3 />Queue</TabsTrigger><TabsTrigger value="calendar" className="px-4"><CalendarClock />Calendar</TabsTrigger><TabsTrigger value="archive" className="px-4"><History />Archive</TabsTrigger></TabsList>
-
-      <TabsContent value="queue" className="mt-0">
-        {error ? <div className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error.message}</div> : <div className="grid gap-6 lg:grid-cols-2"><Group title="Overdue" items={overdue} overdue /><Group title="Upcoming" items={upcoming} /></div>}
-      </TabsContent>
-
-      <TabsContent value="calendar" className="mt-0">
-        <div className="grid gap-6 lg:grid-cols-[430px_1fr]">
-          <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><div className="mb-4"><p className="font-semibold text-slate-950">Follow-up calendar</p><p className="mt-1 text-sm text-slate-500">Dates with reminders are highlighted. Select a date to see its schedule.</p></div><Calendar mode="single" month={calendarMonth} onMonthChange={month => { setCalendarMonth(month); setSelectedDate(month); }} selected={selectedDate} onSelect={setSelectedDate} modifiers={{ hasFollowUps: eventDates }} modifiersClassNames={{ hasFollowUps: "font-bold ring-2 ring-teal-500/30 bg-teal-50" }} className="mx-auto w-full [--cell-size:--spacing(11)]" /></CardContent></Card>
-          <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-0"><div className="border-b border-slate-100 px-6 py-5"><div className="flex items-center justify-between gap-4"><div><p className="font-semibold text-slate-950">{selectedDate ? selectedDate.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : "Select a date"}</p><p className="mt-1 text-sm text-slate-500">{selectedDate ? `${countsByDay[selectedKey] ?? 0} scheduled follow-up${countsByDay[selectedKey] === 1 ? "" : "s"}` : "Choose a highlighted calendar day."}</p></div>{calendarLoading && <span className="text-xs text-slate-400">Loading…</span>}</div></div>{calendarLoading ? <div className="p-6"><PageLoading /></div> : !selectedItems.length ? <div className="p-6"><EmptyState title="No follow-ups on this date" description="Select another highlighted day or schedule a reminder from a lead profile." /></div> : <div className="divide-y divide-slate-100">{selectedItems.map(lead => <FollowUpRow key={lead.id} lead={lead as FollowUpLead} overdue={Boolean(lead.nextFollowUpAt && lead.nextFollowUpAt < now)} canComplete={Boolean(access?.permissions.manageContacts)} onOpen={() => navigate(`/leads/${lead.id}`)} onComplete={() => setSelectedLead(lead as FollowUpLead)} />)}</div>}</CardContent></Card>
-        </div>
-      </TabsContent>
-
-      <TabsContent value="archive" className="mt-0">
-        <Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-0">
-          <div className="border-b border-slate-100 p-5"><div className="flex flex-col gap-3 lg:flex-row"><div className="relative flex-1"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input value={archiveSearch} onChange={event => setArchiveSearch(event.target.value)} className="h-11 pl-10" placeholder="Search lead, outcome, or notes…" /></div><Select value={archiveMethod} onValueChange={setArchiveMethod}><SelectTrigger className="h-11 w-full lg:w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All methods</SelectItem>{METHOD_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><Select value={archivePeriod} onValueChange={value => setArchivePeriod(value as ArchivePeriod)}><SelectTrigger className="h-11 w-full lg:w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All completion dates</SelectItem><SelectItem value="30">Last 30 days</SelectItem><SelectItem value="90">Last 90 days</SelectItem><SelectItem value="365">Last 12 months</SelectItem></SelectContent></Select></div><div className="mt-4 flex items-center justify-between text-sm text-slate-500"><p><strong className="text-slate-800">{archive?.total ?? 0}</strong> completed follow-up{archive?.total === 1 ? "" : "s"}</p>{archiveFetching && !archiveLoading && <span>Updating…</span>}</div></div>
-          {archiveLoading ? <div className="p-6"><PageLoading /></div> : archiveError ? <div className="m-6 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{archiveError.message}</div> : !archive?.items.length ? <div className="p-6"><EmptyState title="No completed follow-ups" description="Completed reminders will appear here with their original schedule, result, staff member, and any next reminder." /></div> : <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead className="pl-6">Lead</TableHead><TableHead>Original schedule</TableHead><TableHead>Completed</TableHead><TableHead>Result</TableHead><TableHead>Completed by</TableHead><TableHead>Next reminder</TableHead><TableHead className="w-12" /></TableRow></TableHeader><TableBody>{archive.items.map(item => <TableRow key={item.id} className="cursor-pointer" onClick={() => navigate(`/leads/${item.leadId}`)}><TableCell className="py-4 pl-6"><div className="flex items-center gap-3"><Avatar className="h-9 w-9"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{initials(item.firstName, item.lastName)}</AvatarFallback></Avatar><div><p className="font-semibold text-slate-900">{item.firstName} {item.lastName}</p><p className="mt-1 text-xs text-slate-400">{stateLabel(item.stateCode)} · {diagnosisCategoryLabel(item.diagnosisCategory)}</p></div></div></TableCell><TableCell><p className="text-sm text-slate-700">{formatDate(item.scheduledFor, true)}</p></TableCell><TableCell><p className="text-sm font-medium text-slate-900">{formatDate(item.completedAt, true)}</p></TableCell><TableCell><div className="max-w-64"><div className="flex items-center gap-2"><Badge variant="outline">{methodLabel(item.method)}</Badge><span className="truncate text-sm font-medium text-slate-800">{item.outcome}</span></div>{item.notes && <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{item.notes}</p>}</div></TableCell><TableCell><span className="text-sm text-slate-700">{item.completedByName || (item.completedBy < 0 ? "Super Administrator" : `Staff #${item.completedBy}`)}</span></TableCell><TableCell><span className="text-sm text-slate-600">{item.nextFollowUpAt ? formatDate(item.nextFollowUpAt, true) : "Closed"}</span></TableCell><TableCell><ChevronRight className="h-4 w-4 text-slate-300" /></TableCell></TableRow>)}</TableBody></Table></div>}
-          {archive && archive.total > 0 && <div className="flex flex-col gap-3 border-t border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm text-slate-500">Page {archive.page} of {archive.totalPages}</p><div className="flex gap-2"><Button size="sm" variant="outline" disabled={archive.page <= 1} onClick={() => setArchivePage(page => Math.max(1, page - 1))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button size="sm" variant="outline" disabled={archive.page >= archive.totalPages} onClick={() => setArchivePage(page => Math.min(archive.totalPages, page + 1))}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>}
-        </CardContent></Card>
-      </TabsContent>
+      <TabsContent value="queue" className="mt-0">{error ? <div className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error.message}</div> : <div className="grid gap-6 lg:grid-cols-2"><Group title="Overdue" items={overdue as FollowUpItem[]} isOverdue /><Group title="Upcoming" items={upcoming as FollowUpItem[]} /></div>}</TabsContent>
+      <TabsContent value="calendar" className="mt-0"><div className="grid gap-6 lg:grid-cols-[430px_1fr]">
+        <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-5"><div className="mb-4"><p className="font-semibold text-slate-950">Follow-up calendar</p><p className="mt-1 text-sm text-slate-500">Dates with reminders are highlighted in Eastern Time.</p></div><Calendar timeZone={CAREFLOW_TIME_ZONE} mode="single" month={calendarMonth} onMonthChange={month => { setCalendarMonth(month); setSelectedDate(month); }} selected={selectedDate} onSelect={setSelectedDate} modifiers={{ hasFollowUps: eventDates }} modifiersClassNames={{ hasFollowUps: "font-bold ring-2 ring-teal-500/30 bg-teal-50" }} className="mx-auto w-full [--cell-size:--spacing(11)]" /></CardContent></Card>
+        <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-0"><div className="border-b border-slate-100 px-6 py-5"><div className="flex items-center justify-between gap-4"><div><p className="font-semibold text-slate-950">{selectedDate ? formatEasternLongDate(selectedDate) : "Select a date"}</p><p className="mt-1 text-sm text-slate-500">{selectedDate ? `${countsByDay[selectedKey] ?? 0} scheduled follow-up${countsByDay[selectedKey] === 1 ? "" : "s"}` : "Choose a highlighted calendar day."}</p></div>{calendarLoading && <span className="text-xs text-slate-400">Loading…</span>}</div></div>{calendarLoading ? <div className="p-6"><PageLoading /></div> : !selectedItems.length ? <div className="p-6"><EmptyState title="No follow-ups on this date" description="Select another highlighted Eastern Time day." /></div> : <div className="divide-y divide-slate-100">{selectedItems.map(item => <FollowUpRow key={item.followUpId} item={item as FollowUpItem} overdue={item.scheduledFor < now} canManage={Boolean(access?.permissions.manageContacts)} onOpen={() => navigate(`/leads/${item.leadId}`)} onComplete={() => setCompleting(item as FollowUpItem)} onEdit={() => setEditing(item as FollowUpItem)} onDelete={() => setDeleting(item as FollowUpItem)} />)}</div>}</CardContent></Card>
+      </div></TabsContent>
+      <TabsContent value="archive" className="mt-0"><Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-0">
+        <div className="border-b border-slate-100 p-5"><div className="flex flex-col gap-3 lg:flex-row"><div className="relative flex-1"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input value={archiveSearch} onChange={event => setArchiveSearch(event.target.value)} className="h-11 pl-10" placeholder="Search lead, outcome, or notes…" /></div><Select value={archiveMethod} onValueChange={setArchiveMethod}><SelectTrigger className="h-11 w-full lg:w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All methods</SelectItem>{METHOD_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><Select value={archivePeriod} onValueChange={value => setArchivePeriod(value as ArchivePeriod)}><SelectTrigger className="h-11 w-full lg:w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All completion dates</SelectItem><SelectItem value="30">Last 30 days</SelectItem><SelectItem value="90">Last 90 days</SelectItem><SelectItem value="365">Last 12 months</SelectItem></SelectContent></Select></div><div className="mt-4 flex items-center justify-between text-sm text-slate-500"><p><strong className="text-slate-800">{archive?.total ?? 0}</strong> completed follow-up{archive?.total === 1 ? "" : "s"}</p>{archiveFetching && !archiveLoading && <span>Updating…</span>}</div></div>
+        {archiveLoading ? <div className="p-6"><PageLoading /></div> : archiveError ? <div className="m-6 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{archiveError.message}</div> : !archive?.items.length ? <div className="p-6"><EmptyState title="No completed follow-ups" description="Completed reminders appear here with their original Eastern Time schedule and result." /></div> : <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead className="pl-6">Lead</TableHead><TableHead>Original schedule</TableHead><TableHead>Completed</TableHead><TableHead>Result</TableHead><TableHead>Completed by</TableHead><TableHead>Next reminder</TableHead><TableHead className="w-12" /></TableRow></TableHeader><TableBody>{archive.items.map(item => <TableRow key={item.id} className="cursor-pointer" onClick={() => navigate(`/leads/${item.leadId}`)}><TableCell className="py-4 pl-6"><div className="flex items-center gap-3"><Avatar className="h-9 w-9"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{initials(item.firstName, item.lastName)}</AvatarFallback></Avatar><div><p className="font-semibold text-slate-900">{item.firstName} {item.lastName}</p><p className="mt-1 text-xs text-slate-400">{stateLabel(item.stateCode)} · {diagnosisCategoryLabel(item.diagnosisCategory)}</p></div></div></TableCell><TableCell><p className="text-sm text-slate-700">{formatDate(item.scheduledFor, true)}</p></TableCell><TableCell><p className="text-sm font-medium text-slate-900">{formatDate(item.completedAt, true)}</p></TableCell><TableCell><div className="max-w-64"><div className="flex items-center gap-2"><Badge variant="outline">{methodLabel(item.method)}</Badge><span className="truncate text-sm font-medium text-slate-800">{item.outcome}</span></div>{item.notes && <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{item.notes}</p>}</div></TableCell><TableCell><span className="text-sm text-slate-700">{item.completedByName || (item.completedBy < 0 ? "Super Administrator" : `Staff #${item.completedBy}`)}</span></TableCell><TableCell><span className="text-sm text-slate-600">{item.nextFollowUpAt ? formatDate(item.nextFollowUpAt, true) : "Closed"}</span></TableCell><TableCell><ChevronRight className="h-4 w-4 text-slate-300" /></TableCell></TableRow>)}</TableBody></Table></div>}
+        {archive && archive.total > 0 && <div className="flex flex-col gap-3 border-t border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm text-slate-500">Page {archive.page} of {archive.totalPages}</p><div className="flex gap-2"><Button size="sm" variant="outline" disabled={archive.page <= 1} onClick={() => setArchivePage(page => Math.max(1, page - 1))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button size="sm" variant="outline" disabled={archive.page >= archive.totalPages} onClick={() => setArchivePage(page => Math.min(archive.totalPages, page + 1))}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>}
+      </CardContent></Card></TabsContent>
     </Tabs>
-    <CompleteFollowUpDialog lead={selectedLead} onClose={() => setSelectedLead(null)} onCompleted={refreshAfterCompletion} />
+
+    <CompleteFollowUpDialog item={completing} onClose={() => setCompleting(null)} onCompleted={refreshFollowUps} />
+    <EditFollowUpDialog item={editing} onClose={() => setEditing(null)} onSaved={refreshFollowUps} />
+    <AlertDialog open={Boolean(deleting)} onOpenChange={open => { if (!open) setDeleting(null); }}>
+      <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this follow-up?</AlertDialogTitle><AlertDialogDescription>This permanently removes only the reminder scheduled for {deleting ? formatDate(deleting.scheduledFor, true) : "the selected time"}. Other follow-ups and communication history remain unchanged.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={confirmDelete} disabled={deleteFollowUp.isPending} className="bg-rose-600 hover:bg-rose-700">{deleteFollowUp.isPending ? "Deleting…" : "Delete follow-up"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+    </AlertDialog>
   </div>;
 }

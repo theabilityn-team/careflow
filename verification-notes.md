@@ -292,3 +292,16 @@ Super Admin signed in successfully. In Mails, **Header & footer** remained visib
 Opening the tab showed **Global HTML header and footer**, explicitly stated that Super Admin controls it for every CareFlow account, and noted that technical staff cannot view or edit it. No values were changed or saved during QA.
 Cleanup removed the temporary technical-staff user, credentials, permissions, session, local QA scripts, and browser artifacts. No real email, SMTP, lead, template-library, or global frame data was modified.
 Final validation passed with **111 tests across 25 files**, a clean TypeScript check, a successful production build, HTTP 200 runtime health, no recent runtime/TypeScript log errors, clean diff checks, and no temporary QA files. Existing global frame values were read-only during QA and were not modified.
+
+
+## Eastern Time and independent follow-ups — 2026-09-19
+
+CareFlow now treats **America/New_York** as the single business timezone for every date/time input, calendar range, list, detail view, email/reminder copy, and export. Winter timestamps show EST and summer timestamps show EDT. UTC milliseconds remain the internal storage format.
+
+The follow-up data model now preserves multiple active reminders for one lead. The lead-level Next follow-up value is derived from the earliest active reminder rather than replacing sibling reminders. Every active item has its own ID and supports **Complete**, **Edit**, and **Delete**. Completion archives only the selected item; edit reschedules only that item; delete removes only that reminder and keeps communication history.
+
+Migration `0018_mixed_rachel_grey.sql` added source communication and actor metadata, indexes, and a data-preserving backfill. A one-time post-restart repair restored the second real uncompleted schedule that the legacy development process had briefly collapsed during the migration window. Final privacy-safe database verification found **2 active follow-ups on 1 lead**, both linked to their source communications, zero missing active schedules, and zero mismatched lead pointers.
+
+Non-destructive browser QA confirmed two separate queue items and notifications, two items on the same Eastern calendar day, an Edit dialog with the correct ET value and selected-item wording, a Delete confirmation that explicitly preserves other reminders and communication history, and the lead profile showing the earliest Next follow-up plus **2 active reminders**. No edit, delete, completion, or notification-read action was submitted.
+
+Final automated validation passed with **112 tests across 26 files**, a clean TypeScript check, a successful production build, HTTP 200 runtime health, no new post-migration server errors, and no browser console errors.

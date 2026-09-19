@@ -98,3 +98,24 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Remove temporary staff QA user, session, scripts, and browser artifacts | Completed |
 | Run 111 tests, TypeScript, production build, runtime/log, and repository checks | Completed |
 | Save the final checkpoint | Completed |
+
+
+## Completed update: Project-wide Eastern Time and independent follow-ups
+
+| Task | Status |
+| --- | --- |
+| Standardize all business date/time display on `America/New_York` | Completed |
+| Interpret every follow-up `datetime-local` input as Eastern Time regardless of device location | Completed |
+| Make calendar day grouping and date-range queries DST-safe in Eastern Time | Completed |
+| Format automatic staff and lead reminder copy in Eastern Time | Completed |
+| Update lead exports and created-date filters to Eastern Time | Completed |
+| Preserve multiple active follow-ups per lead instead of replacing an existing reminder | Completed |
+| Derive lead Next follow-up from the earliest active reminder | Completed |
+| Add per-follow-up Complete, Edit, and Delete actions | Completed |
+| Preserve exact completion linkage and audit edit/delete actions | Completed |
+| Restore and link both existing uncompleted follow-up schedules | Completed |
+| Apply migration 0018 and verify live columns, indexes, pointers, and source links | Completed |
+| Update the English System guide | Completed |
+| Run 112 tests, TypeScript, production build, runtime/log, browser, and database checks | Completed |
+| Push the completed project to `theabilityn-team/careflow` | Completed |
+| Save the final checkpoint | Completed |

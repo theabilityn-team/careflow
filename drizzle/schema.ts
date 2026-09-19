@@ -266,7 +266,9 @@ export const leadGroupShares = mysqlTable("lead_group_shares", {
 export const followUpReminders = mysqlTable("follow_up_reminders", {
   id: int("id").autoincrement().primaryKey(),
   leadId: int("leadId").notNull(),
+  sourceCommunicationId: int("sourceCommunicationId"),
   recipientUserId: int("recipientUserId").notNull(),
+  createdBy: int("createdBy").default(-1000000).notNull(),
   scheduledFor: bigint("scheduledFor", { mode: "number" }).notNull(),
   remindAt: bigint("remindAt", { mode: "number" }).notNull(),
   readAt: bigint("readAt", { mode: "number" }),
@@ -280,6 +282,9 @@ export const followUpReminders = mysqlTable("follow_up_reminders", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, table => ({
   uniqueReminder: uniqueIndex("follow_up_reminders_lead_recipient_time_unique").on(table.leadId, table.recipientUserId, table.scheduledFor),
+  uniqueSourceCommunication: uniqueIndex("follow_up_reminders_sourceCommunicationId_unique").on(table.sourceCommunicationId),
+  recipientSchedule: index("follow_up_reminders_recipientUserId_scheduledFor_idx").on(table.recipientUserId, table.scheduledFor),
+  leadSchedule: index("follow_up_reminders_leadId_scheduledFor_idx").on(table.leadId, table.scheduledFor),
 }));
 
 export const scheduledJobs = mysqlTable("scheduled_jobs", {
@@ -351,6 +356,7 @@ export const outboundEmails = mysqlTable("outbound_emails", {
 export const completedFollowUps = mysqlTable("completed_follow_ups", {
   id: int("id").autoincrement().primaryKey(),
   leadId: int("leadId").notNull(),
+  followUpId: int("followUpId"),
   communicationId: int("communicationId").notNull(),
   completedBy: int("completedBy").notNull(),
   scheduledFor: bigint("scheduledFor", { mode: "number" }).notNull(),
@@ -362,6 +368,7 @@ export const completedFollowUps = mysqlTable("completed_follow_ups", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, table => ({
   uniqueCommunication: uniqueIndex("completed_follow_ups_communicationId_unique").on(table.communicationId),
+  uniqueFollowUp: uniqueIndex("completed_follow_ups_followUpId_unique").on(table.followUpId),
 }));
 
 export const auditEvents = mysqlTable("audit_events", {

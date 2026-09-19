@@ -1,21 +1,19 @@
+import { addEasternDays, easternDayKey, easternEndOfDay, easternParts, easternStartOfDay } from "@shared/time";
+
 export type ArchivePeriod = "all" | "30" | "90" | "365";
 
-export function localDayKey(value: number | Date) {
-  const date = value instanceof Date ? value : new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+export const localDayKey = easternDayKey;
 
 export function calendarRangeForMonth(month: Date) {
-  const first = new Date(month.getFullYear(), month.getMonth(), 1, 0, 0, 0, 0);
-  const last = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59, 999);
-  const from = new Date(first);
-  from.setDate(first.getDate() - first.getDay());
-  const to = new Date(last);
-  to.setDate(last.getDate() + (6 - last.getDay()));
-  return { from: from.getTime(), to: to.getTime() };
+  const parts = easternParts(month);
+  const firstKey = `${parts.year}-${String(parts.month).padStart(2, "0")}-01`;
+  const lastDay = new Date(Date.UTC(parts.year, parts.month, 0)).getUTCDate();
+  const lastKey = `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  const firstWeekday = new Date(Date.UTC(parts.year, parts.month - 1, 1)).getUTCDay();
+  const lastWeekday = new Date(Date.UTC(parts.year, parts.month - 1, lastDay)).getUTCDay();
+  const from = addEasternDays(easternStartOfDay(firstKey), -firstWeekday);
+  const lastGridDay = addEasternDays(easternStartOfDay(lastKey), 6 - lastWeekday);
+  return { from, to: easternEndOfDay(lastGridDay) };
 }
 
 export function archivePeriodStart(period: ArchivePeriod, now = Date.now()) {
@@ -23,10 +21,11 @@ export function archivePeriodStart(period: ArchivePeriod, now = Date.now()) {
   return now - Number(period) * 24 * 60 * 60 * 1000;
 }
 
-export function countFollowUpsByDay(items: Array<{ nextFollowUpAt: number | null }>) {
+export function countFollowUpsByDay(items: Array<{ scheduledFor?: number | null; nextFollowUpAt?: number | null }>) {
   return items.reduce<Record<string, number>>((counts, item) => {
-    if (!item.nextFollowUpAt) return counts;
-    const key = localDayKey(item.nextFollowUpAt);
+    const timestamp = item.scheduledFor ?? item.nextFollowUpAt;
+    if (!timestamp) return counts;
+    const key = easternDayKey(timestamp);
     counts[key] = (counts[key] ?? 0) + 1;
     return counts;
   }, {});

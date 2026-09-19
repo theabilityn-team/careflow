@@ -1,21 +1,12 @@
 import * as db from "./db";
+import { formatEasternLongDateTime } from "../shared/time";
 import { isSmtpConfigured, sendStaffSmtpEmail, type StaffSmtpConfig } from "./smtp";
 
 type Delivery = Awaited<ReturnType<typeof db.getDueFollowUpReminderDeliveries>>[number];
-const stateTimeZones: Record<string, string> = { FL: "America/New_York", AZ: "America/Phoenix", NV: "America/Los_Angeles", CA: "America/Los_Angeles", OR: "America/Los_Angeles" };
 const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]!);
 
 function formattedTime(delivery: Delivery, language: "en" | "es") {
-  return new Date(delivery.scheduledFor).toLocaleString(language === "es" ? "es-US" : "en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-    timeZone: stateTimeZones[delivery.stateCode ?? ""] ?? "America/New_York",
-  });
+  return formatEasternLongDateTime(delivery.scheduledFor, language === "es" ? "es-US" : "en-US");
 }
 
 export function buildFollowUpMessages(delivery: Delivery) {

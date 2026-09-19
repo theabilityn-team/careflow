@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
 import { inferSupportedStateCode } from "../shared/leadClassification";
@@ -37,7 +37,7 @@ import { ENV } from "./_core/env";
 import { leadChanges, leadSnapshot, serializeAudit } from "./leadAudit";
 import { buildLeadIdentityKeys, identityMatchLabels, type LeadIdentityInput } from "./leadIdentity";
 import { normalizeLeadPagination } from "./leadList";
-import { communicationLeadUpdate, mergeLeadPatch } from "./leadWorkflow";
+import { mergeLeadPatch } from "./leadWorkflow";
 import { isPasswordResetUsable } from "./passwordSecurity";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -837,7 +837,10 @@ export async function listLeads(input: LeadListInput, viewer: { userId: number; 
       : input.sort === "name_desc" ? [desc(leads.lastName), desc(leads.firstName)]
         : input.sort === "follow_up_asc" ? [sql`${leads.nextFollowUpAt} is null`, asc(leads.nextFollowUpAt), desc(leads.updatedAt)]
           : [desc(leads.updatedAt)];
-  const items = await db.select().from(leads).where(where).orderBy(...orderBy).limit(pagination.pageSize).offset(pagination.offset);
+  const items = await db.select({
+    ...getTableColumns(leads),
+    activeFollowUpCount: sql<number>`(SELECT count(*) FROM ${followUpReminders} WHERE ${followUpReminders.leadId} = ${leads.id})`,
+  }).from(leads).where(where).orderBy(...orderBy).limit(pagination.pageSize).offset(pagination.offset);
   return { items, total: pagination.total, page: pagination.page, pageSize: pagination.pageSize, totalPages: pagination.totalPages };
 }
 
@@ -1000,9 +1003,10 @@ export async function getLead(leadId: number, viewer?: { userId: number; isSuper
   const visibility = viewer ? leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin) : undefined;
   const lead = (await db.select().from(leads).where(and(eq(leads.id, leadId), visibility)).limit(1))[0];
   if (!lead) return null;
-  const [documents, contactHistory, auditHistory] = await Promise.all([
+  const [documents, contactHistory, activeFollowUps, auditHistory] = await Promise.all([
     db.select().from(leadDocuments).where(eq(leadDocuments.leadId, leadId)).orderBy(desc(leadDocuments.createdAt)),
     db.select().from(communications).where(eq(communications.leadId, leadId)).orderBy(desc(communications.contactedAt)),
+    db.select().from(followUpReminders).where(eq(followUpReminders.leadId, leadId)).orderBy(asc(followUpReminders.scheduledFor), asc(followUpReminders.id)),
     db.select({
       id: auditEvents.id,
       leadId: auditEvents.leadId,
@@ -1022,6 +1026,7 @@ export async function getLead(leadId: number, viewer?: { userId: number; isSuper
     lead,
     documents,
     communications: contactHistory,
+    followUps: activeFollowUps,
     auditEvents: auditHistory.map(event => event.actorId === SYSTEM_ADMIN_ACTOR_ID
       ? { ...event, actorName: "Super Administrator", actorEmail: null }
       : event),
@@ -1073,24 +1078,50 @@ async function replaceLeadIdentityKeys(tx: any, leadId: number, input: Partial<I
   if (keys.length) await tx.insert(leadIdentityKeys).values(keys.map(key => ({ leadId, ...key })));
 }
 
-async function syncFollowUpReminder(tx: any, lead: Lead) {
-  await tx.delete(followUpReminders).where(and(eq(followUpReminders.leadId, lead.id), isNull(followUpReminders.staffSentAt), isNull(followUpReminders.leadSentAt)));
-  if (!lead.nextFollowUpAt) return;
-  const recipientUserId = lead.assignedTo ?? (lead.createdBy > 0 ? lead.createdBy : SYSTEM_ADMIN_ACTOR_ID);
-  await tx.insert(followUpReminders).values({
-    leadId: lead.id,
+const reminderRecipientForLead = (lead: Lead) => lead.assignedTo ?? (lead.createdBy > 0 ? lead.createdBy : SYSTEM_ADMIN_ACTOR_ID);
+
+async function refreshLeadNextFollowUpAt(tx: any, leadId: number) {
+  const aggregate = (await tx.select({ earliest: sql<number | null>`min(${followUpReminders.scheduledFor})` })
+    .from(followUpReminders)
+    .where(eq(followUpReminders.leadId, leadId)))[0];
+  const nextFollowUpAt = aggregate?.earliest === null || aggregate?.earliest === undefined ? null : Number(aggregate.earliest);
+  await tx.update(leads).set({ nextFollowUpAt }).where(eq(leads.id, leadId));
+  return nextFollowUpAt;
+}
+
+async function createActiveFollowUp(tx: any, input: {
+  lead: Lead;
+  scheduledFor: number;
+  createdBy: number;
+  sourceCommunicationId?: number | null;
+}) {
+  const recipientUserId = reminderRecipientForLead(input.lead);
+  const result = await tx.insert(followUpReminders).values({
+    leadId: input.lead.id,
+    sourceCommunicationId: input.sourceCommunicationId ?? null,
     recipientUserId,
-    scheduledFor: lead.nextFollowUpAt,
-    remindAt: lead.nextFollowUpAt - 2 * 60 * 60 * 1000,
-    staffEmailStatus: recipientUserId > 0 ? "pending" : "skipped",
-    leadEmailStatus: lead.email ? "pending" : "skipped",
-  }).onDuplicateKeyUpdate({ set: { remindAt: lead.nextFollowUpAt - 2 * 60 * 60 * 1000 } });
+    createdBy: input.createdBy,
+    scheduledFor: input.scheduledFor,
+    remindAt: input.scheduledFor - 2 * 60 * 60 * 1000,
+    staffEmailStatus: "pending",
+    leadEmailStatus: input.lead.email ? "pending" : "skipped",
+  });
+  await refreshLeadNextFollowUpAt(tx, input.lead.id);
+  return Number(result[0].insertId);
+}
+
+async function ensureLeadFollowUpReminder(tx: any, lead: Lead) {
+  if (!lead.nextFollowUpAt) return;
+  const existing = (await tx.select({ id: followUpReminders.id }).from(followUpReminders)
+    .where(and(eq(followUpReminders.leadId, lead.id), eq(followUpReminders.scheduledFor, lead.nextFollowUpAt)))
+    .limit(1))[0];
+  if (!existing) await createActiveFollowUp(tx, { lead, scheduledFor: lead.nextFollowUpAt, createdBy: lead.createdBy });
 }
 
 export async function backfillFollowUpReminders() {
   const db = await requireDb();
   const rows = await db.select().from(leads).where(isNotNull(leads.nextFollowUpAt));
-  for (const lead of rows) await db.transaction(tx => syncFollowUpReminder(tx, lead));
+  for (const lead of rows) await db.transaction(tx => ensureLeadFollowUpReminder(tx, lead));
 }
 
 export async function listFollowUpNotifications(viewer: { userId: number; isSuperAdmin: boolean }) {
@@ -1108,7 +1139,7 @@ export async function listFollowUpNotifications(viewer: { userId: number; isSupe
     readAt: followUpReminders.readAt,
     staffEmailStatus: followUpReminders.staffEmailStatus,
     leadEmailStatus: followUpReminders.leadEmailStatus,
-  }).from(followUpReminders).innerJoin(leads, eq(leads.id, followUpReminders.leadId)).where(and(visibility, eq(followUpReminders.scheduledFor, leads.nextFollowUpAt))).orderBy(asc(followUpReminders.scheduledFor)).limit(200);
+  }).from(followUpReminders).innerJoin(leads, eq(leads.id, followUpReminders.leadId)).where(visibility).orderBy(asc(followUpReminders.scheduledFor), asc(followUpReminders.id)).limit(200);
 }
 
 export async function markFollowUpReminderRead(id: number, viewer: { userId: number; isSuperAdmin: boolean }) {
@@ -1166,7 +1197,6 @@ export async function getDueFollowUpReminderDeliveries(now: number) {
     .where(and(
       lte(followUpReminders.remindAt, now),
       gte(followUpReminders.scheduledFor, now - 24 * 60 * 60 * 1000),
-      eq(followUpReminders.scheduledFor, leads.nextFollowUpAt),
       lt(followUpReminders.attempts, 3),
       or(eq(followUpReminders.staffEmailStatus, "pending"), eq(followUpReminders.staffEmailStatus, "failed"), eq(followUpReminders.leadEmailStatus, "pending"), eq(followUpReminders.leadEmailStatus, "failed")),
     )).limit(100);
@@ -1275,7 +1305,11 @@ export async function createLeadWithAudit(input: InsertLead, audit: { actorId: n
         occurredAt: Date.now(),
       });
     }
-    if (created.nextFollowUpAt) await syncFollowUpReminder(tx, created);
+    if (created.nextFollowUpAt) await createActiveFollowUp(tx, {
+      lead: created,
+      scheduledFor: created.nextFollowUpAt,
+      createdBy: input.createdBy,
+    });
     return leadId;
   });
 }
@@ -1310,7 +1344,21 @@ export async function updateLeadWithAudit(
       snapshotAfter: serializeAudit(leadSnapshot(after)),
       occurredAt: Date.now(),
     });
-    if (changes.some(change => change.field === "nextFollowUpAt" || change.field === "assignedTo" || change.field === "email")) await syncFollowUpReminder(tx, after);
+    if (changes.some(change => change.field === "assignedTo" || change.field === "email")) {
+      const deliveryContext: Partial<typeof followUpReminders.$inferInsert> = {};
+      if (changes.some(change => change.field === "assignedTo")) {
+        deliveryContext.recipientUserId = reminderRecipientForLead(after);
+        deliveryContext.staffEmailStatus = "pending";
+        deliveryContext.staffSentAt = null;
+      }
+      if (changes.some(change => change.field === "email")) {
+        deliveryContext.leadEmailStatus = after.email ? "pending" : "skipped";
+        deliveryContext.leadSentAt = null;
+      }
+      deliveryContext.attempts = 0;
+      deliveryContext.lastError = null;
+      await tx.update(followUpReminders).set(deliveryContext).where(eq(followUpReminders.leadId, leadId));
+    }
     return { lead: after, changes };
   });
 }
@@ -1320,43 +1368,54 @@ export async function addLeadDocument(input: typeof leadDocuments.$inferInsert) 
   await db.insert(leadDocuments).values(input);
 }
 
-export async function addCommunicationWithAudit(input: typeof communications.$inferInsert & { clearFollowUp?: boolean; completeFollowUp?: boolean }) {
+export async function addCommunicationWithAudit(input: typeof communications.$inferInsert & { completeFollowUp?: boolean; followUpId?: number }) {
   const db = await requireDb();
   return db.transaction(async tx => {
-    const { clearFollowUp, completeFollowUp, ...communication } = input;
+    const { completeFollowUp, followUpId, ...communication } = input;
     const before = (await tx.select().from(leads).where(eq(leads.id, input.leadId)).limit(1).for("update"))[0];
     if (!before) return null;
-    if (completeFollowUp && !before.nextFollowUpAt) throw Object.assign(new Error("No active follow-up exists for this lead."), { code: "FOLLOW_UP_NOT_ACTIVE" });
-    const leadUpdate = communicationLeadUpdate({ contactedAt: input.contactedAt, nextFollowUpAt: input.nextFollowUpAt, clearFollowUp });
-    const after = { ...before, ...leadUpdate } as Lead;
+    const activeFollowUp = completeFollowUp && followUpId
+      ? (await tx.select().from(followUpReminders).where(and(eq(followUpReminders.id, followUpId), eq(followUpReminders.leadId, input.leadId))).limit(1).for("update"))[0]
+      : null;
+    if (completeFollowUp && !activeFollowUp) throw Object.assign(new Error("The selected follow-up is no longer active."), { code: "FOLLOW_UP_NOT_ACTIVE" });
     const communicationResult = await tx.insert(communications).values(communication);
     const communicationId = Number(communicationResult[0].insertId);
-    await tx.update(leads).set(leadUpdate).where(eq(leads.id, input.leadId));
-    if (completeFollowUp) {
+    await tx.update(leads).set({ lastContactAt: input.contactedAt }).where(eq(leads.id, input.leadId));
+    if (activeFollowUp) {
       await tx.insert(completedFollowUps).values({
         leadId: input.leadId,
+        followUpId: activeFollowUp.id,
         communicationId,
         completedBy: input.createdBy,
-        scheduledFor: before.nextFollowUpAt!,
+        scheduledFor: activeFollowUp.scheduledFor,
         completedAt: input.contactedAt,
         method: input.method,
         outcome: input.outcome,
         notes: input.notes,
         nextFollowUpAt: input.nextFollowUpAt ?? null,
       });
+      await tx.delete(followUpReminders).where(eq(followUpReminders.id, activeFollowUp.id));
     }
+    const leadForReminder = { ...before, lastContactAt: input.contactedAt } as Lead;
+    if (input.nextFollowUpAt) await createActiveFollowUp(tx, {
+      lead: leadForReminder,
+      scheduledFor: input.nextFollowUpAt,
+      createdBy: input.createdBy,
+      sourceCommunicationId: communicationId,
+    });
+    else await refreshLeadNextFollowUpAt(tx, input.leadId);
+    const after = (await tx.select().from(leads).where(eq(leads.id, input.leadId)).limit(1))[0];
     await tx.insert(auditEvents).values({
       leadId: input.leadId,
       actorId: input.createdBy,
       action: completeFollowUp ? "follow_up.completed" : "communication.logged",
       source: completeFollowUp ? "follow_up" : "communication",
-      detail: completeFollowUp ? `${input.method}: ${input.outcome}${input.nextFollowUpAt ? " · next follow-up scheduled" : " · reminder closed"}` : `${input.method}: ${input.outcome}`,
+      detail: completeFollowUp ? `${input.method}: ${input.outcome}${input.nextFollowUpAt ? " · another follow-up scheduled" : " · selected reminder closed"}` : `${input.method}: ${input.outcome}${input.nextFollowUpAt ? " · new follow-up scheduled" : ""}`,
       changes: serializeAudit(leadChanges(before, after)),
       snapshotBefore: serializeAudit(leadSnapshot(before)),
       snapshotAfter: serializeAudit(leadSnapshot(after)),
       occurredAt: Date.now(),
     });
-    if (input.nextFollowUpAt !== undefined || clearFollowUp) await syncFollowUpReminder(tx, after);
     return after;
   });
 }
@@ -1376,7 +1435,9 @@ export async function getDashboardSummary(viewer: { userId: number; isSuperAdmin
       hot: sql<number>`sum(case when ${leads.interestLevel} = 'hot' then 1 else 0 end)`,
       buyers: sql<number>`sum(case when ${leads.status} = 'buyer' then 1 else 0 end)`,
     }).from(leads).where(visibility),
-    db.select({ count: sql<number>`count(*)` }).from(leads).where(and(visibility, sql`${leads.nextFollowUpAt} is not null`, sql`${leads.nextFollowUpAt} <= ${now + 7 * 24 * 60 * 60 * 1000}`)),
+    db.select({ count: sql<number>`count(*)` }).from(followUpReminders)
+      .innerJoin(leads, eq(leads.id, followUpReminders.leadId))
+      .where(and(visibility, lte(followUpReminders.scheduledFor, now + 7 * 24 * 60 * 60 * 1000))),
     db.select().from(leads).where(visibility).orderBy(desc(leads.updatedAt)).limit(6),
   ]);
   return {
@@ -1391,7 +1452,22 @@ export async function getDashboardSummary(viewer: { userId: number; isSuperAdmin
 export async function getUpcomingFollowUps(viewer: { userId: number; isSuperAdmin: boolean }) {
   const db = await requireDb();
   const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
-  return db.select().from(leads).where(and(visibility, sql`${leads.nextFollowUpAt} is not null`)).orderBy(asc(leads.nextFollowUpAt)).limit(100);
+  return db.select({
+    followUpId: followUpReminders.id,
+    leadId: leads.id,
+    firstName: leads.firstName,
+    lastName: leads.lastName,
+    scheduledFor: followUpReminders.scheduledFor,
+    stateCode: leads.stateCode,
+    diagnosisCategory: leads.diagnosisCategory,
+    status: leads.status,
+    interestLevel: leads.interestLevel,
+    recipientUserId: followUpReminders.recipientUserId,
+  }).from(followUpReminders)
+    .innerJoin(leads, eq(leads.id, followUpReminders.leadId))
+    .where(visibility)
+    .orderBy(asc(followUpReminders.scheduledFor), asc(followUpReminders.id))
+    .limit(500);
 }
 
 export async function getFollowUpCalendar(
@@ -1401,18 +1477,85 @@ export async function getFollowUpCalendar(
   const db = await requireDb();
   const visibility = leadVisibilityCondition(viewer.userId, viewer.isSuperAdmin);
   return db.select({
-    id: leads.id,
+    followUpId: followUpReminders.id,
+    leadId: leads.id,
     firstName: leads.firstName,
     lastName: leads.lastName,
-    nextFollowUpAt: leads.nextFollowUpAt,
+    scheduledFor: followUpReminders.scheduledFor,
     stateCode: leads.stateCode,
     diagnosisCategory: leads.diagnosisCategory,
     status: leads.status,
     interestLevel: leads.interestLevel,
-  }).from(leads)
-    .where(and(visibility, gte(leads.nextFollowUpAt, range.from), lte(leads.nextFollowUpAt, range.to)))
-    .orderBy(asc(leads.nextFollowUpAt))
+  }).from(followUpReminders)
+    .innerJoin(leads, eq(leads.id, followUpReminders.leadId))
+    .where(and(visibility, gte(followUpReminders.scheduledFor, range.from), lte(followUpReminders.scheduledFor, range.to)))
+    .orderBy(asc(followUpReminders.scheduledFor), asc(followUpReminders.id))
     .limit(500);
+}
+
+export async function getActiveFollowUp(id: number) {
+  const db = await requireDb();
+  return (await db.select().from(followUpReminders).where(eq(followUpReminders.id, id)).limit(1))[0];
+}
+
+export async function updateActiveFollowUp(input: { id: number; scheduledFor: number; actorId: number }) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const reminder = (await tx.select().from(followUpReminders).where(eq(followUpReminders.id, input.id)).limit(1).for("update"))[0];
+    if (!reminder) return null;
+    const before = (await tx.select().from(leads).where(eq(leads.id, reminder.leadId)).limit(1).for("update"))[0];
+    if (!before) return null;
+    await tx.update(followUpReminders).set({
+      scheduledFor: input.scheduledFor,
+      remindAt: input.scheduledFor - 2 * 60 * 60 * 1000,
+      readAt: null,
+      staffEmailStatus: "pending",
+      leadEmailStatus: before.email ? "pending" : "skipped",
+      staffSentAt: null,
+      leadSentAt: null,
+      lastError: null,
+      attempts: 0,
+    }).where(eq(followUpReminders.id, input.id));
+    await refreshLeadNextFollowUpAt(tx, reminder.leadId);
+    const after = (await tx.select().from(leads).where(eq(leads.id, reminder.leadId)).limit(1))[0];
+    await tx.insert(auditEvents).values({
+      leadId: reminder.leadId,
+      actorId: input.actorId,
+      action: "follow_up.updated",
+      source: "follow_up",
+      detail: `Rescheduled follow-up #${reminder.id}`,
+      changes: serializeAudit([{ field: "nextFollowUpAt", before: reminder.scheduledFor, after: input.scheduledFor }]),
+      snapshotBefore: serializeAudit(leadSnapshot(before)),
+      snapshotAfter: serializeAudit(leadSnapshot(after)),
+      occurredAt: Date.now(),
+    });
+    return { leadId: reminder.leadId };
+  });
+}
+
+export async function deleteActiveFollowUp(input: { id: number; actorId: number }) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const reminder = (await tx.select().from(followUpReminders).where(eq(followUpReminders.id, input.id)).limit(1).for("update"))[0];
+    if (!reminder) return null;
+    const before = (await tx.select().from(leads).where(eq(leads.id, reminder.leadId)).limit(1).for("update"))[0];
+    if (!before) return null;
+    await tx.delete(followUpReminders).where(eq(followUpReminders.id, input.id));
+    await refreshLeadNextFollowUpAt(tx, reminder.leadId);
+    const after = (await tx.select().from(leads).where(eq(leads.id, reminder.leadId)).limit(1))[0];
+    await tx.insert(auditEvents).values({
+      leadId: reminder.leadId,
+      actorId: input.actorId,
+      action: "follow_up.deleted",
+      source: "follow_up",
+      detail: `Deleted follow-up #${reminder.id}`,
+      changes: serializeAudit([{ field: "nextFollowUpAt", before: reminder.scheduledFor, after: null }]),
+      snapshotBefore: serializeAudit(leadSnapshot(before)),
+      snapshotAfter: serializeAudit(leadSnapshot(after)),
+      occurredAt: Date.now(),
+    });
+    return { leadId: reminder.leadId };
+  });
 }
 
 export type FollowUpArchiveInput = {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildLeadIdentityKeys, identityMatchLabels, normalizeEmail, normalizePhone } from "./leadIdentity";
-import { communicationLeadUpdate, mergeLeadPatch } from "./leadWorkflow";
+import { mergeLeadPatch } from "./leadWorkflow";
 
 describe("lead duplicate identities", () => {
   it("normalizes email casing and whitespace", () => {
@@ -30,25 +30,5 @@ describe("explicit status workflow", () => {
     const current = { status: "verified", interestLevel: "warm", firstName: "Ana", lastName: "Stone" } as any;
     expect(mergeLeadPatch(current, { status: "qualified" } as any)).toMatchObject({ status: "qualified", interestLevel: "warm" });
     expect(mergeLeadPatch(current, { interestLevel: "hot" } as any)).toMatchObject({ status: "verified", interestLevel: "hot" });
-  });
-
-  it("records contact time without changing status", () => {
-    const update = communicationLeadUpdate({ contactedAt: 1234 });
-    expect(update).toEqual({ lastContactAt: 1234 });
-    expect(update).not.toHaveProperty("status");
-    expect(update).not.toHaveProperty("nextFollowUpAt");
-  });
-
-  it("sets a new reminder without changing status", () => {
-    const update = communicationLeadUpdate({ contactedAt: 1234, nextFollowUpAt: 5678 });
-    expect(update).toEqual({ lastContactAt: 1234, nextFollowUpAt: 5678 });
-    expect(update).not.toHaveProperty("status");
-  });
-
-  it("completes and clears a reminder without changing status", () => {
-    const update = communicationLeadUpdate({ contactedAt: 1234, nextFollowUpAt: null, clearFollowUp: true });
-    expect(update).toEqual({ lastContactAt: 1234, nextFollowUpAt: null });
-    expect(update).not.toHaveProperty("status");
-    expect(update).not.toHaveProperty("interestLevel");
   });
 });

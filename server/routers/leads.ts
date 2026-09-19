@@ -44,7 +44,7 @@ const leadFields = z.object({
   assignedTo: z.number().int().positive().optional().nullable(),
   nextFollowUpAt: z.number().int().positive().optional().nullable(),
 });
-export const leadUpdateFields = leadFields.partial().extend({
+export const leadUpdateFields = leadFields.omit({ nextFollowUpAt: true }).partial().extend({
   preferredLanguage: preferredLanguageEnum.optional(),
   status: statusEnum.optional(),
   interestLevel: interestEnum.optional(),
@@ -229,15 +229,15 @@ export const leadsRouter = router({
   addCommunication: protectedProcedure
     .input(z.object({
       leadId: z.number().int().positive(),
+      followUpId: z.number().int().positive().optional(),
       method: z.enum(["phone", "email", "sms", "in_person", "other"]),
       direction: z.enum(["outbound", "inbound"]),
       outcome: z.string().trim().min(1).max(160),
       notes: z.string().max(20_000).optional().nullable(),
       contactedAt: z.number().int().positive(),
       nextFollowUpAt: z.number().int().positive().optional().nullable(),
-      clearFollowUp: z.boolean().optional(),
       completeFollowUp: z.boolean().optional(),
-    }))
+    }).refine(value => !value.completeFollowUp || Boolean(value.followUpId), { message: "Select the active follow-up to complete.", path: ["followUpId"] }))
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "manageContacts");
       if (!await db.canAccessLead(input.leadId, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
@@ -246,6 +246,7 @@ export const leadsRouter = router({
         result = await db.addCommunicationWithAudit({ ...input, createdBy: ctx.user.id });
       } catch (error) {
         if (error instanceof Error && "code" in error && error.code === "FOLLOW_UP_NOT_ACTIVE") throw new TRPCError({ code: "CONFLICT", message: error.message });
+        if (isDuplicateKeyError(error)) throw new TRPCError({ code: "CONFLICT", message: "This lead already has an active follow-up at that time." });
         throw error;
       }
       if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });

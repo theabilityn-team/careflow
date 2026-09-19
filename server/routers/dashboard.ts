@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
@@ -21,21 +22,38 @@ export const dashboardRouter = router({
   }),
   followUps: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
-    const followUps = await db.getUpcomingFollowUps({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
-    return access.permissions.viewClinical
-      ? followUps
-      : followUps.map(lead => ({
-          ...lead,
-          diagnosis: null,
-          clinicalNotes: null,
-          additionalInformation: null,
-        }));
+    return db.getUpcomingFollowUps({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
   }),
   followUpCalendar: protectedProcedure
     .input(z.object({ from: z.number().int().nonnegative(), to: z.number().int().positive() }).refine(value => value.to >= value.from && value.to - value.from <= 370 * 24 * 60 * 60 * 1000, "Select a valid calendar range up to 370 days."))
     .query(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "viewLeads");
       return db.getFollowUpCalendar({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" }, input);
+    }),
+  updateFollowUp: protectedProcedure
+    .input(z.object({ id: z.number().int().positive(), scheduledFor: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const access = await assertPermission(ctx.user, "manageContacts");
+      const reminder = await db.getActiveFollowUp(input.id);
+      if (!reminder || !await db.canAccessLead(reminder.leadId, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
+      try {
+        const result = await db.updateActiveFollowUp({ ...input, actorId: ctx.user.id });
+        if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
+        return { success: true, leadId: result.leadId } as const;
+      } catch (error) {
+        if (error instanceof Error && ("code" in error && error.code === "ER_DUP_ENTRY" || "cause" in error && typeof error.cause === "object" && error.cause && "code" in error.cause && error.cause.code === "ER_DUP_ENTRY")) throw new TRPCError({ code: "CONFLICT", message: "This lead already has a follow-up at that time." });
+        throw error;
+      }
+    }),
+  deleteFollowUp: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const access = await assertPermission(ctx.user, "manageContacts");
+      const reminder = await db.getActiveFollowUp(input.id);
+      if (!reminder || !await db.canAccessLead(reminder.leadId, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
+      const result = await db.deleteActiveFollowUp({ id: input.id, actorId: ctx.user.id });
+      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
+      return { success: true, leadId: result.leadId } as const;
     }),
   followUpArchive: protectedProcedure
     .input(z.object({

@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { getFollowUpTiming } from "@/lib/contactTracking";
 import { DIAGNOSIS_CATEGORY_OPTIONS, INTEREST_OPTIONS, LANGUAGE_OPTIONS, STATE_OPTIONS, STATUS_OPTIONS, diagnosisCategoryLabel, documentTypeLabel, formatDate, initials, languageLabel, stateLabel } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
+import { easternEndOfDay, easternStartOfDay } from "@shared/time";
 import { ChevronLeft, ChevronRight, Files, Flame, Mail, Phone, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
 import { useLocation } from "wouter";
@@ -63,8 +64,8 @@ export default function Leads() {
     stateCode: stateCode === "all" ? undefined : stateCode as "FL" | "AZ" | "NV" | "CA" | "OR",
     diagnosisCategory: diagnosisCategory === "all" ? undefined : diagnosisCategory as "oncology" | "hematology",
     groupId: groupId === "all" ? undefined : Number(groupId),
-    createdFrom: createdFrom ? new Date(`${createdFrom}T00:00:00`).getTime() : undefined,
-    createdTo: createdTo ? new Date(`${createdTo}T23:59:59.999`).getTime() : undefined,
+    createdFrom: createdFrom ? easternStartOfDay(createdFrom) : undefined,
+    createdTo: createdTo ? easternEndOfDay(createdTo) : undefined,
     sort,
     page,
     pageSize,

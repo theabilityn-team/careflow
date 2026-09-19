@@ -1,4 +1,5 @@
 import { SUPPORTED_US_STATES } from "@shared/leadClassification";
+import { formatEasternDate } from "@shared/time";
 
 export const STATUS_OPTIONS = [
   ["new", "New"],
@@ -108,9 +109,5 @@ export function initials(first?: string | null, last?: string | null) {
 }
 
 export function formatDate(value?: number | Date | null, includeTime = false) {
-  if (!value) return "Not set";
-  const date = value instanceof Date ? value : new Date(value);
-  return includeTime
-    ? date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
-    : date.toLocaleDateString([], { dateStyle: "medium" });
+  return formatEasternDate(value, includeTime);
 }

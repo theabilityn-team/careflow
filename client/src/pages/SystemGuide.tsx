@@ -25,13 +25,13 @@ const flows = [
   },
   {
     number: "04", icon: MessageSquarePlus, title: "Record a call, email, SMS, or meeting", action: "Open Leads", path: "/leads",
-    steps: ["Open a lead and select Log contact.", "Choose method and direction, then write the outcome and optional notes.", "Optionally schedule the next follow-up date.", "Save the communication."],
-    result: "Most recent contact and Communication history are updated. A new reminder is scheduled only when a date is entered. Status is never changed automatically.",
+    steps: ["Open a lead and select Log contact.", "Choose method and direction, then write the outcome and optional notes.", "Optionally schedule another follow-up in Eastern Time.", "Save the communication."],
+    result: "Most recent contact and Communication history are updated. Every entered date creates a new independent reminder without replacing existing follow-ups. Status is never changed automatically.",
   },
   {
     number: "05", icon: ClipboardCheck, title: "Plan and complete follow-ups", action: "Open Follow-ups", path: "/follow-ups",
-    steps: ["A reminder is created from Log contact or Edit lead.", "Upcoming reminders appear in Upcoming; passed dates appear in Overdue.", "After calling, emailing, or meeting the lead, select Complete beside the reminder.", "Record the contact outcome and notes.", "Leave the next date blank to remove the reminder, or select a new date to complete and reschedule it."],
-    result: "Completion is written to Communications and Audit trail. The completed reminder disappears from Upcoming and Overdue unless a new date is scheduled. Status and Interest do not change automatically.",
+    steps: ["Create one or more independent reminders from Log contact.", "Upcoming reminders appear in Upcoming; passed dates appear in Overdue.", "Use Edit or Delete on the exact reminder you want to change without affecting the others.", "After calling, emailing, or meeting the lead, select Complete beside that reminder and record the contact outcome and notes.", "Optionally add another follow-up while completing it."],
+    result: "Every lifecycle action targets one follow-up ID and is written to the Audit trail. Completed reminders move to Archive, while the lead's Next follow-up always shows the earliest remaining active reminder.",
   },
   {
     number: "06", icon: History, title: "Change status and preserve history", action: "Open Leads", path: "/leads",
@@ -50,8 +50,8 @@ const flows = [
   },
   {
     number: "09", icon: BellRing, title: "Plan, complete, and archive follow-ups", action: "Open Follow-ups", path: "/follow-ups",
-    steps: ["Set a Scheduled follow-up from Log contact or Edit lead.", "Select English or Spanish on the lead record; this is the lead's reminder language, not a staff preference.", "Use Queue for overdue and upcoming work, or Calendar to select a day and review its schedule.", "Two hours before the appointment, an unread in-app notification appears. CareFlow uses the responsible staff or Super Admin verified SMTP account: the internal email is always English and the lead email uses that lead's selected language.", "After the call, email, or meeting, select Complete and record the method, outcome, notes, and optional next reminder.", "Use Archive to search and filter completed follow-ups while preserving the original scheduled time, completion time, staff actor, result, and reschedule decision."],
-    result: "Active reminders remain actionable, emails come from the responsible account, and every completed follow-up becomes a permanent, permission-scoped history record without changing Business Status or Interest Signal.",
+    steps: ["Set one or more Scheduled follow-ups from Log contact; every date/time input is interpreted as America/New_York Eastern Time.", "Select English or Spanish on the lead record; this is the lead's reminder language, not a staff preference.", "Use Queue for overdue and upcoming work, or Calendar to select an Eastern Time day and review every scheduled reminder.", "Two hours before each appointment, an unread in-app notification appears. CareFlow uses the responsible staff or Super Admin verified SMTP account: the internal email is always English and the lead email uses that lead's selected language.", "Use Complete, Edit, or Delete on the exact reminder. Other follow-ups for the same lead stay active.", "Use Archive to search completed follow-ups while preserving the original Eastern schedule, completion time, staff actor, result, and reschedule decision."],
+    result: "America/New_York governs all business timestamps regardless of login location. Active reminders remain independent and actionable, and every completed follow-up becomes a permanent, permission-scoped history record without changing Business Status or Interest Signal.",
   },
   {
     number: "10", icon: FileHeart, title: "Review a medical referral document", action: "Open Add lead", path: "/scan",
