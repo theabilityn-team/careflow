@@ -19,17 +19,18 @@ describe("manual lead email", () => {
   it("sends through the logged-in staff SMTP account and records history and communication", async () => {
     vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue(permissions);
     vi.spyOn(db, "getEmailRecipient").mockResolvedValue({ id: 42, firstName: "Ana", lastName: "Rivera", email: "ana@example.com" });
+    vi.spyOn(db, "getSelectableEmailMessageTemplate").mockResolvedValue({ id: 8, productId: 3, productName: "Recovery Mat", productIsActive: true, name: "Initial introduction", description: null, subject: "Hello {{leadFirstName}}", bodyText: "Your update is ready.", isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now });
     vi.spyOn(db, "getStaffSmtpSettings").mockResolvedValue(smtpSettings);
     vi.spyOn(db, "getEmailTemplate").mockResolvedValue({ userId: 17, headerHtml: "<p>Hello {{leadFirstName}}</p><script>bad()</script>", footerHtml: "<p>{{senderName}}</p>", updatedBy: 17, createdAt: now, updatedAt: now });
     const send = vi.spyOn(smtp, "sendStaffSmtpEmail").mockResolvedValue({ configured: true, sent: true, error: null, messageId: "message-1" });
     const addHistory = vi.spyOn(db, "addOutboundEmail").mockResolvedValue(9);
     const addCommunication = vi.spyOn(db, "addCommunicationWithAudit").mockResolvedValue({ communicationId: 7, lead: {} as never });
 
-    const result = await appRouter.createCaller(context()).mail.send({ leadId: 42, subject: "Hello {{leadFirstName}}", bodyText: "Your update is ready." });
+    const result = await appRouter.createCaller(context()).mail.send({ leadId: 42, messageTemplateId: 8, subject: "Hello {{leadFirstName}}", bodyText: "Your update is ready." });
 
     expect(result.success).toBe(true);
     expect(send).toHaveBeenCalledWith(smtpSettings, expect.objectContaining({ to: "ana@example.com", subject: "Hello Ana", html: expect.not.stringContaining("<script>") }));
-    expect(addHistory).toHaveBeenCalledWith(expect.objectContaining({ senderUserId: 17, leadId: 42, status: "sent", providerMessageId: "message-1" }));
+    expect(addHistory).toHaveBeenCalledWith(expect.objectContaining({ senderUserId: 17, leadId: 42, productId: 3, messageTemplateId: 8, productName: "Recovery Mat", templateName: "Initial introduction", status: "sent", providerMessageId: "message-1" }));
     expect(addCommunication).toHaveBeenCalledWith(expect.objectContaining({ leadId: 42, method: "email", direction: "outbound", createdBy: 17 }));
   });
 
@@ -40,6 +41,16 @@ describe("manual lead email", () => {
     const send = vi.spyOn(smtp, "sendStaffSmtpEmail");
 
     await expect(appRouter.createCaller(context()).mail.send({ leadId: 42, subject: "Hello", bodyText: "Message" })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("blocks a stale or archived template selection before SMTP delivery", async () => {
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue(permissions);
+    vi.spyOn(db, "getEmailRecipient").mockResolvedValue({ id: 42, firstName: "Ana", lastName: "Rivera", email: "ana@example.com" });
+    vi.spyOn(db, "getSelectableEmailMessageTemplate").mockResolvedValue(undefined);
+    const send = vi.spyOn(smtp, "sendStaffSmtpEmail");
+
+    await expect(appRouter.createCaller(context()).mail.send({ leadId: 42, messageTemplateId: 99, subject: "Hello", bodyText: "Message" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(send).not.toHaveBeenCalled();
   });
 

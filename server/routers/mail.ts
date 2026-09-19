@@ -55,6 +55,7 @@ export const mailRouter = router({
 
   send: protectedProcedure.input(z.object({
     leadId: z.number().int().positive(),
+    messageTemplateId: z.number().int().positive().optional().nullable(),
     subject: z.string().trim().min(1).max(240),
     bodyText: z.string().trim().min(1).max(20_000),
   })).mutation(async ({ ctx, input }) => {
@@ -65,6 +66,10 @@ export const mailRouter = router({
     if (!recipient.email?.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "This lead does not have an email address." });
 
     const ownerId = senderId(ctx.user);
+    const selectedTemplate = input.messageTemplateId ? await db.getSelectableEmailMessageTemplate(input.messageTemplateId) : undefined;
+    if (input.messageTemplateId && !selectedTemplate) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "The selected email template is inactive or no longer available." });
+    }
     const settings = await db.getStaffSmtpSettings(ownerId);
     if (!settings || !isSmtpConfigured(settings) || !settings.verifiedAt) {
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: access.role === "super_admin" ? "Configure, enable, and verify the Super Admin SMTP account before sending." : "Your SMTP account is not active and verified. Ask Super Admin to review it." });
@@ -86,6 +91,10 @@ export const mailRouter = router({
       recipientEmail: recipient.email.trim(),
       recipientName: variables.leadFullName,
       fromEmail: settings.fromEmail,
+      productId: selectedTemplate?.productId ?? null,
+      messageTemplateId: selectedTemplate?.id ?? null,
+      productName: selectedTemplate?.productName ?? null,
+      templateName: selectedTemplate?.name ?? null,
       subject,
       bodyHtml: html,
       status: result.sent ? "sent" : "failed",

@@ -8,6 +8,8 @@ import {
   auditEvents,
   communications,
   completedFollowUps,
+  emailMessageTemplates,
+  emailProducts,
   emailTemplates,
   followUpReminders,
   InsertLead,
@@ -387,6 +389,93 @@ export async function upsertEmailTemplate(input: typeof emailTemplates.$inferIns
   return getEmailTemplate(userId);
 }
 
+export async function listEmailProducts(includeInactive = false) {
+  const db = await requireDb();
+  return db.select().from(emailProducts)
+    .where(includeInactive ? undefined : eq(emailProducts.isActive, true))
+    .orderBy(asc(emailProducts.sortOrder), asc(emailProducts.name));
+}
+
+export async function getEmailProduct(id: number) {
+  const db = await requireDb();
+  return (await db.select().from(emailProducts).where(eq(emailProducts.id, id)).limit(1))[0];
+}
+
+export async function createEmailProduct(input: typeof emailProducts.$inferInsert) {
+  const db = await requireDb();
+  const result = await db.insert(emailProducts).values(input);
+  return getEmailProduct(Number(result[0].insertId));
+}
+
+export async function updateEmailProduct(id: number, input: Partial<Omit<typeof emailProducts.$inferInsert, "id" | "createdBy">>) {
+  const db = await requireDb();
+  await db.update(emailProducts).set(input).where(eq(emailProducts.id, id));
+  return getEmailProduct(id);
+}
+
+export async function listEmailMessageTemplates(includeInactive = false) {
+  const db = await requireDb();
+  return db.select({
+    id: emailMessageTemplates.id,
+    productId: emailMessageTemplates.productId,
+    productName: emailProducts.name,
+    productIsActive: emailProducts.isActive,
+    name: emailMessageTemplates.name,
+    description: emailMessageTemplates.description,
+    subject: emailMessageTemplates.subject,
+    bodyText: emailMessageTemplates.bodyText,
+    isActive: emailMessageTemplates.isActive,
+    sortOrder: emailMessageTemplates.sortOrder,
+    createdBy: emailMessageTemplates.createdBy,
+    updatedBy: emailMessageTemplates.updatedBy,
+    createdAt: emailMessageTemplates.createdAt,
+    updatedAt: emailMessageTemplates.updatedAt,
+  }).from(emailMessageTemplates)
+    .innerJoin(emailProducts, eq(emailMessageTemplates.productId, emailProducts.id))
+    .where(includeInactive ? undefined : and(eq(emailMessageTemplates.isActive, true), eq(emailProducts.isActive, true)))
+    .orderBy(asc(emailProducts.sortOrder), asc(emailProducts.name), asc(emailMessageTemplates.sortOrder), asc(emailMessageTemplates.name));
+}
+
+export async function getEmailMessageTemplate(id: number) {
+  const db = await requireDb();
+  return (await db.select({
+    id: emailMessageTemplates.id,
+    productId: emailMessageTemplates.productId,
+    productName: emailProducts.name,
+    productIsActive: emailProducts.isActive,
+    name: emailMessageTemplates.name,
+    description: emailMessageTemplates.description,
+    subject: emailMessageTemplates.subject,
+    bodyText: emailMessageTemplates.bodyText,
+    isActive: emailMessageTemplates.isActive,
+    sortOrder: emailMessageTemplates.sortOrder,
+    createdBy: emailMessageTemplates.createdBy,
+    updatedBy: emailMessageTemplates.updatedBy,
+    createdAt: emailMessageTemplates.createdAt,
+    updatedAt: emailMessageTemplates.updatedAt,
+  }).from(emailMessageTemplates)
+    .innerJoin(emailProducts, eq(emailMessageTemplates.productId, emailProducts.id))
+    .where(eq(emailMessageTemplates.id, id))
+    .limit(1))[0];
+}
+
+export async function createEmailMessageTemplate(input: typeof emailMessageTemplates.$inferInsert) {
+  const db = await requireDb();
+  const result = await db.insert(emailMessageTemplates).values(input);
+  return getEmailMessageTemplate(Number(result[0].insertId));
+}
+
+export async function updateEmailMessageTemplate(id: number, input: Partial<Omit<typeof emailMessageTemplates.$inferInsert, "id" | "createdBy">>) {
+  const db = await requireDb();
+  await db.update(emailMessageTemplates).set(input).where(eq(emailMessageTemplates.id, id));
+  return getEmailMessageTemplate(id);
+}
+
+export async function getSelectableEmailMessageTemplate(id: number) {
+  const template = await getEmailMessageTemplate(id);
+  return template?.isActive && template.productIsActive ? template : undefined;
+}
+
 export async function addOutboundEmail(input: typeof outboundEmails.$inferInsert) {
   const db = await requireDb();
   const result = await db.insert(outboundEmails).values(input);
@@ -402,6 +491,8 @@ export async function listOutboundEmails(viewer: { userId: number; isSuperAdmin:
     recipientEmail: outboundEmails.recipientEmail,
     recipientName: outboundEmails.recipientName,
     fromEmail: outboundEmails.fromEmail,
+    productName: outboundEmails.productName,
+    templateName: outboundEmails.templateName,
     subject: outboundEmails.subject,
     status: outboundEmails.status,
     error: outboundEmails.error,

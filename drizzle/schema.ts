@@ -104,6 +104,39 @@ export const emailTemplates = mysqlTable("email_templates", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const emailProducts = mysqlTable("email_products", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 160 }).notNull(),
+  description: text("description"),
+  isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdBy: int("createdBy").notNull(),
+  updatedBy: int("updatedBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  uniqueName: uniqueIndex("email_products_name_unique").on(table.name),
+  activeSort: index("email_products_active_sort_idx").on(table.isActive, table.sortOrder),
+}));
+
+export const emailMessageTemplates = mysqlTable("email_message_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  name: varchar("name", { length: 160 }).notNull(),
+  description: text("description"),
+  subject: varchar("subject", { length: 240 }).notNull(),
+  bodyText: mediumtext("bodyText").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdBy: int("createdBy").notNull(),
+  updatedBy: int("updatedBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  uniqueProductName: uniqueIndex("email_message_templates_productId_name_unique").on(table.productId, table.name),
+  productActiveSort: index("email_message_templates_product_active_sort_idx").on(table.productId, table.isActive, table.sortOrder),
+}));
+
 export const staffInvites = mysqlTable("staff_invites", {
   id: int("id").autoincrement().primaryKey(),
   email: varchar("email", { length: 320 }).notNull(),
@@ -296,6 +329,10 @@ export const outboundEmails = mysqlTable("outbound_emails", {
   recipientEmail: varchar("recipientEmail", { length: 320 }).notNull(),
   recipientName: varchar("recipientName", { length: 241 }).notNull(),
   fromEmail: varchar("fromEmail", { length: 320 }).notNull(),
+  productId: int("productId"),
+  messageTemplateId: int("messageTemplateId"),
+  productName: varchar("productName", { length: 160 }),
+  templateName: varchar("templateName", { length: 160 }),
   subject: varchar("subject", { length: 240 }).notNull(),
   bodyHtml: mediumtext("bodyHtml").notNull(),
   status: mysqlEnum("status", ["sent", "failed"]).notNull(),

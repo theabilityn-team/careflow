@@ -237,3 +237,24 @@ The latest Add lead page loaded successfully and now explicitly states that refe
 The scanner accepted automation access to its existing image input without changing application code. The supplied standard-layout sample was prepared for a non-saving end-to-end extraction check.
 The real scanner accepted `scanNew1.jpeg`, showed the preview at 1/6 images, and began the OCR request without client-side upload or size errors. The extraction remained in progress during the initial browser wait; no Create lead action was taken.
 End-to-end browser extraction completed successfully at 95% confidence and classified the sample as **Hospital Facesheet — standard layout**. The review screen separated patient identity and contact data from hospital encounter, next of kin, emergency contact, guarantor, primary/secondary insurance, care team, and clinical sections. It extracted the handwritten diagnosis as `Colon Cancer`, suggested Oncology, and displayed warnings for the handwritten source and unknown address. No lead was created, no document was stored, and the browser console had no runtime errors.
+
+
+## Product email template library — 2026-09-19
+
+Browser QA started on the development site. The hidden Super Admin login remained intact; the new `/email-templates` route correctly required authentication before exposing management controls.
+Super Admin signed in successfully. The sidebar now includes **Email templates** between Mails and Email settings, and the entry is role-gated to Super Admin in the application navigation.
+The Super Admin Email templates workspace rendered the correct empty state, central-library explanation, and Add product action. The product dialog exposed name, description, sort order, and active-state controls with no staff-only actions mixed into the page.
+A removable active QA product was created successfully through the Super Admin form. It appeared immediately with Active status, template count, Edit, Archive, and Add template controls.
+The Add email template dialog automatically selected its product and exposed internal name/description, email subject, message, sort order, active state, and the four supported personalization tokens. The removable QA template used both lead and sender tokens for end-to-end selection testing.
+The removable template saved successfully and appeared under its product as **Available to staff**. The Mails Compose tab rendered a new approved-template panel with separate Product and Email template selectors while keeping subject and message editable.
+The active QA product was the only option in Compose. Selecting it enabled the Email template selector without altering the current draft until a specific template was chosen.
+Selecting the QA template populated both subject and message, preserved all personalization tokens, showed the applied template description, and left both fields editable. No lead was selected and no email was sent.
+The composer verification stopped before choosing a lead; no outbound SMTP call, sent-history row, or lead communication was created.
+The applied draft remained stable while preparing to switch roles; the Send action stayed disabled because no lead was selected.
+Super Admin logout returned to the normal staff-only sign-in screen before technical-staff role verification.
+A removable technical-staff account with Manage communications permission signed in successfully. Its sidebar included Mails but did **not** include the Super Admin-only Email templates or Staff & access pages.
+The technical-staff Mails page displayed the approved-template selectors and listed the active QA product. No product/template create, edit, archive, or inactive-library controls were present for staff.
+Technical staff selected the active product and template successfully; subject and message were populated and remained editable. Direct navigation to `/email-templates` rendered **Email templates unavailable — Only Super Admin can manage products and reusable email templates.** No email was sent.
+Cleanup removed the temporary product, template, technical-staff user, credentials, permissions, SMTP row, and sessions. Final counts were `qaProducts=0`, `qaTemplates=0`, `qaUsers=0`, and `qaOutbound=0`.
+After QA cleanup, the browser returned to normal staff login and the console contained no warnings or errors from the Super Admin or staff template workflows.
+Final validation passed with **104 tests across 25 files**, a clean TypeScript check, a successful production build, HTTP 200 runtime health, migration 0016 registered, live `email_products` and `email_message_templates` tables present, all four immutable sent-history snapshot columns present, no runtime log errors, and zero temporary QA products, templates, users, or outbound messages.

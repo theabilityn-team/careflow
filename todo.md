@@ -43,3 +43,22 @@ Super Admin must configure, enable, and verify the real administrator and staff 
 ## Hospital Facesheet review caveats
 
 The supplied images are photographs of a screen and contain visible moiré, so staff must review every extracted character. The first example includes a handwritten diagnosis and placeholder/unknown address values; CareFlow now extracts the legible handwritten diagnosis and displays a warning. The second example contains a non-Oncology/non-Hematology diagnosis, so CareFlow intentionally leaves the required diagnosis group unselected rather than misclassifying it; staff must choose one of the currently supported business groups before saving.
+
+
+## Completed update: Product-based email template library
+
+| Task | Status |
+| --- | --- |
+| Add reusable email products and message templates | Completed |
+| Let Super Admin create, edit, activate, and archive products | Completed |
+| Let Super Admin create, edit, activate, and archive templates per product | Completed |
+| Restrict management APIs and navigation to Super Admin | Completed |
+| Show only active products and templates to staff with Manage communications access | Completed |
+| Fill editable subject and message fields when staff selects a template | Completed |
+| Reject stale or archived template selections before SMTP delivery | Completed |
+| Preserve selected product and template names in immutable sent-email history | Completed |
+| Keep freeform email composition available without a template | Completed |
+| Update the English System guide | Completed |
+| Apply migration 0016 and verify the live database structure | Completed |
+| Run unit, authorization, browser, cleanup, runtime, TypeScript, and production build checks | Completed |
+| Save the final checkpoint | Completed |

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { STATUS_DESCRIPTIONS, STATUS_OPTIONS } from "@/lib/crm";
-import { ArrowRight, BellRing, CheckCircle2, ClipboardCheck, Download, FileHeart, Files, FileSearch, FolderKanban, History, KeyRound, Mail, MessageSquarePlus, ScanLine, ServerCog, ShieldCheck, UserCog } from "lucide-react";
+import { ArrowRight, BellRing, CheckCircle2, ClipboardCheck, Download, FileHeart, Files, FileSearch, FolderKanban, History, KeyRound, Library, Mail, MessageSquarePlus, ScanLine, ServerCog, ShieldCheck, UserCog } from "lucide-react";
 import { useLocation } from "wouter";
 
 const flows = [
@@ -65,11 +65,16 @@ const flows = [
   },
   {
     number: "12", icon: Mail, title: "Send email to an accessible lead", action: "Open Mails", path: "/mails",
-    steps: ["Open Mails and select a lead that has an email address; staff can choose only leads they are permitted to access.", "Write the subject and message, using optional lead and sender personalization tokens.", "CareFlow automatically wraps the message with that account's saved HTML header and footer.", "Send the email through the logged-in user's active, verified SMTP account.", "Review successful and failed attempts under Sent history; successful sends are also recorded in the lead's Communication history.", "To read replies or any received email, sign in directly to the assigned email mailbox."],
-    result: "Staff can send tracked outbound email without seeing SMTP credentials, maintain their own sanitized HTML header and footer, and review who received each message. CareFlow does not act as an inbox.",
+    steps: ["Open Mails and select a lead that has an email address; staff can choose only leads they are permitted to access.", "Optionally select an active product and an approved Super Admin email template.", "Review and personalize the filled subject and message, using optional lead and sender tokens.", "CareFlow automatically wraps the message with that account's saved HTML header and footer.", "Send through the logged-in user's active, verified SMTP account.", "Review successful and failed attempts under Sent history; successful sends are also recorded in the lead's Communication history.", "To read replies or any received email, sign in directly to the assigned email mailbox."],
+    result: "Staff can send tracked outbound email from approved reusable drafts without seeing SMTP credentials. Sent history preserves the selected product and template names even if the library changes later. CareFlow does not act as an inbox.",
   },
   {
-    number: "13", icon: FileHeart, title: "Review a Hospital Facesheet", action: "Open Add lead", path: "/scan",
+    number: "13", icon: Library, title: "Manage product email templates", action: "Open Email templates", path: "/email-templates",
+    steps: ["Super Admin creates a product category with an internal description and sort order.", "Add one or more templates under that product, each with an internal name, optional usage description, subject, and message body.", "Use personalization tokens for the lead and sender when useful.", "Keep a product or template active while staff should see it in Compose.", "Archive outdated products or templates to remove them from staff selection without changing historical sent-email records."],
+    result: "Only Super Admin can manage the central library. Staff with Manage communications permission can read and apply active templates, then edit the draft before sending.",
+  },
+  {
+    number: "14", icon: FileHeart, title: "Review a Hospital Facesheet", action: "Open Add lead", path: "/scan",
     steps: ["Upload the Hospital Facesheet image; standard legacy and extended multi-insurance layouts are supported.", "CareFlow identifies the patient and keeps the patient's phone, address, and email separate from next of kin, emergency contact, guarantor, provider, insurer, and facility values.", "Review encounter dates, account number, room / bed, demographics, contacts, primary and secondary insurance, care team, visit reason, diagnoses, procedures, and ICD codes.", "Check every warning for handwritten, unclear, cut-off, placeholder, or screen-photographed values.", "Confirm the document layout, patient identity, state, and diagnosis group before saving."],
     result: "The lead is saved with Hospital Facesheet — standard layout or Hospital Facesheet — extended layout, structured protected information, and attached source images. Social Security numbers and mother's maiden names are never extracted or stored.",
   },

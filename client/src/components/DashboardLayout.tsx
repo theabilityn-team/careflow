@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
-import { BookOpenCheck, ClipboardCheck, ContactRound, Files, FolderKanban, KeyRound, LayoutDashboard, LogOut, Mail, PanelLeft, ScanLine, Send, UsersRound } from "lucide-react";
+import { BookOpenCheck, ClipboardCheck, ContactRound, Files, FolderKanban, KeyRound, LayoutDashboard, Library, LogOut, Mail, PanelLeft, ScanLine, Send, UsersRound } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -52,6 +52,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
     { icon: Files, label: "Bulk image import", path: "/bulk-import", show: (access?.permissions.scanDocuments && access?.permissions.viewClinical) ?? false },
     { icon: ClipboardCheck, label: "Follow-ups", path: "/follow-ups", show: access?.permissions.viewLeads ?? true },
     { icon: Send, label: "Mails", path: "/mails", show: access?.permissions.manageContacts ?? false },
+    { icon: Library, label: "Email templates", path: "/email-templates", show: access?.role === "super_admin" },
     { icon: Mail, label: "Email settings", path: "/email-settings", show: access?.role === "technical_staff" || access?.role === "super_admin" },
     { icon: BookOpenCheck, label: "System guide", path: "/guide", show: true },
     { icon: UsersRound, label: "Staff & access", path: "/staff", show: access?.role === "super_admin" },
