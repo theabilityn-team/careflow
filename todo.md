@@ -82,3 +82,19 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Preserve existing MB Aura Vortex K-1 and BOGO Deal records | Completed |
 | Run 110 tests, TypeScript, production build, browser QA, runtime/log checks, and complete QA cleanup | Completed |
 | Save the final checkpoint | Completed |
+
+
+## Completed update: Super Admin-only global email header and footer
+
+| Task | Status |
+| --- | --- |
+| Remove Header & footer from the technical-staff Mails tabs | Completed |
+| Stop technical-staff browsers from loading frame HTML | Completed |
+| Return HTTP 403 when staff directly calls the frame read or save API | Completed |
+| Keep one global header/footer editor for Super Admin | Completed |
+| Apply the Super Admin global frame to manual staff email and SMTP test email | Completed |
+| Update Compose, template editor, and System guide wording | Completed |
+| Verify staff and Super Admin views in the browser without changing frame data | Completed |
+| Remove temporary staff QA user, session, scripts, and browser artifacts | Completed |
+| Run 111 tests, TypeScript, production build, runtime/log, and repository checks | Completed |
+| Save the final checkpoint | Completed |

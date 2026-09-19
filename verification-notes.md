@@ -280,3 +280,15 @@ The removable technical-staff account signed in successfully. Its navigation inc
 The same required recipient, Product, and Email template dialog opened from the technical-staff read-only Email status page. Staff still saw no SMTP credential fields or template-management controls. QA cancelled before selecting or sending, so no SMTP request was made.\n
 Cleanup removed the temporary HTML template, temporary staff user, credentials, permissions, SMTP row, session, local QA files, and related browser artifacts. The real **MB Aura Vortex K-1** product and **BOGO Deal** template were explicitly rechecked and preserved.
 Final validation passed with **110 tests across 25 files**, a clean TypeScript check, a successful production build, HTTP 200 runtime health, no recent runtime/TypeScript log errors, a registered and applied migration 0017, all three live HTML-template columns present, zero temporary QA users/templates/outbound messages, and the existing real product/plain-text template preserved.
+
+
+## Super Admin-only global email frame — 2026-09-19
+
+Browser QA started from the normal staff-only sign-in page using a removable technical-staff account. The goal is to confirm the Header & footer tab and its API are unavailable to staff while Super Admin retains the global editor.
+The removable staff account signed in successfully with Manage communications access and no Super Admin navigation.
+The technical-staff Mails page displayed only **Compose** and **Sent history**. **Header & footer** was absent, no frame query was issued by the page, and a direct authenticated request to `mail.template` returned HTTP 403. Compose explains that the Super Admin-managed global frame is added automatically.
+The temporary staff session ended cleanly. The hidden Super Admin login remained available for confirming that the global Header & footer editor is still accessible to administrators.
+Super Admin signed in successfully. In Mails, **Header & footer** remained visible alongside Compose and Sent history, and the page description now identifies it as the global HTML frame.
+Opening the tab showed **Global HTML header and footer**, explicitly stated that Super Admin controls it for every CareFlow account, and noted that technical staff cannot view or edit it. No values were changed or saved during QA.
+Cleanup removed the temporary technical-staff user, credentials, permissions, session, local QA scripts, and browser artifacts. No real email, SMTP, lead, template-library, or global frame data was modified.
+Final validation passed with **111 tests across 25 files**, a clean TypeScript check, a successful production build, HTTP 200 runtime health, no recent runtime/TypeScript log errors, clean diff checks, and no temporary QA files. Existing global frame values were read-only during QA and were not modified.

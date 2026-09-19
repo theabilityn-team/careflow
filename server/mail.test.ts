@@ -1,27 +1,45 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
+import { SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
 import * as db from "./db";
 import { appRouter } from "./routers";
 import * as smtp from "./smtp";
 
 const now = new Date("2026-09-13T00:00:00Z");
 const staff = { id: 17, openId: "staff:17", name: "Staff Member", email: "staff@example.com", loginMethod: "local", role: "user" as const, createdAt: now, updatedAt: now, lastSignedIn: now };
+const admin = { id: SYSTEM_ADMIN_ACTOR_ID, openId: "system:admin", name: "Super Administrator", email: "admin@admin.com", loginMethod: "local", role: "admin" as const, createdAt: now, updatedAt: now, lastSignedIn: now };
 const permissions = { userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en" as const, permissions: JSON.stringify({ viewLeads: true, createLeads: true, editLeads: true, scanDocuments: false, viewClinical: false, manageContacts: true, changeStatus: true, exportData: false }), createdAt: now, updatedAt: now };
 const smtpSettings = { userId: 17, smtpHost: "smtp.example.com", smtpPort: 587, smtpSecurity: "starttls" as const, smtpUsername: "staff@example.com", smtpPassword: "secret", fromEmail: "staff@example.com", fromName: "Staff Member", replyToEmail: null, isEnabled: true, verifiedAt: Date.now(), lastTestedAt: Date.now(), lastTestError: null, createdAt: now, updatedAt: now };
 
-function context(): TrpcContext {
-  return { user: staff, req: { headers: {} } as TrpcContext["req"], res: {} as TrpcContext["res"] };
+function context(user: TrpcContext["user"] = staff): TrpcContext {
+  return { user, req: { headers: {} } as TrpcContext["req"], res: {} as TrpcContext["res"] };
 }
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("manual lead email", () => {
+  it("keeps global header and footer management exclusive to Super Admin", async () => {
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue(permissions);
+    const getTemplate = vi.spyOn(db, "getEmailTemplate");
+    const saveTemplate = vi.spyOn(db, "upsertEmailTemplate");
+
+    await expect(appRouter.createCaller(context()).mail.template()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(context()).mail.saveTemplate({ headerHtml: "<p>Header</p>", footerHtml: "<p>Footer</p>" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(getTemplate).not.toHaveBeenCalled();
+    expect(saveTemplate).not.toHaveBeenCalled();
+
+    getTemplate.mockResolvedValue(undefined);
+    saveTemplate.mockResolvedValue(undefined);
+    await appRouter.createCaller(context(admin)).mail.saveTemplate({ headerHtml: "<p>Global header</p>", footerHtml: "<p>Global footer</p>" });
+    expect(saveTemplate).toHaveBeenCalledWith(expect.objectContaining({ userId: SYSTEM_ADMIN_ACTOR_ID, updatedBy: SYSTEM_ADMIN_ACTOR_ID }));
+  });
+
   it("sends through the logged-in staff SMTP account and records history and communication", async () => {
     vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue(permissions);
     vi.spyOn(db, "getEmailRecipient").mockResolvedValue({ id: 42, firstName: "Ana", lastName: "Rivera", email: "ana@example.com" });
     vi.spyOn(db, "getSelectableEmailMessageTemplate").mockResolvedValue({ id: 8, productId: 3, productName: "Recovery Mat", productIsActive: true, name: "Initial introduction", description: null, subject: "Hello {{leadFirstName}}", contentMode: "plain", bodyText: "Your update is ready.", bodyHtml: null, sourceFileName: null, isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now });
     vi.spyOn(db, "getStaffSmtpSettings").mockResolvedValue(smtpSettings);
-    vi.spyOn(db, "getEmailTemplate").mockResolvedValue({ userId: 17, headerHtml: "<p>Hello {{leadFirstName}}</p><script>bad()</script>", footerHtml: "<p>{{senderName}}</p>", updatedBy: 17, createdAt: now, updatedAt: now });
+    const getFrame = vi.spyOn(db, "getEmailTemplate").mockResolvedValue({ userId: SYSTEM_ADMIN_ACTOR_ID, headerHtml: "<p>Hello {{leadFirstName}}</p><script>bad()</script>", footerHtml: "<p>{{senderName}}</p>", updatedBy: SYSTEM_ADMIN_ACTOR_ID, createdAt: now, updatedAt: now });
     const send = vi.spyOn(smtp, "sendStaffSmtpEmail").mockResolvedValue({ configured: true, sent: true, error: null, messageId: "message-1" });
     const addHistory = vi.spyOn(db, "addOutboundEmail").mockResolvedValue(9);
     const addCommunication = vi.spyOn(db, "addCommunicationWithAudit").mockResolvedValue({ communicationId: 7, lead: {} as never });
@@ -29,6 +47,7 @@ describe("manual lead email", () => {
     const result = await appRouter.createCaller(context()).mail.send({ leadId: 42, messageTemplateId: 8, subject: "Hello {{leadFirstName}}", bodyText: "Your update is ready." });
 
     expect(result.success).toBe(true);
+    expect(getFrame).toHaveBeenCalledWith(SYSTEM_ADMIN_ACTOR_ID);
     expect(send).toHaveBeenCalledWith(smtpSettings, expect.objectContaining({ to: "ana@example.com", subject: "Hello Ana", html: expect.not.stringContaining("<script>") }));
     expect(addHistory).toHaveBeenCalledWith(expect.objectContaining({ senderUserId: 17, leadId: 42, productId: 3, messageTemplateId: 8, productName: "Recovery Mat", templateName: "Initial introduction", status: "sent", providerMessageId: "message-1" }));
     expect(addCommunication).toHaveBeenCalledWith(expect.objectContaining({ leadId: 42, method: "email", direction: "outbound", createdBy: 17 }));

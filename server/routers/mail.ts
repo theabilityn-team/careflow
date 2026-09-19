@@ -23,8 +23,9 @@ export const mailRouter = router({
   }),
 
   template: protectedProcedure.query(async ({ ctx }) => {
-    await assertPermission(ctx.user, "manageContacts");
-    const template = await db.getEmailTemplate(senderId(ctx.user));
+    const access = await assertPermission(ctx.user, "manageContacts");
+    if (access.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN", message: "Only Super Admin can manage the global email header and footer." });
+    const template = await db.getEmailTemplate(SYSTEM_ADMIN_ACTOR_ID);
     return {
       headerHtml: template?.headerHtml ?? DEFAULT_EMAIL_HEADER_HTML,
       footerHtml: template?.footerHtml ?? DEFAULT_EMAIL_FOOTER_HTML,
@@ -33,10 +34,11 @@ export const mailRouter = router({
   }),
 
   saveTemplate: protectedProcedure.input(templateInput).mutation(async ({ ctx, input }) => {
-    await assertPermission(ctx.user, "manageContacts");
+    const access = await assertPermission(ctx.user, "manageContacts");
+    if (access.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN", message: "Only Super Admin can manage the global email header and footer." });
     const headerHtml = sanitizeTemplateHtml(input.headerHtml);
     const footerHtml = sanitizeTemplateHtml(input.footerHtml);
-    await db.upsertEmailTemplate({ userId: senderId(ctx.user), headerHtml, footerHtml, updatedBy: ctx.user.id });
+    await db.upsertEmailTemplate({ userId: SYSTEM_ADMIN_ACTOR_ID, headerHtml, footerHtml, updatedBy: ctx.user.id });
     return { headerHtml, footerHtml };
   }),
 
@@ -82,7 +84,7 @@ export const mailRouter = router({
     if (!settings || !isSmtpConfigured(settings) || !settings.verifiedAt) {
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: access.role === "super_admin" ? "Configure, enable, and verify the Super Admin SMTP account before sending." : "Your SMTP account is not active and verified. Ask Super Admin to review it." });
     }
-    const template = await db.getEmailTemplate(ownerId);
+    const template = await db.getEmailTemplate(SYSTEM_ADMIN_ACTOR_ID);
     const variables = {
       leadFirstName: recipient.firstName,
       leadFullName: `${recipient.firstName} ${recipient.lastName}`.trim(),

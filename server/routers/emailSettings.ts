@@ -228,7 +228,7 @@ export const emailSettingsRouter = router({
     const selectedTemplate = await db.getSelectableEmailMessageTemplate(input.messageTemplateId);
     if (!selectedTemplate) throw new TRPCError({ code: "BAD_REQUEST", message: "Select an active email template." });
     const testedAt = Date.now();
-    const frame = await db.getEmailTemplate(owner.ownerId);
+    const frame = await db.getEmailTemplate(SYSTEM_ADMIN_ACTOR_ID);
     const variables = {
       leadFirstName: "Test",
       leadFullName: "Test Recipient",
