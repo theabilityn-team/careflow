@@ -55,6 +55,34 @@ export const mailRouter = router({
     return access.role === "super_admin" ? message : { ...message, error: message.error ? "Delivery failed. Ask Super Admin to review your assigned SMTP account." : null };
   }),
 
+  leadHistory: protectedProcedure.input(z.object({ leadId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+    const access = await assertPermission(ctx.user, "viewLeads");
+    if (!await db.canAccessLead(input.leadId, ctx.user.id, access.role === "super_admin")) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
+    }
+    const history = await db.listLeadOutboundEmails(input.leadId);
+    return access.role === "super_admin" ? history : {
+      ...history,
+      messages: history.messages.map(message => ({
+        ...message,
+        error: message.error ? "Delivery failed. Ask Super Admin to review the sender SMTP account." : null,
+      })),
+    };
+  }),
+
+  leadMessage: protectedProcedure.input(z.object({ leadId: z.number().int().positive(), id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+    const access = await assertPermission(ctx.user, "viewLeads");
+    if (!await db.canAccessLead(input.leadId, ctx.user.id, access.role === "super_admin")) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
+    }
+    const message = await db.getLeadOutboundEmail(input.id, input.leadId);
+    if (!message) throw new TRPCError({ code: "NOT_FOUND", message: "Email not found." });
+    return access.role === "super_admin" ? message : {
+      ...message,
+      error: message.error ? "Delivery failed. Ask Super Admin to review the sender SMTP account." : null,
+    };
+  }),
+
   send: protectedProcedure.input(z.object({
     leadId: z.number().int().positive(),
     messageTemplateId: z.number().int().positive().optional().nullable(),

@@ -129,4 +129,63 @@ describe("manual lead email", () => {
     vi.spyOn(db, "getEmailRecipient").mockResolvedValue(undefined);
     await expect(appRouter.createCaller(context()).mail.send({ leadId: 999, subject: "Hello", bodyText: "Message" })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
+
+  it("shows one lead's email history across all staff senders to every authorized lead viewer", async () => {
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...permissions, permissions: JSON.stringify({ viewLeads: true, manageContacts: false }) });
+    vi.spyOn(db, "canAccessLead").mockResolvedValue(true);
+    vi.spyOn(db, "listLeadOutboundEmails").mockResolvedValue({
+      total: 2,
+      sentCount: 1,
+      failedCount: 1,
+      messages: [
+        { id: 91, leadId: 42, senderUserId: 18, recipientEmail: "ana@example.com", recipientName: "Ana Rivera", fromEmail: "other@example.com", productName: "Recovery Mat", templateName: "Introduction", subject: "Hello", status: "sent", error: null, sentAt: 1_800_000, senderName: "Other Staff" },
+        { id: 90, leadId: 42, senderUserId: 17, recipientEmail: "ana@example.com", recipientName: "Ana Rivera", fromEmail: "staff@example.com", productName: null, templateName: null, subject: "Follow-up", status: "failed", error: "Private SMTP diagnostic", sentAt: 1_700_000, senderName: "Staff Member" },
+      ],
+    });
+
+    const history = await appRouter.createCaller(context()).mail.leadHistory({ leadId: 42 });
+
+    expect(history.sentCount).toBe(1);
+    expect(history.messages.map(message => message.senderName)).toEqual(["Other Staff", "Staff Member"]);
+    expect(history.messages[1]?.error).toBe("Delivery failed. Ask Super Admin to review the sender SMTP account.");
+  });
+
+  it("blocks lead email history when the viewer cannot access that lead", async () => {
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue(permissions);
+    vi.spyOn(db, "canAccessLead").mockResolvedValue(false);
+    const listHistory = vi.spyOn(db, "listLeadOutboundEmails");
+
+    await expect(appRouter.createCaller(context()).mail.leadHistory({ leadId: 999 })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(listHistory).not.toHaveBeenCalled();
+  });
+
+  it("allows an authorized lead viewer to open an email sent by another staff member", async () => {
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...permissions, permissions: JSON.stringify({ viewLeads: true, manageContacts: false }) });
+    vi.spyOn(db, "canAccessLead").mockResolvedValue(true);
+    vi.spyOn(db, "getLeadOutboundEmail").mockResolvedValue({
+      id: 91,
+      leadId: 42,
+      senderUserId: 18,
+      recipientEmail: "ana@example.com",
+      recipientName: "Ana Rivera",
+      fromEmail: "other@example.com",
+      productId: 3,
+      messageTemplateId: 8,
+      productName: "Recovery Mat",
+      templateName: "Introduction",
+      subject: "Hello",
+      bodyHtml: "<p>Hello Ana</p>",
+      status: "sent",
+      providerMessageId: "message-91",
+      error: null,
+      sentAt: 1_800_000,
+      createdAt: now,
+      senderName: "Other Staff",
+    });
+
+    const message = await appRouter.createCaller(context()).mail.leadMessage({ leadId: 42, id: 91 });
+
+    expect(message.senderName).toBe("Other Staff");
+    expect(message.bodyHtml).toContain("Hello Ana");
+  });
 });

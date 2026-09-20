@@ -119,3 +119,20 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Run 112 tests, TypeScript, production build, runtime/log, browser, and database checks | Completed |
 | Push the completed project to `theabilityn-team/careflow` | Completed |
 | Save the final checkpoint | Completed |
+
+
+## Completed update: Direct lead email and shared lead email history
+
+| Task | Status |
+| --- | --- |
+| Add **Send email** beside Edit lead and Contact & follow-up | Completed |
+| Reuse active product and approved plain-text/HTML template selection on each lead | Completed |
+| Keep subject/message editable and preserve HTML preview/source controls | Completed |
+| Send through the logged-in account's verified SMTP profile | Completed |
+| Rename Log contact to **Contact & follow-up** across the active interface and guide | Completed |
+| Add an **Emails** tab with exact sent, failed, and total attempt counts | Completed |
+| Show lead email history across all staff senders, not only the current user | Completed |
+| Show sender, recipient, product, template, status, Eastern timestamp, and stored message preview | Completed |
+| Enforce lead access before history or message retrieval and hide SMTP diagnostics from staff | Completed |
+| Run 115 tests, TypeScript, production build, browser QA, runtime, DB-mutation, privacy, and cleanup checks | Completed |
+| Save the final checkpoint and push to GitHub | Completed |

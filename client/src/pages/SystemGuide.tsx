@@ -25,12 +25,12 @@ const flows = [
   },
   {
     number: "04", icon: MessageSquarePlus, title: "Record a call, email, SMS, or meeting", action: "Open Leads", path: "/leads",
-    steps: ["Open a lead and select Log contact.", "Choose method and direction, then write the outcome and optional notes.", "Optionally schedule another follow-up in Eastern Time.", "Save the communication."],
+    steps: ["Open a lead and select Contact & follow-up.", "Choose method and direction, then write the contact outcome and optional notes.", "Optionally schedule another follow-up in Eastern Time.", "Save the contact activity."],
     result: "Most recent contact and Communication history are updated. Every entered date creates a new independent reminder without replacing existing follow-ups. Status is never changed automatically.",
   },
   {
     number: "05", icon: ClipboardCheck, title: "Plan and complete follow-ups", action: "Open Follow-ups", path: "/follow-ups",
-    steps: ["Create one or more independent reminders from Log contact.", "Upcoming reminders appear in Upcoming; passed dates appear in Overdue.", "Use Edit or Delete on the exact reminder you want to change without affecting the others.", "After calling, emailing, or meeting the lead, select Complete beside that reminder and record the contact outcome and notes.", "Optionally add another follow-up while completing it."],
+    steps: ["Create one or more independent reminders from Contact & follow-up.", "Upcoming reminders appear in Upcoming; passed dates appear in Overdue.", "Use Edit or Delete on the exact reminder you want to change without affecting the others.", "After calling, emailing, or meeting the lead, select Complete beside that reminder and record the contact outcome and notes.", "Optionally add another follow-up while completing it."],
     result: "Every lifecycle action targets one follow-up ID and is written to the Audit trail. Completed reminders move to Archive, while the lead's Next follow-up always shows the earliest remaining active reminder.",
   },
   {
@@ -50,7 +50,7 @@ const flows = [
   },
   {
     number: "09", icon: BellRing, title: "Plan, complete, and archive follow-ups", action: "Open Follow-ups", path: "/follow-ups",
-    steps: ["Set one or more Scheduled follow-ups from Log contact; every date/time input is interpreted as America/New_York Eastern Time.", "Select English or Spanish on the lead record; this is the lead's reminder language, not a staff preference.", "Use Queue for overdue and upcoming work, or Calendar to select an Eastern Time day and review every scheduled reminder.", "Two hours before each appointment, an unread in-app notification appears. CareFlow uses the responsible staff or Super Admin verified SMTP account: the internal email is always English and the lead email uses that lead's selected language.", "Use Complete, Edit, or Delete on the exact reminder. Other follow-ups for the same lead stay active.", "Use Archive to search completed follow-ups while preserving the original Eastern schedule, completion time, staff actor, result, and reschedule decision."],
+    steps: ["Set one or more Scheduled follow-ups from Contact & follow-up; every date/time input is interpreted as America/New_York Eastern Time.", "Select English or Spanish on the lead record; this is the lead's reminder language, not a staff preference.", "Use Queue for overdue and upcoming work, or Calendar to select an Eastern Time day and review every scheduled reminder.", "Two hours before each appointment, an unread in-app notification appears. CareFlow uses the responsible staff or Super Admin verified SMTP account: the internal email is always English and the lead email uses that lead's selected language.", "Use Complete, Edit, or Delete on the exact reminder. Other follow-ups for the same lead stay active.", "Use Archive to search completed follow-ups while preserving the original Eastern schedule, completion time, staff actor, result, and reschedule decision."],
     result: "America/New_York governs all business timestamps regardless of login location. Active reminders remain independent and actionable, and every completed follow-up becomes a permanent, permission-scoped history record without changing Business Status or Interest Signal.",
   },
   {
@@ -65,8 +65,8 @@ const flows = [
   },
   {
     number: "12", icon: Mail, title: "Send email to an accessible lead", action: "Open Mails", path: "/mails",
-    steps: ["Open Mails and select a lead that has an email address; staff can choose only leads they are permitted to access.", "Optionally select an active product and an approved Super Admin plain-text or HTML template.", "Review and personalize the filled subject and message. HTML templates can be previewed or edited as source before sending.", "CareFlow sanitizes HTML again, replaces optional lead and sender tokens, and wraps every message with the global HTML header and footer managed only by Super Admin.", "Send through the logged-in user's active, verified SMTP account.", "Review successful and failed attempts under Sent history; successful sends are also recorded in the lead's Communication history.", "To read replies or any received email, sign in directly to the assigned email mailbox."],
-    result: "Staff can send tracked outbound email from approved reusable drafts without seeing SMTP credentials. Sent history preserves the selected product and template names even if the library changes later. CareFlow does not act as an inbox.",
+    steps: ["Open a lead and select Send email beside Edit lead and Contact & follow-up, or use the central Mails workspace.", "Optionally select an active product and an approved Super Admin plain-text or HTML template.", "Review and personalize the filled subject and message. HTML templates can be previewed or edited as source before sending.", "CareFlow sanitizes HTML again, replaces optional lead and sender tokens, and wraps every message with the global HTML header and footer managed only by Super Admin.", "Send through the logged-in user's active, verified SMTP account.", "Open the lead's Emails tab to review the exact successful and failed history across every staff sender; successful sends also appear in Communication history.", "To read replies or any received email, sign in directly to the assigned email mailbox."],
+    result: "Staff can send tracked outbound email from an individual lead or the Mails workspace without seeing SMTP credentials. Each lead shows the total sent count and immutable cross-staff history with sender, product, template, recipient, status, time, and message preview. CareFlow does not act as an inbox.",
   },
   {
     number: "13", icon: Library, title: "Manage product email templates", action: "Open Email templates", path: "/email-templates",

@@ -305,3 +305,14 @@ Migration `0018_mixed_rachel_grey.sql` added source communication and actor meta
 Non-destructive browser QA confirmed two separate queue items and notifications, two items on the same Eastern calendar day, an Edit dialog with the correct ET value and selected-item wording, a Delete confirmation that explicitly preserves other reminders and communication history, and the lead profile showing the earliest Next follow-up plus **2 active reminders**. No edit, delete, completion, or notification-read action was submitted.
 
 Final automated validation passed with **112 tests across 26 files**, a clean TypeScript check, a successful production build, HTTP 200 runtime health, no new post-migration server errors, and no browser console errors.
+
+
+## Direct lead email and cross-staff email history — 2026-09-20
+
+Each accessible lead profile now shows **Send email** beside **Edit lead** and the renamed **Contact & follow-up** action. The dialog supports the same active product library, approved plain-text/HTML templates, editable subject/message, personalization tokens, HTML preview/source editing, global Super Admin frame, and logged-in sender SMTP path as the central Mails workspace.
+
+The new **Emails** tab displays the exact successful count plus failed/total attempts for that lead across every sender account, not only the current staff member. Rows identify sender, from address, recipient, product, template, status, and Eastern Time; authorized lead viewers can open the immutable stored message preview. Lead access rules are enforced before summary or message retrieval, and staff receive generic delivery failures rather than SMTP diagnostics.
+
+Browser QA opened an existing accessible lead with an email address, confirmed the three adjacent header actions, selected the real active product and approved template, verified draft population, then selected **Cancel**. No SMTP request, outbound-history row, or Communication row was created. The lead Emails tab rendered the correct zero-count empty state. Browser console inspection returned no errors, and artifacts containing the inspected lead details were deleted.
+
+Final validation passed with **115 tests across 26 files**, including new cross-staff history authorization tests, a clean TypeScript check, successful production build, HTTP 200 runtime health, clean diff whitespace, no temporary QA files, and no remaining `Log contact` interface copy.

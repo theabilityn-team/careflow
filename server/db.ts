@@ -517,6 +517,54 @@ export async function getOutboundEmail(id: number, viewer: { userId: number; isS
   return (await db.select().from(outboundEmails).where(and(eq(outboundEmails.id, id), visibility)).limit(1))[0];
 }
 
+export async function listLeadOutboundEmails(leadId: number) {
+  const db = await requireDb();
+  const [messages, summaryRows] = await Promise.all([
+    db.select({
+      id: outboundEmails.id,
+      leadId: outboundEmails.leadId,
+      senderUserId: outboundEmails.senderUserId,
+      recipientEmail: outboundEmails.recipientEmail,
+      recipientName: outboundEmails.recipientName,
+      fromEmail: outboundEmails.fromEmail,
+      productName: outboundEmails.productName,
+      templateName: outboundEmails.templateName,
+      subject: outboundEmails.subject,
+      status: outboundEmails.status,
+      error: outboundEmails.error,
+      sentAt: outboundEmails.sentAt,
+      senderName: sql<string>`coalesce(${users.name}, case when ${outboundEmails.senderUserId} = ${SYSTEM_ADMIN_ACTOR_ID} then 'Super Administrator' else 'CareFlow user' end)`,
+    }).from(outboundEmails)
+      .leftJoin(users, eq(users.id, outboundEmails.senderUserId))
+      .where(eq(outboundEmails.leadId, leadId))
+      .orderBy(desc(outboundEmails.sentAt))
+      .limit(500),
+    db.select({
+      total: sql<number>`count(*)`,
+      sent: sql<number>`sum(case when ${outboundEmails.status} = 'sent' then 1 else 0 end)`,
+      failed: sql<number>`sum(case when ${outboundEmails.status} = 'failed' then 1 else 0 end)`,
+    }).from(outboundEmails).where(eq(outboundEmails.leadId, leadId)),
+  ]);
+  const summary = summaryRows[0];
+  return {
+    total: Number(summary?.total ?? 0),
+    sentCount: Number(summary?.sent ?? 0),
+    failedCount: Number(summary?.failed ?? 0),
+    messages,
+  };
+}
+
+export async function getLeadOutboundEmail(id: number, leadId: number) {
+  const db = await requireDb();
+  return (await db.select({
+    ...getTableColumns(outboundEmails),
+    senderName: sql<string>`coalesce(${users.name}, case when ${outboundEmails.senderUserId} = ${SYSTEM_ADMIN_ACTOR_ID} then 'Super Administrator' else 'CareFlow user' end)`,
+  }).from(outboundEmails)
+    .leftJoin(users, eq(users.id, outboundEmails.senderUserId))
+    .where(and(eq(outboundEmails.id, id), eq(outboundEmails.leadId, leadId)))
+    .limit(1))[0];
+}
+
 export async function upsertStaffPermissions(input: {
   userId: number;
   jobTitle: string;
