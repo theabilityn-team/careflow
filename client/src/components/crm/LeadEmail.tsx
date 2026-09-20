@@ -1,4 +1,5 @@
 import { EmptyState, PageLoading } from "@/components/crm/CrmUi";
+import { EmailEngagementBadges, EmailEngagementDetails, EmailEngagementNotice } from "@/components/crm/EmailEngagement";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,8 @@ type LeadEmailHistoryData = {
   total: number;
   sentCount: number;
   failedCount: number;
+  openedCount: number;
+  clickedCount: number;
   messages: Array<{
     id: number;
     senderName: string;
@@ -38,6 +41,13 @@ type LeadEmailHistoryData = {
     subject: string;
     status: "sent" | "failed";
     error: string | null;
+    trackingEnabled: boolean;
+    firstOpenedAt: number | null;
+    lastOpenedAt: number | null;
+    openCount: number;
+    firstClickedAt: number | null;
+    lastClickedAt: number | null;
+    clickCount: number;
     sentAt: number;
   }>;
 };
@@ -146,15 +156,15 @@ export function LeadEmailComposerDialog({ lead, onSent }: { lead: LeadRecipient;
 
 export function LeadEmailHistory({ leadId, history, isLoading }: { leadId: number; history?: LeadEmailHistoryData; isLoading: boolean }) {
   const [messageId, setMessageId] = useState<number>();
-  const message = trpc.mail.leadMessage.useQuery({ leadId, id: messageId ?? 0 }, { enabled: Boolean(messageId) });
+  const message = trpc.mail.leadMessage.useQuery({ leadId, id: messageId ?? 0 }, { enabled: Boolean(messageId), refetchInterval: messageId ? 30_000 : false });
   if (isLoading) return <PageLoading />;
   return <>
     <Card className="rounded-2xl border-0 bg-white shadow-sm">
-      <CardHeader className="border-b border-slate-100"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle className="text-lg">Lead email history</CardTitle><p className="mt-1 text-sm text-slate-500">Every outbound email attempt for this lead, regardless of which staff account sent it.</p></div><div className="flex flex-wrap gap-2"><Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50">{history?.sentCount ?? 0} sent</Badge>{Boolean(history?.failedCount) && <Badge className="bg-rose-50 text-rose-700 hover:bg-rose-50">{history?.failedCount} failed</Badge>}<Badge variant="outline">{history?.total ?? 0} total attempts</Badge></div></div></CardHeader>
-      <CardContent>{!history?.messages.length ? <EmptyState title="No emails recorded" description="Emails sent from this lead profile or the Mails workspace will appear here for every authorized staff member." /> : <div className="divide-y divide-slate-100">{history.messages.map(item => <button key={item.id} onClick={() => setMessageId(item.id)} className="flex w-full flex-col gap-3 py-4 text-left transition-opacity hover:opacity-70 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-semibold text-slate-900">{item.subject}</p>{item.productName && <Badge variant="outline" className="border-cyan-200 bg-cyan-50 text-cyan-800">{item.productName}</Badge>}{item.templateName && <Badge variant="outline">{item.templateName}</Badge>}</div><p className="mt-1 text-sm text-slate-500">Sent by {item.senderName} · {item.fromEmail}</p><p className="mt-1 text-xs text-slate-400">To {item.recipientEmail}</p></div><div className="flex items-center gap-3"><Badge variant="outline" className={item.status === "sent" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}>{item.status === "sent" ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <AlertTriangle className="mr-1 h-3 w-3" />}{item.status}</Badge><span className="text-xs text-slate-400">{formatEasternDate(item.sentAt, true)}</span></div></button>)}</div>}</CardContent>
+      <CardHeader className="border-b border-slate-100"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle className="text-lg">Lead email history</CardTitle><p className="mt-1 text-sm text-slate-500">Every outbound email attempt for this lead, regardless of which staff account sent it.</p></div><div className="flex flex-wrap gap-2"><Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50">{history?.sentCount ?? 0} sent</Badge><Badge className="bg-sky-50 text-sky-700 hover:bg-sky-50">{history?.openedCount ?? 0} opened</Badge><Badge className="bg-violet-50 text-violet-700 hover:bg-violet-50">{history?.clickedCount ?? 0} clicked</Badge>{Boolean(history?.failedCount) && <Badge className="bg-rose-50 text-rose-700 hover:bg-rose-50">{history?.failedCount} failed</Badge>}<Badge variant="outline">{history?.total ?? 0} total attempts</Badge></div></div></CardHeader>
+      <CardContent><EmailEngagementNotice className="mb-4 mt-5" />{!history?.messages.length ? <EmptyState title="No emails recorded" description="Emails sent from this lead profile, automatic lead reminders, or the Mails workspace will appear here for every authorized staff member." /> : <div className="divide-y divide-slate-100">{history.messages.map(item => <button key={item.id} onClick={() => setMessageId(item.id)} className="flex w-full flex-col gap-3 py-4 text-left transition-opacity hover:opacity-70 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-semibold text-slate-900">{item.subject}</p>{item.productName && <Badge variant="outline" className="border-cyan-200 bg-cyan-50 text-cyan-800">{item.productName}</Badge>}{item.templateName && <Badge variant="outline">{item.templateName}</Badge>}</div><p className="mt-1 text-sm text-slate-500">Sent by {item.senderName} · {item.fromEmail}</p><p className="mt-1 text-xs text-slate-400">To {item.recipientEmail}</p><div className="mt-2"><EmailEngagementBadges email={item} /></div></div><div className="flex items-center gap-3"><Badge variant="outline" className={item.status === "sent" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}>{item.status === "sent" ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <AlertTriangle className="mr-1 h-3 w-3" />}{item.status}</Badge><span className="text-xs text-slate-400">{formatEasternDate(item.sentAt, true)}</span></div></button>)}</div>}</CardContent>
     </Card>
     <Dialog open={Boolean(messageId)} onOpenChange={value => { if (!value) setMessageId(undefined); }}>
-      <DialogContent className="max-w-3xl"><DialogHeader><DialogTitle>{message.data?.subject || "Email details"}</DialogTitle><DialogDescription>{message.data ? `Sent by ${message.data.senderName} from ${message.data.fromEmail} · ${formatEasternDate(message.data.sentAt, true)}` : "Loading email…"}</DialogDescription></DialogHeader>{message.isLoading ? <PageLoading /> : message.data && <div className="space-y-4"><div className="flex flex-wrap gap-2 text-xs"><Badge variant="outline">To {message.data.recipientEmail}</Badge>{message.data.productName && <Badge variant="outline" className="border-cyan-200 bg-cyan-50 text-cyan-800">Product: {message.data.productName}</Badge>}{message.data.templateName && <Badge variant="outline">Template: {message.data.templateName}</Badge>}<Badge variant="outline">{message.data.status}</Badge></div>{message.data.error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Delivery failed</AlertTitle><AlertDescription>{message.data.error}</AlertDescription></Alert>}<iframe title="Lead sent email preview" sandbox="" srcDoc={message.data.bodyHtml} className="h-[420px] w-full rounded-xl border border-slate-200 bg-white" /></div>}</DialogContent>
+      <DialogContent className="max-w-3xl"><DialogHeader><DialogTitle>{message.data?.subject || "Email details"}</DialogTitle><DialogDescription>{message.data ? `Sent by ${message.data.senderName} from ${message.data.fromEmail} · ${formatEasternDate(message.data.sentAt, true)}` : "Loading email…"}</DialogDescription></DialogHeader>{message.isLoading ? <PageLoading /> : message.data && <div className="space-y-4"><div className="flex flex-wrap gap-2 text-xs"><Badge variant="outline">To {message.data.recipientEmail}</Badge>{message.data.productName && <Badge variant="outline" className="border-cyan-200 bg-cyan-50 text-cyan-800">Product: {message.data.productName}</Badge>}{message.data.templateName && <Badge variant="outline">Template: {message.data.templateName}</Badge>}<Badge variant="outline">{message.data.status}</Badge></div>{message.data.status === "sent" && <EmailEngagementDetails email={message.data} />}{message.data.error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Delivery failed</AlertTitle><AlertDescription>{message.data.error}</AlertDescription></Alert>}<iframe title="Lead sent email preview" sandbox="" srcDoc={message.data.bodyHtml} className="h-[420px] w-full rounded-xl border border-slate-200 bg-white" /></div>}</DialogContent>
     </Dialog>
   </>;
 }

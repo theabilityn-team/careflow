@@ -65,11 +65,15 @@ describe("follow-up reminders", () => {
   it("sends both messages from the assigned staff SMTP account", async () => {
     vi.spyOn(db, "getDueFollowUpReminderDeliveries").mockResolvedValue([delivery]);
     const update = vi.spyOn(db, "updateFollowUpDelivery").mockResolvedValue();
+    const addHistory = vi.spyOn(db, "addOutboundEmail").mockResolvedValue(12);
     const send = vi.spyOn(smtp, "sendStaffSmtpEmail").mockResolvedValue({ configured: true, sent: true, error: null, messageId: "email-id" });
     const result = await processDueFollowUpReminders(delivery.scheduledFor - 2 * 60 * 60 * 1000);
     expect(result).toMatchObject({ configured: true, due: 1, configuredRows: 1, sent: 2, failed: 0 });
     expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[0]?.[0]).toMatchObject({ smtpUsername: "luis@example.com", fromEmail: "luis@example.com" });
+    expect(send.mock.calls[0]?.[1].html).not.toContain("/api/email-track/");
+    expect(send.mock.calls[1]?.[1].html).toContain("/api/email-track/open/");
+    expect(addHistory).toHaveBeenCalledWith(expect.objectContaining({ leadId: 11, senderUserId: 3, recipientEmail: "ana@example.com", status: "sent", trackingToken: expect.stringMatching(/^[a-f0-9]{64}$/), bodyHtml: expect.not.stringContaining("/api/email-track/") }));
     expect(update).toHaveBeenCalledWith(7, expect.objectContaining({ staffEmailStatus: "sent", leadEmailStatus: "sent", attempts: 1 }));
   });
 });

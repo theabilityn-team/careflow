@@ -346,11 +346,19 @@ export const outboundEmails = mysqlTable("outbound_emails", {
   status: mysqlEnum("status", ["sent", "failed"]).notNull(),
   providerMessageId: varchar("providerMessageId", { length: 255 }),
   error: text("error"),
+  trackingToken: varchar("trackingToken", { length: 64 }),
+  firstOpenedAt: bigint("firstOpenedAt", { mode: "number" }),
+  lastOpenedAt: bigint("lastOpenedAt", { mode: "number" }),
+  openCount: int("openCount").default(0).notNull(),
+  firstClickedAt: bigint("firstClickedAt", { mode: "number" }),
+  lastClickedAt: bigint("lastClickedAt", { mode: "number" }),
+  clickCount: int("clickCount").default(0).notNull(),
   sentAt: bigint("sentAt", { mode: "number" }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, table => ({
   senderSent: index("outbound_emails_senderUserId_sentAt_idx").on(table.senderUserId, table.sentAt),
   leadSent: index("outbound_emails_leadId_sentAt_idx").on(table.leadId, table.sentAt),
+  trackingTokenUnique: uniqueIndex("outbound_emails_trackingToken_unique").on(table.trackingToken),
 }));
 
 export const completedFollowUps = mysqlTable("completed_follow_ups", {

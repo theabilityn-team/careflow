@@ -488,6 +488,24 @@ export async function addOutboundEmail(input: typeof outboundEmails.$inferInsert
   return Number(result[0].insertId);
 }
 
+export async function recordOutboundEmailOpen(trackingToken: string, occurredAt = Date.now()) {
+  const db = await requireDb();
+  await db.update(outboundEmails).set({
+    firstOpenedAt: sql`coalesce(${outboundEmails.firstOpenedAt}, ${occurredAt})`,
+    lastOpenedAt: occurredAt,
+    openCount: sql`${outboundEmails.openCount} + 1`,
+  }).where(and(eq(outboundEmails.trackingToken, trackingToken), eq(outboundEmails.status, "sent")));
+}
+
+export async function recordOutboundEmailClick(trackingToken: string, occurredAt = Date.now()) {
+  const db = await requireDb();
+  await db.update(outboundEmails).set({
+    firstClickedAt: sql`coalesce(${outboundEmails.firstClickedAt}, ${occurredAt})`,
+    lastClickedAt: occurredAt,
+    clickCount: sql`${outboundEmails.clickCount} + 1`,
+  }).where(and(eq(outboundEmails.trackingToken, trackingToken), eq(outboundEmails.status, "sent")));
+}
+
 export async function listOutboundEmails(viewer: { userId: number; isSuperAdmin: boolean }) {
   const db = await requireDb();
   const visibility = viewer.isSuperAdmin ? undefined : eq(outboundEmails.senderUserId, viewer.userId);
@@ -502,6 +520,13 @@ export async function listOutboundEmails(viewer: { userId: number; isSuperAdmin:
     subject: outboundEmails.subject,
     status: outboundEmails.status,
     error: outboundEmails.error,
+    trackingEnabled: sql<boolean>`${outboundEmails.trackingToken} is not null`,
+    firstOpenedAt: outboundEmails.firstOpenedAt,
+    lastOpenedAt: outboundEmails.lastOpenedAt,
+    openCount: outboundEmails.openCount,
+    firstClickedAt: outboundEmails.firstClickedAt,
+    lastClickedAt: outboundEmails.lastClickedAt,
+    clickCount: outboundEmails.clickCount,
     sentAt: outboundEmails.sentAt,
     senderName: sql<string>`coalesce(${users.name}, case when ${outboundEmails.senderUserId} = ${SYSTEM_ADMIN_ACTOR_ID} then 'Super Administrator' else 'CareFlow user' end)`,
   }).from(outboundEmails)
@@ -532,6 +557,13 @@ export async function listLeadOutboundEmails(leadId: number) {
       subject: outboundEmails.subject,
       status: outboundEmails.status,
       error: outboundEmails.error,
+      trackingEnabled: sql<boolean>`${outboundEmails.trackingToken} is not null`,
+      firstOpenedAt: outboundEmails.firstOpenedAt,
+      lastOpenedAt: outboundEmails.lastOpenedAt,
+      openCount: outboundEmails.openCount,
+      firstClickedAt: outboundEmails.firstClickedAt,
+      lastClickedAt: outboundEmails.lastClickedAt,
+      clickCount: outboundEmails.clickCount,
       sentAt: outboundEmails.sentAt,
       senderName: sql<string>`coalesce(${users.name}, case when ${outboundEmails.senderUserId} = ${SYSTEM_ADMIN_ACTOR_ID} then 'Super Administrator' else 'CareFlow user' end)`,
     }).from(outboundEmails)
@@ -543,6 +575,8 @@ export async function listLeadOutboundEmails(leadId: number) {
       total: sql<number>`count(*)`,
       sent: sql<number>`sum(case when ${outboundEmails.status} = 'sent' then 1 else 0 end)`,
       failed: sql<number>`sum(case when ${outboundEmails.status} = 'failed' then 1 else 0 end)`,
+      opened: sql<number>`sum(case when ${outboundEmails.firstOpenedAt} is not null then 1 else 0 end)`,
+      clicked: sql<number>`sum(case when ${outboundEmails.firstClickedAt} is not null then 1 else 0 end)`,
     }).from(outboundEmails).where(eq(outboundEmails.leadId, leadId)),
   ]);
   const summary = summaryRows[0];
@@ -550,6 +584,8 @@ export async function listLeadOutboundEmails(leadId: number) {
     total: Number(summary?.total ?? 0),
     sentCount: Number(summary?.sent ?? 0),
     failedCount: Number(summary?.failed ?? 0),
+    openedCount: Number(summary?.opened ?? 0),
+    clickedCount: Number(summary?.clicked ?? 0),
     messages,
   };
 }

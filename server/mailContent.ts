@@ -77,8 +77,24 @@ export function renderTextTokens(value: string, variables: EmailTemplateVariable
   return value.replace(/\{\{(leadFirstName|leadFullName|senderName|senderEmail)\}\}/g, (_match, key: keyof EmailTemplateVariables) => variables[key]);
 }
 
+function linkifyPlainText(value: string) {
+  return value.split(/(https?:\/\/[^\s<]+)/gi).map(part => {
+    if (!/^https?:\/\//i.test(part)) return escapeHtml(part);
+    const trailing = part.match(/[),.!?;:]+$/)?.[0] ?? "";
+    const candidate = trailing ? part.slice(0, -trailing.length) : part;
+    try {
+      const url = new URL(candidate);
+      if (url.protocol !== "https:" && url.protocol !== "http:") return escapeHtml(part);
+      const safeUrl = escapeHtml(url.toString());
+      return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(candidate)}</a>${escapeHtml(trailing)}`;
+    } catch {
+      return escapeHtml(part);
+    }
+  }).join("");
+}
+
 export function composeEmailHtml(headerHtml: string, bodyText: string, footerHtml: string, variables: EmailTemplateVariables) {
-  const body = bodyText.split(/\n{2,}/).map(paragraph => `<p style="margin:0 0 14px">${escapeHtml(paragraph).replaceAll("\n", "<br>")}</p>`).join("");
+  const body = bodyText.split(/\n{2,}/).map(paragraph => `<p style="margin:0 0 14px">${linkifyPlainText(paragraph).replaceAll("\n", "<br>")}</p>`).join("");
   return composeRichEmailHtml(headerHtml, body, footerHtml, variables);
 }
 

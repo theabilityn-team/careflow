@@ -136,3 +136,24 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Enforce lead access before history or message retrieval and hide SMTP diagnostics from staff | Completed |
 | Run 115 tests, TypeScript, production build, browser QA, runtime, DB-mutation, privacy, and cleanup checks | Completed |
 | Save the final checkpoint and push to GitHub | Completed |
+
+
+## Completed update: Email open and click tracking
+
+| Task | Status |
+| --- | --- |
+| Add privacy-minimized open/click fields and a unique opaque tracking token | Completed |
+| Add no-cookie public tracking pixel and signed click redirect endpoints | Completed |
+| Instrument newly sent manual lead emails and automatic lead reminders | Completed |
+| Leave internal staff reminder emails untracked | Completed |
+| Convert safe web URLs in plain-text messages into trackable links | Completed |
+| Keep stored email previews free of tracking markup | Completed |
+| Hide tracking tokens from staff and Super Admin APIs | Completed |
+| Show aggregate open/click counts in Mails and each lead's Emails tab | Completed |
+| Show first/latest event timestamps in Eastern Time | Completed |
+| Label pre-feature messages as tracking unavailable instead of not opened | Completed |
+| Explain image blocking, privacy protection, and security-scanner limitations | Completed |
+| Store no recipient IP address, device, user-agent, or browser fingerprint | Completed |
+| Apply migration 0019 and verify the live schema/index | Completed |
+| Run 118 tests, TypeScript, production build, endpoint, browser, database, privacy, runtime, and cleanup checks | Completed |
+| Save the final checkpoint and push to GitHub | Completed |

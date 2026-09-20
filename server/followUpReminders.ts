@@ -1,5 +1,6 @@
 import * as db from "./db";
 import { formatEasternLongDateTime } from "../shared/time";
+import { createEmailTrackingToken, instrumentEmailHtml } from "./emailTracking";
 import { isSmtpConfigured, sendStaffSmtpEmail, type StaffSmtpConfig } from "./smtp";
 
 type Delivery = Awaited<ReturnType<typeof db.getDueFollowUpReminderDeliveries>>[number];
@@ -67,7 +68,31 @@ export async function processDueFollowUpReminders(now = Date.now()) {
     if (["pending", "failed"].includes(row.leadEmailStatus)) {
       if (!row.leadEmail) values.leadEmailStatus = "skipped";
       else {
-        const result = await send({ to: row.leadEmail, subject: copy.leadSubject, text: copy.leadText, html: reminderHtml(copy.leadText) });
+        const html = reminderHtml(copy.leadText);
+        const trackingToken = createEmailTrackingToken();
+        const result = await send({ to: row.leadEmail, subject: copy.leadSubject, text: copy.leadText, html: instrumentEmailHtml(html, trackingToken) });
+        if (isReady(row)) {
+          try {
+            await db.addOutboundEmail({
+              senderUserId: row.recipientUserId,
+              leadId: row.leadId,
+              recipientEmail: row.leadEmail,
+              recipientName: `${row.firstName} ${row.lastName}`.trim(),
+              fromEmail: settings.fromEmail,
+              productName: null,
+              templateName: null,
+              subject: copy.leadSubject,
+              bodyHtml: html,
+              status: result.sent ? "sent" : "failed",
+              providerMessageId: result.sent ? result.messageId ?? null : null,
+              error: result.error,
+              trackingToken: result.sent ? trackingToken : null,
+              sentAt: now,
+            });
+          } catch {
+            errors.push("Lead email tracking history could not be recorded.");
+          }
+        }
         values.leadEmailStatus = result.sent ? "sent" : "failed";
         if (result.sent) { values.leadSentAt = now; sent += 1; } else { errors.push(result.error || "Lead email failed."); failed += 1; }
       }

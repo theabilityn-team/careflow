@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
+import { createEmailTrackingToken, instrumentEmailHtml } from "../emailTracking";
 import { composeEmailHtml, composeRichEmailHtml, DEFAULT_EMAIL_FOOTER_HTML, DEFAULT_EMAIL_HEADER_HTML, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "../mailContent";
 import { assertPermission } from "../permissions";
 import { isSmtpConfigured, sendStaffSmtpEmail } from "../smtp";
@@ -52,7 +53,9 @@ export const mailRouter = router({
     const access = await assertPermission(ctx.user, "manageContacts");
     const message = await db.getOutboundEmail(input.id, { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
     if (!message) throw new TRPCError({ code: "NOT_FOUND", message: "Email not found." });
-    return access.role === "super_admin" ? message : { ...message, error: message.error ? "Delivery failed. Ask Super Admin to review your assigned SMTP account." : null };
+    const { trackingToken: _trackingToken, ...safeMessage } = message;
+    const publicMessage = { ...safeMessage, trackingEnabled: Boolean(_trackingToken) };
+    return access.role === "super_admin" ? publicMessage : { ...publicMessage, error: safeMessage.error ? "Delivery failed. Ask Super Admin to review your assigned SMTP account." : null };
   }),
 
   leadHistory: protectedProcedure.input(z.object({ leadId: z.number().int().positive() })).query(async ({ ctx, input }) => {
@@ -77,9 +80,11 @@ export const mailRouter = router({
     }
     const message = await db.getLeadOutboundEmail(input.id, input.leadId);
     if (!message) throw new TRPCError({ code: "NOT_FOUND", message: "Email not found." });
-    return access.role === "super_admin" ? message : {
-      ...message,
-      error: message.error ? "Delivery failed. Ask Super Admin to review the sender SMTP account." : null,
+    const { trackingToken: _trackingToken, ...safeMessage } = message;
+    const publicMessage = { ...safeMessage, trackingEnabled: Boolean(_trackingToken) };
+    return access.role === "super_admin" ? publicMessage : {
+      ...publicMessage,
+      error: safeMessage.error ? "Delivery failed. Ask Super Admin to review the sender SMTP account." : null,
     };
   }),
 
@@ -131,7 +136,9 @@ export const mailRouter = router({
     const html = input.contentMode === "html"
       ? composeRichEmailHtml(headerHtml, sanitizedBodyHtml!, footerHtml, variables)
       : composeEmailHtml(headerHtml, bodyText, footerHtml, variables);
-    const result = await sendStaffSmtpEmail(settings, { to: recipient.email.trim(), subject, text: htmlToPlainText(html), html });
+    const trackingToken = createEmailTrackingToken();
+    const trackedHtml = instrumentEmailHtml(html, trackingToken);
+    const result = await sendStaffSmtpEmail(settings, { to: recipient.email.trim(), subject, text: htmlToPlainText(html), html: trackedHtml });
     const sentAt = Date.now();
     await db.addOutboundEmail({
       senderUserId: ownerId,
@@ -148,6 +155,7 @@ export const mailRouter = router({
       status: result.sent ? "sent" : "failed",
       providerMessageId: result.sent ? result.messageId ?? null : null,
       error: result.error,
+      trackingToken: result.sent ? trackingToken : null,
       sentAt,
     });
     if (!result.sent) {

@@ -30,7 +30,7 @@ export default function LeadDetail() {
   const { data, isLoading, error } = trpc.leads.get.useQuery({ id }, { enabled: Number.isFinite(id) });
   const { data: assignees = [] } = trpc.leads.assignees.useQuery(undefined, { enabled: Boolean(access?.permissions.viewLeads) });
   const { data: leadSharing } = trpc.groups.leadSharing.useQuery({ leadId: id }, { enabled: Number.isFinite(id) });
-  const emailHistory = trpc.mail.leadHistory.useQuery({ leadId: id }, { enabled: Number.isFinite(id) && Boolean(access?.permissions.viewLeads) });
+  const emailHistory = trpc.mail.leadHistory.useQuery({ leadId: id }, { enabled: Number.isFinite(id) && Boolean(access?.permissions.viewLeads), refetchInterval: 30_000 });
   const update = trpc.leads.update.useMutation({ onSuccess: () => utils.leads.get.invalidate({ id }) });
   const statusUpdate = trpc.leads.update.useMutation({
     onMutate: async ({ lead: patch }) => {

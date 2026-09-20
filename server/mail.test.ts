@@ -44,12 +44,13 @@ describe("manual lead email", () => {
     const addHistory = vi.spyOn(db, "addOutboundEmail").mockResolvedValue(9);
     const addCommunication = vi.spyOn(db, "addCommunicationWithAudit").mockResolvedValue({ communicationId: 7, lead: {} as never });
 
-    const result = await appRouter.createCaller(context()).mail.send({ leadId: 42, messageTemplateId: 8, subject: "Hello {{leadFirstName}}", bodyText: "Your update is ready." });
+    const result = await appRouter.createCaller(context()).mail.send({ leadId: 42, messageTemplateId: 8, subject: "Hello {{leadFirstName}}", bodyText: "Your update is ready at https://example.com/update." });
 
     expect(result.success).toBe(true);
     expect(getFrame).toHaveBeenCalledWith(SYSTEM_ADMIN_ACTOR_ID);
-    expect(send).toHaveBeenCalledWith(smtpSettings, expect.objectContaining({ to: "ana@example.com", subject: "Hello Ana", html: expect.not.stringContaining("<script>") }));
-    expect(addHistory).toHaveBeenCalledWith(expect.objectContaining({ senderUserId: 17, leadId: 42, productId: 3, messageTemplateId: 8, productName: "Recovery Mat", templateName: "Initial introduction", status: "sent", providerMessageId: "message-1" }));
+    expect(send).toHaveBeenCalledWith(smtpSettings, expect.objectContaining({ to: "ana@example.com", subject: "Hello Ana", html: expect.stringContaining("/api/email-track/open/") }));
+    expect(send.mock.calls[0]?.[1].html).toContain("/api/email-track/click/");
+    expect(addHistory).toHaveBeenCalledWith(expect.objectContaining({ senderUserId: 17, leadId: 42, productId: 3, messageTemplateId: 8, productName: "Recovery Mat", templateName: "Initial introduction", status: "sent", providerMessageId: "message-1", trackingToken: expect.stringMatching(/^[a-f0-9]{64}$/), bodyHtml: expect.not.stringContaining("/api/email-track/") }));
     expect(addCommunication).toHaveBeenCalledWith(expect.objectContaining({ leadId: 42, method: "email", direction: "outbound", createdBy: 17 }));
   });
 
@@ -69,7 +70,7 @@ describe("manual lead email", () => {
       subject: "Update for {{leadFirstName}}",
       contentMode: "html",
       bodyText: "",
-      bodyHtml: '<table onclick="bad()"><tr><td>Hello {{leadFirstName}}<script>bad()</script></td></tr></table>',
+      bodyHtml: '<table onclick="bad()"><tr><td>Hello {{leadFirstName}}<script>bad()</script><a href="https://example.com/offer">Offer</a></td></tr></table>',
     });
 
     const message = send.mock.calls[0]?.[1];
@@ -77,8 +78,10 @@ describe("manual lead email", () => {
     expect(message?.html).toContain("Hello Ana");
     expect(message?.html).not.toContain("script");
     expect(message?.html).not.toContain("onclick");
+    expect(message?.html).toContain("/api/email-track/open/");
+    expect(message?.html).toContain("/api/email-track/click/");
     expect(message?.text).toContain("Hello Ana");
-    expect(addCommunication).toHaveBeenCalledWith(expect.objectContaining({ notes: "Hello {{leadFirstName}}" }));
+    expect(addCommunication).toHaveBeenCalledWith(expect.objectContaining({ notes: expect.stringContaining("Hello {{leadFirstName}}") }));
   });
 
   it("blocks sending until the assigned SMTP account is enabled and verified", async () => {
@@ -137,15 +140,20 @@ describe("manual lead email", () => {
       total: 2,
       sentCount: 1,
       failedCount: 1,
+      openedCount: 1,
+      clickedCount: 1,
       messages: [
-        { id: 91, leadId: 42, senderUserId: 18, recipientEmail: "ana@example.com", recipientName: "Ana Rivera", fromEmail: "other@example.com", productName: "Recovery Mat", templateName: "Introduction", subject: "Hello", status: "sent", error: null, sentAt: 1_800_000, senderName: "Other Staff" },
-        { id: 90, leadId: 42, senderUserId: 17, recipientEmail: "ana@example.com", recipientName: "Ana Rivera", fromEmail: "staff@example.com", productName: null, templateName: null, subject: "Follow-up", status: "failed", error: "Private SMTP diagnostic", sentAt: 1_700_000, senderName: "Staff Member" },
+        { id: 91, leadId: 42, senderUserId: 18, recipientEmail: "ana@example.com", recipientName: "Ana Rivera", fromEmail: "other@example.com", productName: "Recovery Mat", templateName: "Introduction", subject: "Hello", status: "sent", error: null, trackingEnabled: true, firstOpenedAt: 1_810_000, lastOpenedAt: 1_820_000, openCount: 2, firstClickedAt: 1_830_000, lastClickedAt: 1_830_000, clickCount: 1, sentAt: 1_800_000, senderName: "Other Staff" },
+        { id: 90, leadId: 42, senderUserId: 17, recipientEmail: "ana@example.com", recipientName: "Ana Rivera", fromEmail: "staff@example.com", productName: null, templateName: null, subject: "Follow-up", status: "failed", error: "Private SMTP diagnostic", trackingEnabled: false, firstOpenedAt: null, lastOpenedAt: null, openCount: 0, firstClickedAt: null, lastClickedAt: null, clickCount: 0, sentAt: 1_700_000, senderName: "Staff Member" },
       ],
     });
 
     const history = await appRouter.createCaller(context()).mail.leadHistory({ leadId: 42 });
 
     expect(history.sentCount).toBe(1);
+    expect(history.openedCount).toBe(1);
+    expect(history.clickedCount).toBe(1);
+    expect(history.messages[0]?.openCount).toBe(2);
     expect(history.messages.map(message => message.senderName)).toEqual(["Other Staff", "Staff Member"]);
     expect(history.messages[1]?.error).toBe("Delivery failed. Ask Super Admin to review the sender SMTP account.");
   });
@@ -178,6 +186,13 @@ describe("manual lead email", () => {
       status: "sent",
       providerMessageId: "message-91",
       error: null,
+      trackingToken: "hidden-tracking-token",
+      firstOpenedAt: 1_810_000,
+      lastOpenedAt: 1_820_000,
+      openCount: 2,
+      firstClickedAt: 1_830_000,
+      lastClickedAt: 1_830_000,
+      clickCount: 1,
       sentAt: 1_800_000,
       createdAt: now,
       senderName: "Other Staff",
@@ -187,5 +202,8 @@ describe("manual lead email", () => {
 
     expect(message.senderName).toBe("Other Staff");
     expect(message.bodyHtml).toContain("Hello Ana");
+    expect(message.openCount).toBe(2);
+    expect(message.trackingEnabled).toBe(true);
+    expect(message).not.toHaveProperty("trackingToken");
   });
 });

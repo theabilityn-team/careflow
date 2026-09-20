@@ -19,10 +19,12 @@ describe("email template content", () => {
   });
 
   it("escapes personalized values and plain message text in HTML", () => {
-    const result = composeEmailHtml("<p>Hello {{leadFirstName}}</p>", "Your result is <ready> & safe.", "<p>{{senderName}}</p>", variables);
+    const result = composeEmailHtml("<p>Hello {{leadFirstName}}</p>", "Your result is <ready> & safe. Visit https://example.com/offer.", "<p>{{senderName}}</p>", variables);
     expect(result).toContain("Ana &lt;Patient&gt;");
     expect(result).toContain("&lt;ready&gt; &amp; safe.");
     expect(result).toContain("Sam &amp; CareFlow");
+    expect(result).toContain('<a href="https://example.com/offer"');
+    expect(result).toContain("</a>.");
   });
 
   it("sanitizes and personalizes a complete HTML message body", () => {

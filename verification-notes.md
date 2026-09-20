@@ -316,3 +316,16 @@ The new **Emails** tab displays the exact successful count plus failed/total att
 Browser QA opened an existing accessible lead with an email address, confirmed the three adjacent header actions, selected the real active product and approved template, verified draft population, then selected **Cancel**. No SMTP request, outbound-history row, or Communication row was created. The lead Emails tab rendered the correct zero-count empty state. Browser console inspection returned no errors, and artifacts containing the inspected lead details were deleted.
 
 Final validation passed with **115 tests across 26 files**, including new cross-staff history authorization tests, a clean TypeScript check, successful production build, HTTP 200 runtime health, clean diff whitespace, no temporary QA files, and no remaining `Log contact` interface copy.
+
+
+## Email open and click tracking — 2026-09-20
+
+CareFlow now instruments newly sent lead emails with an opaque 64-character open token and signed HTTPS/HTTP click redirects. Automatic emails sent to leads are included; internal staff follow-up notifications are intentionally not tracked. The stored message preview remains clean and does not contain the pixel or rewritten redirect links.
+
+A privacy-minimized endpoint verification inserted one temporary non-delivery history row, requested the development open-pixel endpoint, followed a valid signed click without reaching the external destination, and confirmed `openCount=1`, `clickCount=1`, and both first-event timestamps. Invalid tokens do not write events, tampered click signatures return 404, and the temporary row was removed immediately.
+
+Browser QA as Super Admin confirmed the central **Mails → Sent history** view shows an accuracy/privacy notice and open/click badges. Existing messages sent before tracking are correctly labeled **Tracking unavailable for this older email**, rather than falsely reporting that they were not opened. One removable tracked history row verified lead-level totals, row badges (`2 opens`, `1 click`), and detailed first/latest Eastern Time timestamps. It was deleted after verification; no SMTP send, lead communication, or permanent QA record was created.
+
+The UI explains that opens require image loading and that privacy protection or security scanners can create automatic events. CareFlow stores only first/last timestamps and aggregate counts; it does not store recipient IP addresses, device data, user-agent strings, or browser fingerprints. Tracking tokens are omitted from both staff and Super Admin APIs.
+
+Final validation passed with **118 tests across 27 files**, a clean TypeScript check, a successful production build, and HTTP 200 runtime health. The public development tracking route returned a 34-byte GIF with no-cache and no-referrer headers. Migration `0019_magical_famine` is registered and live with all seven engagement columns plus the unique tracking-token index. The final database audit found four preserved historical emails, zero tracked legacy rows, zero engagement events, and zero temporary QA records. Browser console QA reported no warnings or errors, and all screenshots/page artifacts containing real lead details were removed.
