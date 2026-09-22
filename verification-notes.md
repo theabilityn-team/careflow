@@ -329,3 +329,12 @@ Browser QA as Super Admin confirmed the central **Mails → Sent history** view 
 The UI explains that opens require image loading and that privacy protection or security scanners can create automatic events. CareFlow stores only first/last timestamps and aggregate counts; it does not store recipient IP addresses, device data, user-agent strings, or browser fingerprints. Tracking tokens are omitted from both staff and Super Admin APIs.
 
 Final validation passed with **118 tests across 27 files**, a clean TypeScript check, a successful production build, and HTTP 200 runtime health. The public development tracking route returned a 34-byte GIF with no-cache and no-referrer headers. Migration `0019_magical_famine` is registered and live with all seven engagement columns plus the unique tracking-token index. The final database audit found four preserved historical emails, zero tracked legacy rows, zero engagement events, and zero temporary QA records. Browser console QA reported no warnings or errors, and all screenshots/page artifacts containing real lead details were removed.
+
+
+## Visible HTML template editor correction — 2026-09-22
+
+The Super Admin email-template dialog no longer hides HTML behind a compact message-format dropdown. It now shows two large, explicit choices—**Plain text** and **HTML email**—plus an always-visible **Upload HTML** action for `.html` and `.htm` files up to 250 KB. The HTML mode exposes **Edit HTML** and **Preview** controls directly.
+
+Pasting full HTML into the plain-message field is detected automatically and switches the form to the HTML source editor without losing the pasted markup. Browser QA opened the existing BOGO template, verified both visible format choices and the upload action, switched to HTML explicitly, then pasted a full HTML table into the plain field and confirmed the automatic switch and success message. The dialog was canceled without saving, so the real template remained unchanged.
+
+Validation passed with **119 tests across 27 files**, a clean TypeScript check, and a successful production build.

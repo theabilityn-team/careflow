@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { looksLikeEmailHtml } from "../client/src/lib/emailTemplateEditor";
 import type { TrpcContext } from "./_core/context";
 import * as db from "./db";
 import { appRouter } from "./routers";
@@ -13,6 +14,14 @@ function context(user: typeof staff | typeof admin): TrpcContext {
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("email template editor format detection", () => {
+  it("detects pasted full documents and common email HTML blocks", () => {
+    expect(looksLikeEmailHtml("<!doctype html><html><body><table><tr><td>Offer</td></tr></table></body></html>")).toBe(true);
+    expect(looksLikeEmailHtml('<div style="padding:20px">Hello</div>')).toBe(true);
+    expect(looksLikeEmailHtml("Hello {{leadFirstName}},\n\nThis is plain text.")).toBe(false);
+  });
+});
 
 describe("product email template library", () => {
   it("returns only the active library to authorized staff and nests templates by product", async () => {

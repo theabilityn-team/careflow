@@ -157,3 +157,18 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Apply migration 0019 and verify the live schema/index | Completed |
 | Run 118 tests, TypeScript, production build, endpoint, browser, database, privacy, runtime, and cleanup checks | Completed |
 | Save the final checkpoint and push to GitHub | Completed |
+
+
+## Completed update: Visible HTML template editor
+
+| Task | Status |
+| --- | --- |
+| Replace the hidden format dropdown with visible Plain text and HTML email choices | Completed |
+| Keep Upload HTML visible for both new and existing templates | Completed |
+| Accept `.html` and `.htm` files up to 250 KB | Completed |
+| Expose direct HTML source editing and sandboxed preview | Completed |
+| Detect pasted HTML and switch automatically without losing markup | Completed |
+| Preserve server-side HTML sanitization and text fallback generation | Completed |
+| Verify the existing BOGO template without saving or modifying real data | Completed |
+| Run 119 tests, TypeScript validation, production build, browser QA, and runtime checks | Completed |
+| Save the checkpoint and push to GitHub | Completed |
