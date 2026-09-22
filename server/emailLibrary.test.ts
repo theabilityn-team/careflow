@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { looksLikeEmailHtml } from "../client/src/lib/emailTemplateEditor";
+import { looksLikeEmailHtml, preferredTestSenderUserId } from "../client/src/lib/emailTemplateEditor";
 import type { TrpcContext } from "./_core/context";
 import * as db from "./db";
 import { appRouter } from "./routers";
@@ -20,6 +20,18 @@ describe("email template editor format detection", () => {
     expect(looksLikeEmailHtml("<!doctype html><html><body><table><tr><td>Offer</td></tr></table></body></html>")).toBe(true);
     expect(looksLikeEmailHtml('<div style="padding:20px">Hello</div>')).toBe(true);
     expect(looksLikeEmailHtml("Hello {{leadFirstName}},\n\nThis is plain text.")).toBe(false);
+  });
+
+  it("prefers a verified enabled SMTP sender and never defaults to a disabled mailbox", () => {
+    expect(preferredTestSenderUserId([
+      { userId: 1, isActive: true, smtpEnabled: false, smtpVerifiedAt: null },
+      { userId: 2, isActive: true, smtpEnabled: true, smtpVerifiedAt: null },
+      { userId: 3, isActive: true, smtpEnabled: true, smtpVerifiedAt: 1_790_000_000_000 },
+    ])).toBe(3);
+    expect(preferredTestSenderUserId([
+      { userId: 1, isActive: true, smtpEnabled: false, smtpVerifiedAt: null },
+      { userId: 2, isActive: false, smtpEnabled: true, smtpVerifiedAt: 1_790_000_000_000 },
+    ])).toBeUndefined();
   });
 });
 

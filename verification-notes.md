@@ -338,3 +338,12 @@ The Super Admin email-template dialog no longer hides HTML behind a compact mess
 Pasting full HTML into the plain-message field is detected automatically and switches the form to the HTML source editor without losing the pasted markup. Browser QA opened the existing BOGO template, verified both visible format choices and the upload action, switched to HTML explicitly, then pasted a full HTML table into the plain field and confirmed the automatic switch and success message. The dialog was canceled without saving, so the real template remained unchanged.
 
 Validation passed with **119 tests across 27 files**, a clean TypeScript check, and a successful production build.
+
+
+## Per-template Send test action — 2026-09-22
+
+Every active template on the Super Admin **Email templates** page now has a **Send test** action beside Edit and Archive. The dialog keeps the selected template fixed, lets the administrator select any active SMTP mailbox, and requires an explicit recipient email address. It labels each sender as verified, not verified, disabled, or inactive; disabled and inactive mailboxes cannot be selected. The dialog states clearly that the action sends a real email and that lead tokens render with test-recipient values.
+
+Browser QA verified both real MB Aura templates display the new action. The Product Introduction dialog defaulted to the verified Super Admin sender, accepted a non-deliverable `.invalid` recipient, and enabled the send button only after all required values were present. The dialog was canceled, so no email was transmitted and no real template or SMTP data was changed. The browser console remained clean.
+
+Final validation passed with **120 tests across 27 files**, a clean TypeScript check, and a successful production build.

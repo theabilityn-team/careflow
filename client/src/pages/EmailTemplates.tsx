@@ -9,9 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { looksLikeEmailHtml } from "@/lib/emailTemplateEditor";
+import { looksLikeEmailHtml, preferredTestSenderUserId } from "@/lib/emailTemplateEditor";
 import { trpc } from "@/lib/trpc";
-import { Archive, CheckCircle2, Code2, Eye, FileCode2, Library, Loader2, Mail, Package, Pencil, Plus, Upload } from "lucide-react";
+import { Archive, CheckCircle2, Code2, Eye, FileCode2, Library, Loader2, Mail, Package, Pencil, Plus, Send, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -32,6 +32,7 @@ const emptyTemplate = {
 
 type ProductForm = typeof emptyProduct;
 type TemplateForm = typeof emptyTemplate;
+type TestTemplate = { id: number; name: string; contentMode: "plain" | "html" };
 
 export default function EmailTemplates() {
   const { data: access, isLoading: accessLoading } = trpc.dashboard.access.useQuery();
@@ -40,6 +41,8 @@ export default function EmailTemplates() {
   const updateProduct = trpc.emailLibrary.updateProduct.useMutation();
   const createTemplate = trpc.emailLibrary.createTemplate.useMutation();
   const updateTemplate = trpc.emailLibrary.updateTemplate.useMutation();
+  const smtpAccounts = trpc.emailSettings.managedAccounts.useQuery(undefined, { enabled: access?.role === "super_admin" });
+  const sendTestEmail = trpc.emailSettings.sendTestEmail.useMutation();
   const htmlFileInput = useRef<HTMLInputElement>(null);
   const [productDialog, setProductDialog] = useState(false);
   const [templateDialog, setTemplateDialog] = useState(false);
@@ -48,6 +51,10 @@ export default function EmailTemplates() {
   const [productForm, setProductForm] = useState<ProductForm>(emptyProduct);
   const [templateForm, setTemplateForm] = useState<TemplateForm>(emptyTemplate);
   const [previewMode, setPreviewMode] = useState(false);
+  const [testDialog, setTestDialog] = useState(false);
+  const [testTemplate, setTestTemplate] = useState<TestTemplate>();
+  const [testSenderUserId, setTestSenderUserId] = useState("");
+  const [testRecipientEmail, setTestRecipientEmail] = useState("");
 
   if (accessLoading) return <PageLoading />;
   if (access?.role !== "super_admin") return <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-8"><h1 className="text-xl font-semibold">Email templates unavailable</h1><p className="mt-2 text-sm leading-6 text-slate-500">Only Super Admin can manage products and reusable email templates.</p></CardContent></Card>;
@@ -145,6 +152,33 @@ export default function EmailTemplates() {
     setTemplateForm(current => ({ ...current, bodyText: value }));
   }
 
+  function openTestEmail(template: TestTemplate) {
+    const preferredUserId = preferredTestSenderUserId(smtpAccounts.data);
+    setTestTemplate(template);
+    setTestSenderUserId(preferredUserId ? String(preferredUserId) : "");
+    setTestRecipientEmail("");
+    setTestDialog(true);
+  }
+
+  async function sendTemplateTestEmail() {
+    if (!testTemplate) return;
+    if (!testSenderUserId) return toast.error("Select an SMTP sender account.");
+    if (!testRecipientEmail.trim()) return toast.error("Enter the recipient email address.");
+    try {
+      const result = await sendTestEmail.mutateAsync({
+        userId: Number(testSenderUserId),
+        recipientEmail: testRecipientEmail.trim(),
+        messageTemplateId: testTemplate.id,
+      });
+      await smtpAccounts.refetch();
+      setTestDialog(false);
+      toast.success(`Test email sent to ${result.recipientEmail} using ${result.templateName}.`);
+    } catch (error) {
+      await smtpAccounts.refetch();
+      toast.error(error instanceof Error ? error.message : "Test email could not be sent.");
+    }
+  }
+
   async function toggleProduct(product: (typeof products)[number]) {
     try {
       await updateProduct.mutateAsync({ id: product.id, product: { name: product.name, description: product.description, sortOrder: product.sortOrder, isActive: !product.isActive } });
@@ -176,14 +210,16 @@ export default function EmailTemplates() {
 
   return <div className="mx-auto max-w-[1280px]">
     <PageHeader eyebrow="Super Admin library" title="Email templates" description="Organize reusable staff email messages by product and control which choices are available in Compose." actions={<Button onClick={() => openProduct()} className="bg-teal-700 hover:bg-teal-800"><Plus className="mr-2 h-4 w-4" />Add product</Button>} />
-    <Alert className="mb-6 border-cyan-200 bg-cyan-50 text-cyan-950"><Library className="h-4 w-4" /><AlertTitle>Plain text and uploaded HTML templates</AlertTitle><AlertDescription>Only Super Admin manages this library. HTML files are sanitized when saved: scripts, forms, event handlers, and unsupported markup are removed. Staff can apply active templates and edit the draft before sending.</AlertDescription></Alert>
+    <Alert className="mb-6 border-cyan-200 bg-cyan-50 text-cyan-950"><Library className="h-4 w-4" /><AlertTitle>Plain text and uploaded HTML templates</AlertTitle><AlertDescription>Only Super Admin manages this library. HTML is sanitized when saved. Use Send test on any active template to choose an SMTP sender and deliver a real preview to any recipient address.</AlertDescription></Alert>
 
     {library.isLoading ? <PageLoading /> : !products.length ? <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-8"><EmptyState title="No email products yet" description="Create the first product, then add one or more plain-text or HTML email templates." /></CardContent></Card> : <div className="space-y-5">{products.map(product => <Card key={product.id} className={`rounded-2xl border-0 bg-white shadow-sm ${!product.isActive ? "opacity-70" : ""}`}>
       <CardHeader className="border-b border-slate-100"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="flex items-start gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-teal-50 text-teal-700"><Package className="h-5 w-5" /></div><div><div className="flex flex-wrap items-center gap-2"><CardTitle>{product.name}</CardTitle><Badge variant="outline" className={product.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-100 text-slate-600"}>{product.isActive ? "Active" : "Archived"}</Badge><Badge variant="outline">{product.templates.length} template{product.templates.length === 1 ? "" : "s"}</Badge></div><p className="mt-1 text-sm leading-6 text-slate-500">{product.description || "No product description."}</p></div></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => openProduct(product)}><Pencil className="mr-2 h-3.5 w-3.5" />Edit product</Button><Button variant="outline" size="sm" onClick={() => toggleProduct(product)} disabled={updateProduct.isPending}>{product.isActive ? <Archive className="mr-2 h-3.5 w-3.5" /> : <CheckCircle2 className="mr-2 h-3.5 w-3.5" />}{product.isActive ? "Archive" : "Activate"}</Button><Button size="sm" onClick={() => openTemplate(product.id)} className="bg-slate-950 text-white hover:bg-slate-800"><Plus className="mr-2 h-3.5 w-3.5" />Add template</Button></div></div></CardHeader>
-      <CardContent className="p-0">{!product.templates.length ? <p className="p-6 text-sm text-slate-500">No templates in this product yet.</p> : <div className="divide-y divide-slate-100">{product.templates.map(template => <div key={template.id} className={`flex flex-col gap-4 p-5 lg:flex-row lg:items-center ${!template.isActive ? "bg-slate-50/70" : ""}`}><div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${template.contentMode === "html" ? "bg-violet-50 text-violet-700" : "bg-sky-50 text-sky-700"}`}>{template.contentMode === "html" ? <FileCode2 className="h-4 w-4" /> : <Mail className="h-4 w-4" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-slate-950">{template.name}</p><Badge variant="outline" className={template.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-100 text-slate-600"}>{template.isActive ? "Available to staff" : "Archived"}</Badge><Badge variant="outline" className={template.contentMode === "html" ? "border-violet-200 bg-violet-50 text-violet-700" : ""}>{template.contentMode === "html" ? "HTML" : "Plain text"}</Badge></div><p className="mt-1 truncate text-sm font-medium text-slate-700">{template.subject}</p><p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm leading-6 text-slate-500">{template.description || template.bodyText}</p>{template.sourceFileName && <p className="mt-1 text-xs text-slate-400">Source: {template.sourceFileName}</p>}</div><div className="flex shrink-0 gap-2"><Button variant="outline" size="sm" onClick={() => openTemplate(product.id, template)}><Pencil className="mr-2 h-3.5 w-3.5" />Edit</Button><Button variant="outline" size="sm" onClick={() => toggleTemplate(template)} disabled={updateTemplate.isPending}>{template.isActive ? <Archive className="mr-2 h-3.5 w-3.5" /> : <CheckCircle2 className="mr-2 h-3.5 w-3.5" />}{template.isActive ? "Archive" : "Activate"}</Button></div></div>)}</div>}</CardContent>
+      <CardContent className="p-0">{!product.templates.length ? <p className="p-6 text-sm text-slate-500">No templates in this product yet.</p> : <div className="divide-y divide-slate-100">{product.templates.map(template => <div key={template.id} className={`flex flex-col gap-4 p-5 lg:flex-row lg:items-center ${!template.isActive ? "bg-slate-50/70" : ""}`}><div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${template.contentMode === "html" ? "bg-violet-50 text-violet-700" : "bg-sky-50 text-sky-700"}`}>{template.contentMode === "html" ? <FileCode2 className="h-4 w-4" /> : <Mail className="h-4 w-4" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-slate-950">{template.name}</p><Badge variant="outline" className={template.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-100 text-slate-600"}>{template.isActive ? "Available to staff" : "Archived"}</Badge><Badge variant="outline" className={template.contentMode === "html" ? "border-violet-200 bg-violet-50 text-violet-700" : ""}>{template.contentMode === "html" ? "HTML" : "Plain text"}</Badge></div><p className="mt-1 truncate text-sm font-medium text-slate-700">{template.subject}</p><p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm leading-6 text-slate-500">{template.description || template.bodyText}</p>{template.sourceFileName && <p className="mt-1 text-xs text-slate-400">Source: {template.sourceFileName}</p>}</div><div className="flex shrink-0 flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => openTestEmail({ id: template.id, name: template.name, contentMode: template.contentMode })} disabled={!template.isActive}><Send className="mr-2 h-3.5 w-3.5" />Send test</Button><Button variant="outline" size="sm" onClick={() => openTemplate(product.id, template)}><Pencil className="mr-2 h-3.5 w-3.5" />Edit</Button><Button variant="outline" size="sm" onClick={() => toggleTemplate(template)} disabled={updateTemplate.isPending}>{template.isActive ? <Archive className="mr-2 h-3.5 w-3.5" /> : <CheckCircle2 className="mr-2 h-3.5 w-3.5" />}{template.isActive ? "Archive" : "Activate"}</Button></div></div>)}</div>}</CardContent>
     </Card>)}</div>}
 
     <Dialog open={productDialog} onOpenChange={setProductDialog}><DialogContent><DialogHeader><DialogTitle>{editingProductId ? "Edit product" : "Add product"}</DialogTitle><DialogDescription>Products group related email templates in the staff composer.</DialogDescription></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Product name *</Label><Input value={productForm.name} onChange={event => setProductForm(current => ({ ...current, name: event.target.value }))} maxLength={160} placeholder="Example: MB Aura" /></div><div className="space-y-2"><Label>Description</Label><Textarea value={productForm.description} onChange={event => setProductForm(current => ({ ...current, description: event.target.value }))} rows={3} maxLength={2_000} placeholder="Explain when staff should use this product." /></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Sort order</Label><Input type="number" value={productForm.sortOrder} onChange={event => setProductForm(current => ({ ...current, sortOrder: Number(event.target.value) || 0 }))} /></div><div className="flex items-center justify-between rounded-xl border border-slate-200 p-3"><div><Label>Active</Label><p className="text-xs text-slate-500">Visible in staff Compose</p></div><Switch checked={productForm.isActive} onCheckedChange={isActive => setProductForm(current => ({ ...current, isActive }))} /></div></div></div><DialogFooter><Button variant="outline" onClick={() => setProductDialog(false)}>Cancel</Button><Button onClick={saveProduct} disabled={savingProduct || !productForm.name.trim()} className="bg-teal-700 hover:bg-teal-800">{savingProduct && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save product</Button></DialogFooter></DialogContent></Dialog>
+
+    <Dialog open={testDialog} onOpenChange={setTestDialog}><DialogContent><DialogHeader><DialogTitle>Send template test</DialogTitle><DialogDescription>This sends a real email using the selected SMTP mailbox. Enter exactly where the test should be delivered.</DialogDescription></DialogHeader><div className="space-y-4"><div className="rounded-xl border border-violet-100 bg-violet-50 p-4"><p className="text-xs font-medium uppercase tracking-[.14em] text-violet-500">Selected template</p><p className="mt-2 font-semibold text-violet-950">{testTemplate?.name}</p><p className="mt-1 text-xs text-violet-700">{testTemplate?.contentMode === "html" ? "HTML email" : "Plain-text email"} · lead tokens render as Test Recipient</p></div><div className="space-y-2"><Label>SMTP sender *</Label><Select value={testSenderUserId} onValueChange={setTestSenderUserId}><SelectTrigger><SelectValue placeholder={smtpAccounts.isLoading ? "Loading sender accounts…" : "Select sender account"} /></SelectTrigger><SelectContent>{smtpAccounts.data?.map(account => <SelectItem key={account.userId} value={String(account.userId)} disabled={!account.isActive || !account.smtpEnabled}>{account.name} · {account.smtpFromEmail || account.accountEmail || "No sender email"}{!account.isActive ? " · inactive" : !account.smtpEnabled ? " · disabled" : account.smtpVerifiedAt ? " · verified" : " · not verified"}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Recipient email *</Label><Input type="email" value={testRecipientEmail} onChange={event => setTestRecipientEmail(event.target.value)} placeholder="recipient@example.com" autoFocus /></div>{!smtpAccounts.isLoading && !smtpAccounts.data?.some(account => account.isActive && account.smtpEnabled) && <Alert variant="destructive"><Mail className="h-4 w-4" /><AlertTitle>No active SMTP sender</AlertTitle><AlertDescription>Enable and save at least one SMTP mailbox in Email settings before sending a template test.</AlertDescription></Alert>}</div><DialogFooter><Button variant="outline" onClick={() => setTestDialog(false)}>Cancel</Button><Button onClick={sendTemplateTestEmail} disabled={sendTestEmail.isPending || !testSenderUserId || !testRecipientEmail.trim()} className="bg-teal-700 hover:bg-teal-800">{sendTestEmail.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Send test email</Button></DialogFooter></DialogContent></Dialog>
 
     <Dialog open={templateDialog} onOpenChange={setTemplateDialog}><DialogContent className="max-h-[94vh] max-w-5xl overflow-y-auto"><DialogHeader><DialogTitle>{editingTemplateId ? "Edit email template" : "Add email template"}</DialogTitle><DialogDescription>Create a simple message or attach a complete HTML design. Staff reviews and personalizes it before sending.</DialogDescription></DialogHeader><div className="space-y-5"><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Product *</Label><Select value={templateForm.productId} onValueChange={productId => setTemplateForm(current => ({ ...current, productId }))}><SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger><SelectContent>{products.map(product => <SelectItem key={product.id} value={String(product.id)}>{product.name}{product.isActive ? "" : " · archived"}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Template name *</Label><Input value={templateForm.name} onChange={event => setTemplateForm(current => ({ ...current, name: event.target.value }))} maxLength={160} placeholder="Example: Initial introduction" /></div></div><div className="space-y-2"><Label>Internal description</Label><Textarea value={templateForm.description} onChange={event => setTemplateForm(current => ({ ...current, description: event.target.value }))} rows={2} maxLength={2_000} placeholder="When should staff use this template?" /></div><div className="space-y-2"><Label>Email subject *</Label><Input value={templateForm.subject} onChange={event => setTemplateForm(current => ({ ...current, subject: event.target.value }))} maxLength={240} placeholder="Information about {{leadFirstName}}'s request" /></div>
 

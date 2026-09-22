@@ -172,3 +172,18 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Verify the existing BOGO template without saving or modifying real data | Completed |
 | Run 119 tests, TypeScript validation, production build, browser QA, and runtime checks | Completed |
 | Save the checkpoint and push to GitHub | Completed |
+
+
+## Completed update: Send test from Email templates
+
+| Task | Status |
+| --- | --- |
+| Add Send test beside Edit and Archive on every active template | Completed |
+| Keep the chosen template fixed in the test dialog | Completed |
+| Let Super Admin choose the SMTP sender account | Completed |
+| Require an explicit recipient email address | Completed |
+| Prevent disabled or inactive SMTP accounts from being selected | Completed |
+| Reuse the existing sanitized HTML/plain-text test-delivery backend | Completed |
+| Verify the flow without sending a real message or changing data | Completed |
+| Run 120 tests, TypeScript validation, production build, browser QA, and runtime audit | Completed |
+| Save the checkpoint and push to GitHub | Completed |
