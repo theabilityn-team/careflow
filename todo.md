@@ -220,3 +220,23 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Verify no database or SMTP changes during browser QA | Completed |
 | Run 122 tests, TypeScript, production build, runtime, and cleanup checks | Completed |
 | Save checkpoint and push GitHub | Completed |
+
+
+## Completed update: Application-wide mobile remediation — 2026-09-23
+
+| Requirement | Status |
+|---|---|
+| Make shared buttons, icon controls, selects, tabs, dialogs, sheets, and confirmations phone-safe | Completed |
+| Keep dialogs within the dynamic viewport with scrollable bodies, stacked actions, and iPhone safe areas | Completed |
+| Make the mobile sidebar close after navigation and expose a clear 44 px close action | Completed |
+| Keep lead-level **Send email** visible and full width on phones | Completed |
+| Keep template test email in a contained mobile bottom sheet with persistent actions | Completed |
+| Replace the Leads desktop table with a structured card list below the desktop breakpoint | Completed |
+| Add compact mobile totals, page-size controls, and pagination | Completed |
+| Repair Dashboard, Lead groups, Lead detail, Scanner, Bulk image import, Follow-ups, Mails, Email templates, Email settings, System guide, Staff, login, and password-reset layouts | Completed |
+| Constrain email previews and long names, email addresses, statuses, warnings, and errors | Completed |
+| Remove nested interactive controls from Bulk image import group headers | Completed |
+| Verify no document-level horizontal overflow on all primary routes at 320, 360, and 390 px | Completed |
+| Verify key desktop routes after shared primitive changes | Completed |
+| Run 122 tests, TypeScript validation, production build, runtime, browser, and cleanup checks | Completed |
+| Save checkpoint and push GitHub | Completed |

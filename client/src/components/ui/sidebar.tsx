@@ -188,7 +188,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
+          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:z-50"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -273,7 +273,7 @@ function SidebarTrigger({
       data-slot="sidebar-trigger"
       variant="ghost"
       size="icon"
-      className={cn("size-7", className)}
+      className={cn("size-11 md:size-7", className)}
       onClick={event => {
         onClick?.(event);
         toggleSidebar();
@@ -731,4 +731,3 @@ export {
   SidebarTrigger,
   useSidebar
 };
-

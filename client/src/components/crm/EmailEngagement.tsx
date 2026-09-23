@@ -16,7 +16,7 @@ export type EmailEngagement = {
 
 export function EmailEngagementBadges({ email }: { email: EmailEngagement }) {
   if (email.status !== "sent") return null;
-  if (!email.trackingEnabled) return <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-500"><ShieldCheck className="mr-1 h-3 w-3" />Tracking unavailable for this older email</Badge>;
+  if (!email.trackingEnabled) return <Badge variant="outline" className="h-auto max-w-full whitespace-normal break-words border-slate-200 bg-slate-50 py-1 text-left leading-4 text-slate-500"><ShieldCheck className="mr-1 h-3 w-3 shrink-0" />Tracking unavailable for this older email</Badge>;
   return <div className="flex flex-wrap items-center gap-1.5">
     <Badge variant="outline" className={email.openCount > 0 ? "border-sky-200 bg-sky-50 text-sky-700" : "border-slate-200 bg-slate-50 text-slate-500"}><Eye className="mr-1 h-3 w-3" />{email.openCount > 0 ? `${email.openCount} open${email.openCount === 1 ? "" : "s"}` : "Not opened"}</Badge>
     <Badge variant="outline" className={email.clickCount > 0 ? "border-violet-200 bg-violet-50 text-violet-700" : "border-slate-200 bg-slate-50 text-slate-500"}><MousePointerClick className="mr-1 h-3 w-3" />{email.clickCount > 0 ? `${email.clickCount} click${email.clickCount === 1 ? "" : "s"}` : "No clicks"}</Badge>
@@ -29,14 +29,14 @@ export function EmailEngagementDetails({ email }: { email: EmailEngagement }) {
     <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-4">
       <p className="flex items-center gap-2 text-sm font-semibold text-sky-900"><Eye className="h-4 w-4" />Open tracking</p>
       <p className="mt-2 text-2xl font-semibold text-slate-950">{email.openCount}</p>
-      <p className="mt-1 text-xs leading-5 text-slate-500">{email.firstOpenedAt ? `First detected ${formatEasternDate(email.firstOpenedAt, true)}` : "No image load detected."}</p>
-      {email.lastOpenedAt && email.openCount > 1 && <p className="text-xs leading-5 text-slate-500">Latest detected {formatEasternDate(email.lastOpenedAt, true)}</p>}
+      <p className="mt-1 break-words text-xs leading-5 text-slate-500">{email.firstOpenedAt ? `First detected ${formatEasternDate(email.firstOpenedAt, true)}` : "No image load detected."}</p>
+      {email.lastOpenedAt && email.openCount > 1 && <p className="break-words text-xs leading-5 text-slate-500">Latest detected {formatEasternDate(email.lastOpenedAt, true)}</p>}
     </div>
     <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4">
       <p className="flex items-center gap-2 text-sm font-semibold text-violet-900"><MousePointerClick className="h-4 w-4" />Click tracking</p>
       <p className="mt-2 text-2xl font-semibold text-slate-950">{email.clickCount}</p>
-      <p className="mt-1 text-xs leading-5 text-slate-500">{email.firstClickedAt ? `First detected ${formatEasternDate(email.firstClickedAt, true)}` : "No tracked link click detected."}</p>
-      {email.lastClickedAt && email.clickCount > 1 && <p className="text-xs leading-5 text-slate-500">Latest detected {formatEasternDate(email.lastClickedAt, true)}</p>}
+      <p className="mt-1 break-words text-xs leading-5 text-slate-500">{email.firstClickedAt ? `First detected ${formatEasternDate(email.firstClickedAt, true)}` : "No tracked link click detected."}</p>
+      {email.lastClickedAt && email.clickCount > 1 && <p className="break-words text-xs leading-5 text-slate-500">Latest detected {formatEasternDate(email.lastClickedAt, true)}</p>}
     </div>
   </div>;
 }

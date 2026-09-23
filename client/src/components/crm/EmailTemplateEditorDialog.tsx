@@ -174,7 +174,7 @@ export function EmailTemplateEditorDialog({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 sm:px-7 sm:py-4">
+      <div className="shrink-0 border-t border-slate-200 bg-white px-4 pb-[calc(.75rem+env(safe-area-inset-bottom))] pt-3 sm:px-7 sm:py-4">
         <DialogFooter className="mx-auto grid w-full max-w-[1360px] grid-cols-2 gap-3 sm:flex sm:justify-end">
           <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">Cancel</Button>
           <Button onClick={onSave} disabled={saving || !canSave} className="w-full bg-teal-700 hover:bg-teal-800 sm:w-auto">{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save template</Button>

@@ -35,8 +35,8 @@ export default function ResetPassword() {
     }
   }
 
-  return <div className="grid min-h-screen place-items-center bg-[#f4f7f6] p-6">
-    <Card className="w-full max-w-lg rounded-[2rem] border-0 bg-white shadow-2xl shadow-slate-900/10"><CardContent className="p-8 sm:p-10">
+  return <div className="grid min-h-screen place-items-center bg-[#f4f7f6] p-4 sm:p-6">
+    <Card className="min-w-0 w-full max-w-lg rounded-[2rem] border-0 bg-white shadow-2xl shadow-slate-900/10"><CardContent className="min-w-0 p-6 sm:p-10">
       <div className="grid h-12 w-12 place-items-center rounded-2xl bg-teal-700 text-white"><KeyRound className="h-5 w-5" /></div>
       {request.isLoading ? <div className="grid min-h-56 place-items-center"><Loader2 className="h-6 w-6 animate-spin text-teal-700" /></div> : !request.data ? <>
         <h1 className="mt-7 text-2xl font-semibold tracking-tight">Reset link unavailable</h1>
@@ -44,11 +44,11 @@ export default function ResetPassword() {
         <Button onClick={() => navigate("/")} variant="outline" className="mt-6 w-full">Return to CareFlow</Button>
       </> : <>
         <p className="mt-7 text-xs font-semibold uppercase tracking-[.2em] text-teal-700">Staff account recovery</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-[-.035em]">Create a new password</h1>
-        <p className="mt-4 text-sm leading-6 text-slate-500">This one-time link for <strong className="text-slate-800">{request.data.staffName || request.data.email}</strong> expires {formatDate(request.data.expiresAt, true)}.</p>
-        <div className="mt-6 rounded-xl bg-slate-50 p-4"><p className="text-xs font-medium uppercase tracking-wider text-slate-400">Login email</p><p className="mt-1 font-medium text-slate-900">{request.data.email}</p></div>
+        <h1 className="mt-2 break-words text-2xl font-semibold tracking-[-.035em] sm:text-3xl">Create a new password</h1>
+        <p className="mt-4 break-words text-sm leading-6 text-slate-500 [overflow-wrap:anywhere]">This one-time link for <strong className="text-slate-800">{request.data.staffName || request.data.email}</strong> expires {formatDate(request.data.expiresAt, true)}.</p>
+        <div className="mt-6 min-w-0 rounded-xl bg-slate-50 p-4"><p className="text-xs font-medium uppercase tracking-wider text-slate-400">Login email</p><p className="mt-1 break-all font-medium text-slate-900">{request.data.email}</p></div>
         <div className="mt-6 space-y-4">
-          <div className="space-y-2"><Label htmlFor="reset-new-password">New password</Label><div className="relative"><Input id="reset-new-password" type={visible ? "text" : "password"} value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" className="h-11 pr-11" /><button type="button" onClick={() => setVisible(value => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-label={visible ? "Hide password" : "Show password"}>{visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></div>
+          <div className="space-y-2"><Label htmlFor="reset-new-password">New password</Label><div className="relative"><Input id="reset-new-password" type={visible ? "text" : "password"} value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" className="h-11 pr-12" /><button type="button" onClick={() => setVisible(value => !value)} className="absolute right-0 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 md:h-9 md:w-9" aria-label={visible ? "Hide password" : "Show password"}>{visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></div>
           <div className="space-y-2"><Label htmlFor="reset-confirm-password">Confirm password</Label><Input id="reset-confirm-password" type={visible ? "text" : "password"} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} autoComplete="new-password" className="h-11" /></div>
           <p className="text-xs leading-5 text-slate-500">At least 10 characters, including uppercase, lowercase, and a number.</p>
         </div>

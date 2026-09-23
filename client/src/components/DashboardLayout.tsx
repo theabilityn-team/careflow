@@ -38,7 +38,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
   const { data: notifications = [] } = trpc.dashboard.notifications.useQuery(undefined, { enabled: Boolean(access?.permissions.viewLeads) });
   const unreadDue = notifications.filter(item => !item.readAt && item.remindAt <= Date.now()).length;
   const [location, setLocation] = useLocation();
-  const { state, toggleSidebar } = useSidebar();
+  const { state, toggleSidebar, setOpenMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -58,6 +58,15 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
     { icon: UsersRound, label: "Staff & access", path: "/staff", show: access?.role === "super_admin" },
   ].filter(item => item.show);
   const active = menuItems.find(item => item.path === "/" ? location === "/" : location.startsWith(item.path));
+
+  useEffect(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [isMobile, location, setOpenMobile]);
+
+  function navigateFromMenu(path: string) {
+    if (isMobile) setOpenMobile(false);
+    setLocation(path);
+  }
 
   useEffect(() => {
     if (!isResizing) return;
@@ -91,7 +100,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
             <SidebarMenu>
               {menuItems.map(item => {
                 const selected = item.path === "/" ? location === "/" : location.startsWith(item.path);
-                return <SidebarMenuItem key={item.path}><SidebarMenuButton isActive={selected} onClick={() => setLocation(item.path)} tooltip={item.label} className="h-11 rounded-xl font-medium"><item.icon className="h-[18px] w-[18px]" /><span>{item.label}</span>{item.path === "/follow-ups" && unreadDue > 0 && !isCollapsed && <Badge className="ml-auto h-5 min-w-5 justify-center bg-amber-300 px-1.5 text-[10px] text-slate-950 hover:bg-amber-300">{unreadDue}</Badge>}</SidebarMenuButton></SidebarMenuItem>;
+                return <SidebarMenuItem key={item.path}><SidebarMenuButton isActive={selected} onClick={() => navigateFromMenu(item.path)} tooltip={item.label} className="h-11 rounded-xl font-medium"><item.icon className="h-[18px] w-[18px]" /><span>{item.label}</span>{item.path === "/follow-ups" && unreadDue > 0 && !isCollapsed && <Badge className="ml-auto h-5 min-w-5 justify-center bg-amber-300 px-1.5 text-[10px] text-slate-950 hover:bg-amber-300">{unreadDue}</Badge>}</SidebarMenuButton></SidebarMenuItem>;
               })}
             </SidebarMenu>
           </SidebarContent>
@@ -105,8 +114,8 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
         <div className={`absolute right-0 top-0 z-50 h-full w-1 cursor-col-resize ${isCollapsed ? "hidden" : ""}`} onMouseDown={() => setIsResizing(true)} />
       </div>
       <SidebarInset className="bg-[#f6f8f7]">
-        {isMobile && <div className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b bg-white/90 px-3 backdrop-blur"><SidebarTrigger /><span className="font-medium">{active?.label ?? "CareFlow"}</span></div>}
-        {!access?.isActive && <div className="m-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">Your account is awaiting Super Admin approval. CRM data is not available yet.</div>}
+        {isMobile && <div className="sticky top-0 z-40 flex h-14 min-w-0 items-center gap-3 border-b bg-white/90 px-3 backdrop-blur"><SidebarTrigger /><span className="min-w-0 truncate font-medium">{active?.label ?? "CareFlow"}</span></div>}
+        {!access?.isActive && <div className="m-4 break-words rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">Your account is awaiting Super Admin approval. CRM data is not available yet.</div>}
         <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
       </SidebarInset>
       {access?.role === "super_admin" && <ChangeSuperAdminPasswordDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen} />}
