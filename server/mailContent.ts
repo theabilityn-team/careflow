@@ -1,6 +1,6 @@
 import sanitizeHtml from "sanitize-html";
 
-export const DEFAULT_EMAIL_HEADER_HTML = `<div style="padding:20px 24px;background:#0f766e;color:#ffffff;font-family:Arial,sans-serif"><strong style="font-size:20px">CareFlow</strong></div>`;
+export const DEFAULT_EMAIL_HEADER_HTML = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0f766e" style="width:100%;background-color:#0f766e"><tr><td style="padding:18px 24px;color:#ffffff;font-family:Arial,sans-serif"><strong style="font-size:20px">CareFlow</strong></td></tr></table>`;
 export const DEFAULT_EMAIL_FOOTER_HTML = `<div style="margin-top:28px;padding-top:18px;border-top:1px solid #e2e8f0;color:#475569;font-family:Arial,sans-serif;font-size:13px"><p>Best regards,<br><strong>{{senderName}}</strong></p><p>Please reply directly to this email if you need assistance.</p></div>`;
 
 const sanitizeOptions: sanitizeHtml.IOptions = {
@@ -8,10 +8,11 @@ const sanitizeOptions: sanitizeHtml.IOptions = {
   allowedAttributes: {
     "*": ["style"],
     a: ["href", "target", "rel", "style"],
-    img: ["src", "alt", "width", "height", "style"],
-    table: ["width", "cellpadding", "cellspacing", "style"],
-    th: ["width", "colspan", "rowspan", "style"],
-    td: ["width", "colspan", "rowspan", "style"],
+    img: ["src", "alt", "width", "height", "border", "style"],
+    table: ["width", "cellpadding", "cellspacing", "border", "role", "align", "bgcolor", "style"],
+    tr: ["align", "valign", "bgcolor", "style"],
+    th: ["width", "colspan", "rowspan", "align", "valign", "bgcolor", "style"],
+    td: ["width", "colspan", "rowspan", "align", "valign", "bgcolor", "style"],
   },
   allowedSchemes: ["http", "https", "mailto"],
   transformTags: {

@@ -36,6 +36,16 @@ describe("email template content", () => {
     expect(result).not.toContain("onclick");
   });
 
+  it("preserves bulletproof email backgrounds and table alignment attributes", () => {
+    const result = sanitizeTemplateHtml('<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" align="center" bgcolor="#071c1a" style="background-color:#071c1a"><tr><td align="center" valign="middle" bgcolor="#087f6c" style="background-color:#087f6c;color:#ffffff"><a href="https://example.com" style="color:#ffffff">Visible CTA</a></td></tr></table>');
+    expect(result).toContain('role="presentation"');
+    expect(result).toContain('align="center"');
+    expect(result).toContain('bgcolor="#071c1a"');
+    expect(result).toContain("background-color:#071c1a");
+    expect(result).toContain('bgcolor="#087f6c"');
+    expect(result).toContain("Visible CTA");
+  });
+
   it("renders text tokens without HTML encoding and produces a text alternative", () => {
     expect(renderTextTokens("Hello {{leadFirstName}} from {{senderEmail}}", variables)).toBe("Hello Ana <Patient> from sam@example.com");
     expect(htmlToPlainText("<p>Hello Ana</p><p>Second line</p>")).toContain("Hello Ana");
