@@ -1,5 +1,6 @@
 import { EmptyState, PageHeader, PageLoading } from "@/components/crm/CrmUi";
 import { EmailEngagementBadges, EmailEngagementDetails, EmailEngagementNotice } from "@/components/crm/EmailEngagement";
+import { GlobalEmailFrameEditor } from "@/components/crm/GlobalEmailFrameEditor";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { formatEasternDate } from "@shared/time";
 import { AlertTriangle, CheckCircle2, Code2, Eye, FileCode2, Inbox, Library, Loader2, Mail, Search, Send } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 const starterSubject = "A message from {{senderName}}";
@@ -29,7 +30,6 @@ export default function Mails() {
   const recipientInput = useMemo(() => ({ search: deferredSearch || undefined }), [deferredSearch]);
   const recipients = trpc.mail.recipients.useQuery(recipientInput, { enabled: canSend });
   const emailLibrary = trpc.emailLibrary.library.useQuery(undefined, { enabled: canSend });
-  const template = trpc.mail.template.useQuery(undefined, { enabled: canSend && isSuperAdmin });
   const history = trpc.mail.history.useQuery(undefined, { enabled: canSend, refetchInterval: canSend ? 30_000 : false });
   const [selectedLeadId, setSelectedLeadId] = useState<string>("");
   const [selectedProductId, setSelectedProductId] = useState<string>("");
@@ -39,18 +39,9 @@ export default function Mails() {
   const [bodyText, setBodyText] = useState(starterBody);
   const [bodyHtml, setBodyHtml] = useState("");
   const [htmlPreview, setHtmlPreview] = useState(true);
-  const [headerHtml, setHeaderHtml] = useState("");
-  const [footerHtml, setFooterHtml] = useState("");
   const [selectedMessageId, setSelectedMessageId] = useState<number>();
   const message = trpc.mail.message.useQuery({ id: selectedMessageId ?? 0 }, { enabled: Boolean(selectedMessageId), refetchInterval: selectedMessageId ? 30_000 : false });
-  const saveTemplate = trpc.mail.saveTemplate.useMutation();
   const send = trpc.mail.send.useMutation();
-
-  useEffect(() => {
-    if (!template.data) return;
-    setHeaderHtml(template.data.headerHtml);
-    setFooterHtml(template.data.footerHtml);
-  }, [template.data]);
 
   if (accessLoading) return <PageLoading />;
   if (!canSend) return <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-8"><h1 className="text-xl font-semibold">Mails unavailable</h1><p className="mt-2 text-sm leading-6 text-slate-500">The Manage communications permission is required.</p></CardContent></Card>;
@@ -105,25 +96,13 @@ export default function Mails() {
     }
   }
 
-  async function saveEmailTemplate() {
-    try {
-      const result = await saveTemplate.mutateAsync({ headerHtml, footerHtml });
-      setHeaderHtml(result.headerHtml);
-      setFooterHtml(result.footerHtml);
-      await template.refetch();
-      toast.success("Email header and footer saved.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Template could not be saved.");
-    }
-  }
-
   return <div className="mx-auto max-w-[1180px]">
     <PageHeader eyebrow="Outbound communication" title="Mails" description={isSuperAdmin ? "Send email to accessible leads, start from a product template, manage the global HTML frame, and review delivery history." : "Send email to accessible leads, start from an approved product template, and review your delivery history."} />
 
     <Alert className="mb-6 border-sky-200 bg-sky-50 text-sky-950"><Inbox className="h-4 w-4" /><AlertTitle>Received messages are read in your mailbox</AlertTitle><AlertDescription>CareFlow sends and records outbound email only. To read replies or other received messages, sign in directly to the email account assigned to you by Super Admin.</AlertDescription></Alert>
 
     <Tabs defaultValue="compose" className="gap-5">
-      <TabsList className="h-11 rounded-xl bg-white p-1 shadow-sm"><TabsTrigger value="compose"><Send />Compose</TabsTrigger><TabsTrigger value="history"><Mail />Sent history</TabsTrigger>{isSuperAdmin && <TabsTrigger value="template"><Code2 />Header & footer</TabsTrigger>}</TabsList>
+      <TabsList className="grid h-auto w-full grid-cols-3 rounded-xl bg-white p-1 shadow-sm sm:inline-flex sm:h-11 sm:w-fit"><TabsTrigger value="compose" className="min-w-0 px-1 text-xs sm:px-2 sm:text-sm"><Send className="hidden sm:block" />Compose</TabsTrigger><TabsTrigger value="history" className="min-w-0 px-1 text-xs sm:px-2 sm:text-sm"><Mail className="hidden sm:block" />Sent history</TabsTrigger>{isSuperAdmin && <TabsTrigger value="template" className="min-w-0 px-1 text-xs sm:px-2 sm:text-sm"><Code2 className="hidden sm:block" />Header & footer</TabsTrigger>}</TabsList>
 
       <TabsContent value="compose" className="mt-0">
         <Card className="rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]"><CardHeader><CardTitle>New lead email</CardTitle><p className="text-sm text-slate-500">The selected lead must be accessible to you and have an email address.</p></CardHeader><CardContent className="space-y-5">
@@ -141,9 +120,7 @@ export default function Mails() {
         <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardHeader><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle>Sent email history</CardTitle><p className="mt-1 text-sm text-slate-500">{access?.role === "super_admin" ? "All outbound emails across CareFlow." : "Emails sent from your assigned account."}</p></div><div className="flex flex-wrap gap-2"><Badge className="bg-sky-50 text-sky-700 hover:bg-sky-50">{openedMessages} opened</Badge><Badge className="bg-violet-50 text-violet-700 hover:bg-violet-50">{clickedMessages} clicked</Badge></div></div></CardHeader><CardContent><EmailEngagementNotice className="mb-4" />{history.isLoading ? <PageLoading /> : !history.data?.length ? <EmptyState title="No emails sent yet" description="Successful and failed send attempts will appear here." /> : <div className="divide-y divide-slate-100">{history.data.map(item => <button key={item.id} onClick={() => setSelectedMessageId(item.id)} className="flex w-full flex-col gap-3 py-4 text-left transition-opacity hover:opacity-70 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-semibold text-slate-900">{item.subject}</p>{item.productName && <Badge variant="outline" className="border-cyan-200 bg-cyan-50 text-cyan-800">{item.productName}</Badge>}{item.templateName && <Badge variant="outline">{item.templateName}</Badge>}</div><p className="mt-1 text-sm text-slate-500">To {item.recipientName} · {item.recipientEmail}</p><p className="mt-1 text-xs text-slate-400">From {item.senderName} · {item.fromEmail}</p><div className="mt-2"><EmailEngagementBadges email={item} /></div></div><div className="flex items-center gap-3"><Badge variant="outline" className={item.status === "sent" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}>{item.status === "sent" ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <AlertTriangle className="mr-1 h-3 w-3" />}{item.status}</Badge><span className="text-xs text-slate-400">{formatEasternDate(item.sentAt, true)}</span></div></button>)}</div>}</CardContent></Card>
       </TabsContent>
 
-      {isSuperAdmin && <TabsContent value="template" className="mt-0">
-        <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardHeader><CardTitle>Global HTML header and footer</CardTitle><p className="text-sm leading-6 text-slate-500">Super Admin controls these sections. They are added automatically to emails sent from every CareFlow account. Unsafe scripts, forms, and unsupported markup are removed when saved.</p></CardHeader><CardContent className="space-y-5"><div className="space-y-2"><Label>Header HTML</Label><Textarea className="font-mono text-xs" value={headerHtml} onChange={event => setHeaderHtml(event.target.value)} rows={9} maxLength={50_000} /></div><div className="space-y-2"><Label>Footer HTML</Label><Textarea className="font-mono text-xs" value={footerHtml} onChange={event => setFooterHtml(event.target.value)} rows={9} maxLength={50_000} /></div><p className="text-xs leading-5 text-slate-400">The global frame supports the same four personalization tokens as the message composer. Technical staff cannot view or edit this configuration.</p><div className="flex justify-end"><Button onClick={saveEmailTemplate} disabled={saveTemplate.isPending} className="bg-teal-700 hover:bg-teal-800">{saveTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save header & footer</Button></div></CardContent></Card>
-      </TabsContent>}
+      {isSuperAdmin && <TabsContent value="template" className="mt-0"><GlobalEmailFrameEditor /></TabsContent>}
     </Tabs>
 
     <Dialog open={Boolean(selectedMessageId)} onOpenChange={open => { if (!open) setSelectedMessageId(undefined); }}><DialogContent className="max-w-3xl"><DialogHeader><DialogTitle>{message.data?.subject || "Email details"}</DialogTitle><DialogDescription>{message.data ? `To ${message.data.recipientName} · ${message.data.recipientEmail} · ${formatEasternDate(message.data.sentAt, true)}` : "Loading email…"}</DialogDescription></DialogHeader>{message.data && <div className="space-y-4"><div className="flex flex-wrap gap-2 text-xs"><Badge variant="outline">From {message.data.fromEmail}</Badge>{message.data.productName && <Badge variant="outline" className="border-cyan-200 bg-cyan-50 text-cyan-800">Product: {message.data.productName}</Badge>}{message.data.templateName && <Badge variant="outline">Template: {message.data.templateName}</Badge>}<Badge variant="outline">{message.data.status}</Badge></div>{message.data.status === "sent" && <EmailEngagementDetails email={message.data} />}{message.data.error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Delivery failed</AlertTitle><AlertDescription>{message.data.error}</AlertDescription></Alert>}<iframe title="Sent email preview" sandbox="" srcDoc={message.data.bodyHtml} className="h-[420px] w-full rounded-xl border border-slate-200 bg-white" /></div>}</DialogContent></Dialog>

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
 import { createEmailTrackingToken, instrumentEmailHtml } from "../emailTracking";
-import { composeEmailHtml, composeRichEmailHtml, DEFAULT_EMAIL_FOOTER_HTML, DEFAULT_EMAIL_HEADER_HTML, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "../mailContent";
+import { composeEmailFramePreview, composeEmailHtml, composeRichEmailHtml, DEFAULT_EMAIL_FOOTER_HTML, DEFAULT_EMAIL_HEADER_HTML, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "../mailContent";
 import { assertPermission } from "../permissions";
 import { isSmtpConfigured, sendStaffSmtpEmail } from "../smtp";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -41,6 +41,16 @@ export const mailRouter = router({
     const footerHtml = sanitizeTemplateHtml(input.footerHtml);
     await db.upsertEmailTemplate({ userId: SYSTEM_ADMIN_ACTOR_ID, headerHtml, footerHtml, updatedBy: ctx.user.id });
     return { headerHtml, footerHtml };
+  }),
+
+  previewTemplate: protectedProcedure.input(templateInput).mutation(async ({ ctx, input }) => {
+    const access = await assertPermission(ctx.user, "manageContacts");
+    if (access.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN", message: "Only Super Admin can preview the global email header and footer." });
+    return {
+      html: composeEmailFramePreview(input.headerHtml, input.footerHtml),
+      headerHtml: sanitizeTemplateHtml(input.headerHtml),
+      footerHtml: sanitizeTemplateHtml(input.footerHtml),
+    };
   }),
 
   history: protectedProcedure.query(async ({ ctx }) => {

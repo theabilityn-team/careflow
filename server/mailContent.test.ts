@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composeEmailHtml, composeRichEmailHtml, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "./mailContent";
+import { composeEmailFramePreview, composeEmailHtml, composeRichEmailHtml, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "./mailContent";
 
 const variables = {
   leadFirstName: "Ana <Patient>",
@@ -50,5 +50,17 @@ describe("email template content", () => {
     expect(renderTextTokens("Hello {{leadFirstName}} from {{senderEmail}}", variables)).toBe("Hello Ana <Patient> from sam@example.com");
     expect(htmlToPlainText("<p>Hello Ana</p><p>Second line</p>")).toContain("Hello Ana");
     expect(htmlToPlainText("<p>Hello Ana</p><p>Second line</p>")).toContain("Second line");
+  });
+
+  it("builds a sanitized global frame preview with safe sample values", () => {
+    const result = composeEmailFramePreview(
+      '<header onclick="bad()">Welcome {{leadFirstName}}<script>bad()</script></header>',
+      '<footer>Sent by {{senderName}} · {{senderEmail}}</footer>',
+    );
+    expect(result).toContain("Welcome Alex");
+    expect(result).toContain("SAMPLE EMAIL CONTENT");
+    expect(result).toContain("Sent by CareFlow Team · sender@example.com");
+    expect(result).not.toContain("onclick");
+    expect(result).not.toContain("script");
   });
 });

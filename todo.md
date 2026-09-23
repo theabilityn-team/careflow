@@ -203,3 +203,20 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Run 121 tests, TypeScript, and production build | Completed |
 | Remove all temporary QA routes, scripts, and artifacts | Completed |
 | Save checkpoint and push GitHub | Completed |
+
+
+## Completed update: Global header/footer code and live preview — 2026-09-23
+
+| Requirement | Status |
+|---|---|
+| Show separate editable HTML code panels for the global header and footer | Completed |
+| Add Copy HTML actions for both sections | Completed |
+| Show a complete header + sample content + footer recipient preview | Completed |
+| Generate preview with the same server sanitization and composition as real email | Completed |
+| Refresh the preview from unsaved code without sending email | Completed |
+| Keep frame management Super Admin-only | Completed |
+| Add phone HTML code / Live preview view switching | Completed |
+| Remove Mails tab overflow at 390 px phone width | Completed |
+| Verify no database or SMTP changes during browser QA | Completed |
+| Run 122 tests, TypeScript, production build, runtime, and cleanup checks | Completed |
+| Save checkpoint and push GitHub | Completed |

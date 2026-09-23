@@ -59,6 +59,15 @@ export type EmailTemplateVariables = {
   senderEmail: string;
 };
 
+export const EMAIL_FRAME_PREVIEW_VARIABLES: EmailTemplateVariables = {
+  leadFirstName: "Alex",
+  leadFullName: "Alex Morgan",
+  senderName: "CareFlow Team",
+  senderEmail: "sender@example.com",
+};
+
+export const EMAIL_FRAME_PREVIEW_BODY_HTML = `<div style="padding:8px 0"><p style="margin:0 0 8px;font-size:13px;font-weight:700;line-height:1.4;color:#0f766e">SAMPLE EMAIL CONTENT</p><h1 style="margin:0 0 14px;font-size:26px;line-height:1.25;color:#0f172a">Hello {{leadFirstName}},</h1><p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:#475569">This sample message shows exactly where the email content appears between the global header and footer.</p><p style="margin:0;font-size:15px;line-height:1.65;color:#475569">The preview uses safe example values for <strong>{{senderName}}</strong> and <strong>{{senderEmail}}</strong>.</p></div>`;
+
 export function escapeHtml(value: string) {
   return value.replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]!);
 }
@@ -104,6 +113,10 @@ export function composeRichEmailHtml(headerHtml: string, bodyHtml: string, foote
   const renderedBody = renderTemplateTokens(sanitizeTemplateHtml(bodyHtml), variables);
   const renderedFooter = renderTemplateTokens(sanitizeTemplateHtml(footerHtml), variables);
   return `<div style="margin:0 auto;max-width:680px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.6">${renderedHeader}<div style="padding:24px">${renderedBody}${renderedFooter}</div></div>`;
+}
+
+export function composeEmailFramePreview(headerHtml: string, footerHtml: string) {
+  return composeRichEmailHtml(headerHtml, EMAIL_FRAME_PREVIEW_BODY_HTML, footerHtml, EMAIL_FRAME_PREVIEW_VARIABLES);
 }
 
 export function htmlToPlainText(value: string) {

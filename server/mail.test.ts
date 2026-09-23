@@ -25,6 +25,7 @@ describe("manual lead email", () => {
 
     await expect(appRouter.createCaller(context()).mail.template()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(context()).mail.saveTemplate({ headerHtml: "<p>Header</p>", footerHtml: "<p>Footer</p>" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(context()).mail.previewTemplate({ headerHtml: "<p>Header</p>", footerHtml: "<p>Footer</p>" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(getTemplate).not.toHaveBeenCalled();
     expect(saveTemplate).not.toHaveBeenCalled();
 
@@ -32,6 +33,11 @@ describe("manual lead email", () => {
     saveTemplate.mockResolvedValue(undefined);
     await appRouter.createCaller(context(admin)).mail.saveTemplate({ headerHtml: "<p>Global header</p>", footerHtml: "<p>Global footer</p>" });
     expect(saveTemplate).toHaveBeenCalledWith(expect.objectContaining({ userId: SYSTEM_ADMIN_ACTOR_ID, updatedBy: SYSTEM_ADMIN_ACTOR_ID }));
+
+    const preview = await appRouter.createCaller(context(admin)).mail.previewTemplate({ headerHtml: '<p onclick="bad()">Global {{leadFirstName}}</p>', footerHtml: "<p>{{senderName}}</p>" });
+    expect(preview.html).toContain("Global Alex");
+    expect(preview.html).toContain("CareFlow Team");
+    expect(preview.html).not.toContain("onclick");
   });
 
   it("sends through the logged-in staff SMTP account and records history and communication", async () => {
