@@ -347,3 +347,14 @@ Every active template on the Super Admin **Email templates** page now has a **Se
 Browser QA verified both real MB Aura templates display the new action. The Product Introduction dialog defaulted to the verified Super Admin sender, accepted a non-deliverable `.invalid` recipient, and enabled the send button only after all required values were present. The dialog was canceled, so no email was transmitted and no real template or SMTP data was changed. The browser console remained clean.
 
 Final validation passed with **120 tests across 27 files**, a clean TypeScript check, and a successful production build.
+
+
+## Responsive email template editor — 2026-09-23
+
+The Super Admin email template editor was rebuilt as a dedicated responsive modal. On desktop it uses an enlarged workspace up to 94% of the viewport and 1,480 px, with **Template details** and **Email content** arranged side by side. On phones it becomes a 96dvh full-width bottom sheet with a rounded top, one-column controls, vertical-only scrolling, and persistent **Cancel** and **Save template** actions.
+
+The long HTML source is contained inside its own editor instead of expanding the modal. Upload, format choice, Edit HTML/Preview controls, metadata, sort order, and active state remain available. The header and footer stay visible while only the central content scrolls.
+
+The real component was visually verified at **1440 × 1000** and **390 × 844** using an isolated development fixture, then verified again on the authenticated real `/email-templates` route without saving any template changes. Desktop DOM assertions confirmed no body, document, or dialog-level horizontal overflow and visible persistent actions. Browser console contained no warnings or errors. Temporary QA routes, scripts, browser dependencies, screenshots, and page artifacts were removed.
+
+Final validation passed with **121 tests across 27 files**, a clean TypeScript check, and a successful production build.

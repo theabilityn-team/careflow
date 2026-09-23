@@ -187,3 +187,19 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Verify the flow without sending a real message or changing data | Completed |
 | Run 120 tests, TypeScript validation, production build, browser QA, and runtime audit | Completed |
 | Save the checkpoint and push to GitHub | Completed |
+
+
+## Completed update: Responsive email template editor — 2026-09-23
+
+| Requirement | Status |
+|---|---|
+| Replace the narrow single-column editor with a dedicated responsive modal | Completed |
+| Use a wide two-zone desktop workspace up to 94vw / 1,480 px | Completed |
+| Use a full-width 96dvh bottom sheet on phones | Completed |
+| Keep modal header and Cancel/Save actions visible | Completed |
+| Constrain long HTML source to internal scrolling | Completed |
+| Stack all controls safely on phone without page-level horizontal overflow | Completed |
+| Verify at 1440 × 1000 and 390 × 844 | Completed |
+| Run 121 tests, TypeScript, and production build | Completed |
+| Remove all temporary QA routes, scripts, and artifacts | Completed |
+| Save checkpoint and push GitHub | Completed |
