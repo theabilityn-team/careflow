@@ -407,6 +407,21 @@ export async function createEmailProduct(input: typeof emailProducts.$inferInser
   return getEmailProduct(Number(result[0].insertId));
 }
 
+export async function createEmailProductWithTemplates(
+  input: typeof emailProducts.$inferInsert,
+  templateInputs: Array<Omit<typeof emailMessageTemplates.$inferInsert, "id" | "productId" | "createdAt" | "updatedAt">>,
+) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const productResult = await tx.insert(emailProducts).values(input);
+    const productId = Number(productResult[0].insertId);
+    if (templateInputs.length > 0) {
+      await tx.insert(emailMessageTemplates).values(templateInputs.map(template => ({ ...template, productId })));
+    }
+    return (await tx.select().from(emailProducts).where(eq(emailProducts.id, productId)).limit(1))[0];
+  });
+}
+
 export async function updateEmailProduct(id: number, input: Partial<Omit<typeof emailProducts.$inferInsert, "id" | "createdBy">>) {
   const db = await requireDb();
   await db.update(emailProducts).set(input).where(eq(emailProducts.id, id));
@@ -1051,6 +1066,52 @@ export async function addLeadToGroup(input: { groupId: number; leadId: number; a
 export async function removeLeadFromGroup(groupId: number, leadId: number) {
   const db = await requireDb();
   await db.delete(leadGroupMembers).where(and(eq(leadGroupMembers.groupId, groupId), eq(leadGroupMembers.leadId, leadId)));
+}
+
+export async function removeLeadGroup(groupId: number, actorId: number) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const group = (await tx.select({ id: leadGroups.id, name: leadGroups.name })
+      .from(leadGroups)
+      .where(eq(leadGroups.id, groupId))
+      .limit(1)
+      .for("update"))[0];
+    if (!group) return null;
+
+    const members = await tx.select({ leadId: leadGroupMembers.leadId })
+      .from(leadGroupMembers)
+      .where(eq(leadGroupMembers.groupId, groupId));
+    await tx.delete(leadGroupShares).where(eq(leadGroupShares.groupId, groupId));
+    await tx.delete(leadGroupMembers).where(eq(leadGroupMembers.groupId, groupId));
+    await tx.delete(leadGroups).where(eq(leadGroups.id, groupId));
+
+    const occurredAt = Date.now();
+    if (members.length) {
+      await tx.insert(auditEvents).values(members.map(member => ({
+        leadId: member.leadId,
+        actorId,
+        action: "lead.group_removed",
+        source: "sharing",
+        detail: `Detached from deleted lead group #${groupId}`,
+        changes: null,
+        snapshotBefore: null,
+        snapshotAfter: null,
+        occurredAt,
+      })));
+    }
+    await tx.insert(auditEvents).values({
+      leadId: null,
+      actorId,
+      action: "group.deleted",
+      source: "sharing",
+      detail: `Deleted lead group #${groupId}: ${group.name}`,
+      changes: null,
+      snapshotBefore: null,
+      snapshotAfter: null,
+      occurredAt,
+    });
+    return { detachedLeadIds: members.map(member => member.leadId) };
+  });
 }
 
 export async function shareLead(input: { leadId: number; sharedWithUserId: number; sharedByUserId: number }) {

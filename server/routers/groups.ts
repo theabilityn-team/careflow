@@ -35,6 +35,16 @@ export const groupsRouter = router({
     return { success: true } as const;
   }),
 
+  remove: protectedProcedure.input(z.object({ id })).mutation(async ({ ctx, input }) => {
+    const access = await assertPermission(ctx.user, "viewLeads");
+    const visibleGroup = await db.getLeadGroup(input.id, viewer(ctx.user.id, access.role));
+    if (!visibleGroup) throw new TRPCError({ code: "NOT_FOUND", message: "Lead group not found." });
+    if (!await db.canManageLeadGroup(input.id, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "FORBIDDEN", message: "Only the group owner or Super Admin can remove this group." });
+    const removed = await db.removeLeadGroup(input.id, ctx.user.id);
+    if (!removed) throw new TRPCError({ code: "NOT_FOUND", message: "Lead group not found." });
+    return { success: true } as const;
+  }),
+
   addLead: protectedProcedure.input(z.object({ groupId: id, leadId: id })).mutation(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "editLeads");
     const isAdmin = access.role === "super_admin";

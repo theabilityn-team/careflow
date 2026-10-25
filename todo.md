@@ -240,3 +240,20 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Verify key desktop routes after shared primitive changes | Completed |
 | Run 122 tests, TypeScript validation, production build, runtime, browser, and cleanup checks | Completed |
 | Save checkpoint and push GitHub | Completed |
+
+
+## Completed update: Email library copies and lead group management — 2026-10-25
+
+| Requirement | Status |
+|---|---|
+| Add Super Admin Copy product with editable metadata and all active/archived templates | Completed |
+| Copy product and templates atomically with fresh IDs, timestamps, and current actor | Completed |
+| Add Copy template with full plain/HTML content and destination product selection before save | Completed |
+| Suggest unique copy names within the 160-character name limit | Completed |
+| Preserve originals and keep all existing sanitization and permission checks | Completed |
+| Add Edit group and Remove group to manageable list cards and group detail | Completed |
+| Confirm group removal, preserve leads/direct sharing/follow-ups/documents/history, and audit detachment | Completed |
+| Remove group, membership, and group sharing in one transaction | Completed |
+| Validate owner/Super Admin access and deny shared non-owner/anonymous management | Completed |
+| Verify Copy and group management UI on 320/390px phones and desktop | Completed |
+| Run 139 tests, TypeScript, production build, live transaction checks, and complete fixture cleanup | Completed |

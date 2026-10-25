@@ -49,8 +49,12 @@ export function normalizeMessageTemplate(input: z.infer<typeof messageTemplateFi
 }
 
 function duplicateFriendly(error: unknown): never {
-  if (typeof error === "object" && error && ("code" in error && String((error as { code?: unknown }).code).includes("DUP"))) {
-    throw new TRPCError({ code: "CONFLICT", message: "A product or template with this name already exists in the same location." });
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && typeof current === "object" && current; depth++) {
+    if ("code" in current && String((current as { code?: unknown }).code).includes("DUP")) {
+      throw new TRPCError({ code: "CONFLICT", message: "A product or template with this name already exists in the same location." });
+    }
+    current = "cause" in current ? (current as { cause?: unknown }).cause : undefined;
   }
   throw error;
 }
@@ -77,6 +81,43 @@ export const emailLibraryRouter = router({
   createProduct: adminProcedure.input(productFields).mutation(async ({ ctx, input }) => {
     try {
       return await db.createEmailProduct({ ...input, description: cleanNullable(input.description), createdBy: ctx.user.id, updatedBy: ctx.user.id });
+    } catch (error) {
+      duplicateFriendly(error);
+    }
+  }),
+
+  copyProduct: adminProcedure.input(z.object({ id: z.number().int().positive(), product: productFields })).mutation(async ({ ctx, input }) => {
+    const source = await db.getEmailProduct(input.id);
+    if (!source) throw new TRPCError({ code: "NOT_FOUND", message: "Email product not found." });
+    const sourceTemplates = await db.listEmailMessageTemplates(true);
+    const copiedTemplates = sourceTemplates
+      .filter(template => template.productId === source.id)
+      .map(template => {
+        const normalized = normalizeMessageTemplate({
+          productId: 0,
+          name: template.name,
+          description: template.description,
+          subject: template.subject,
+          contentMode: template.contentMode,
+          bodyText: template.bodyText,
+          bodyHtml: template.bodyHtml,
+          sourceFileName: template.sourceFileName,
+          isActive: template.isActive,
+          sortOrder: template.sortOrder,
+        });
+        return {
+          ...normalized,
+          sourceFileName: cleanNullable(template.sourceFileName?.replaceAll("\\", "/").split("/").pop()),
+        };
+      })
+      .map(({ productId: _productId, ...template }) => ({ ...template, createdBy: ctx.user.id, updatedBy: ctx.user.id }));
+    try {
+      return await db.createEmailProductWithTemplates({
+        ...input.product,
+        description: cleanNullable(input.product.description),
+        createdBy: ctx.user.id,
+        updatedBy: ctx.user.id,
+      }, copiedTemplates);
     } catch (error) {
       duplicateFriendly(error);
     }

@@ -32,6 +32,7 @@ type EmailTemplateEditorDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing: boolean;
+  copying?: boolean;
   products: ProductOption[];
   form: EmailTemplateFormState;
   setForm: Dispatch<SetStateAction<EmailTemplateFormState>>;
@@ -58,6 +59,7 @@ export function EmailTemplateEditorDialog({
   open,
   onOpenChange,
   editing,
+  copying = false,
   products,
   form,
   setForm,
@@ -77,9 +79,9 @@ export function EmailTemplateEditorDialog({
     <DialogContent className="bottom-0 left-0 top-auto flex h-[96dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-b-none rounded-t-[26px] border-x-0 border-b-0 p-0 sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:h-[min(94dvh,1000px)] sm:w-[calc(100vw-2rem)] sm:max-w-none sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[28px] sm:border xl:w-[min(94vw,1480px)]">
       <div className="shrink-0 border-b border-slate-200 bg-white px-4 pb-4 pt-5 sm:px-7 sm:py-5">
         <DialogHeader className="pr-10 text-left">
-          <DialogTitle className="text-xl leading-tight sm:text-2xl">{editing ? "Edit email template" : "Add email template"}</DialogTitle>
+          <DialogTitle className="text-xl leading-tight sm:text-2xl">{copying ? "Copy email template" : editing ? "Edit email template" : "Add email template"}</DialogTitle>
           <DialogDescription className="max-w-3xl text-sm leading-6 sm:text-base">
-            Set the template details, then write plain text or build and preview a complete HTML email.
+            {copying ? "Create a separate copy with the same content. Choose its name and destination product, then review before saving. The original template is not changed." : "Set the template details, then write plain text or build and preview a complete HTML email."}
           </DialogDescription>
         </DialogHeader>
       </div>
@@ -176,8 +178,8 @@ export function EmailTemplateEditorDialog({
 
       <div className="shrink-0 border-t border-slate-200 bg-white px-4 pb-[calc(.75rem+env(safe-area-inset-bottom))] pt-3 sm:px-7 sm:py-4">
         <DialogFooter className="mx-auto grid w-full max-w-[1360px] grid-cols-2 gap-3 sm:flex sm:justify-end">
-          <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">Cancel</Button>
-          <Button onClick={onSave} disabled={saving || !canSave} className="w-full bg-teal-700 hover:bg-teal-800 sm:w-auto">{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save template</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving} className="w-full sm:w-auto">Cancel</Button>
+          <Button onClick={onSave} disabled={saving || !canSave} className="w-full bg-teal-700 hover:bg-teal-800 sm:w-auto">{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{copying ? "Create copy" : "Save template"}</Button>
         </DialogFooter>
       </div>
     </DialogContent>

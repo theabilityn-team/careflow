@@ -9,7 +9,7 @@ const staff = { id: 17, openId: "staff:17", name: "Staff Member", email: "staff@
 const admin = { id: 1, openId: "system:admin", name: "Super Administrator", email: "admin@admin.com", loginMethod: "system", role: "admin" as const, createdAt: now, updatedAt: now, lastSignedIn: now };
 const permissions = { userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en" as const, permissions: JSON.stringify({ viewLeads: true, createLeads: true, editLeads: true, scanDocuments: false, viewClinical: false, manageContacts: true, changeStatus: true, exportData: false }), createdAt: now, updatedAt: now };
 
-function context(user: typeof staff | typeof admin): TrpcContext {
+function context(user: typeof staff | typeof admin | null): TrpcContext {
   return { user, req: { headers: {} } as TrpcContext["req"], res: {} as TrpcContext["res"] };
 }
 
@@ -76,6 +76,74 @@ describe("product email template library", () => {
 
     expect(result).toEqual(created);
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ productId: 4, name: "Welcome", createdBy: 1, updatedBy: 1 }));
+  });
+
+  it("blocks staff and anonymous users from copying products", async () => {
+    const copy = vi.spyOn(db, "createEmailProductWithTemplates");
+
+    await expect(appRouter.createCaller(context(staff)).emailLibrary.copyProduct({
+      id: 3,
+      product: { name: "Blocked copy", description: null, isActive: true, sortOrder: 0 },
+    })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(context(null)).emailLibrary.copyProduct({
+      id: 3,
+      product: { name: "Blocked anonymous copy", description: null, isActive: true, sortOrder: 0 },
+    })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(copy).not.toHaveBeenCalled();
+  });
+
+  it("copies archived plain and HTML templates with edited product metadata and the admin actor", async () => {
+    vi.spyOn(db, "getEmailProduct").mockResolvedValue({ id: 3, name: "Original", description: "Original description", isActive: false, sortOrder: 9, createdBy: 42, updatedBy: 43, createdAt: now, updatedAt: now });
+    vi.spyOn(db, "listEmailMessageTemplates").mockResolvedValue([
+      { id: 8, productId: 3, productName: "Original", productIsActive: false, name: "Plain", description: " Plain description ", subject: "Plain subject", contentMode: "plain", bodyText: "  Plain body  ", bodyHtml: "ignored", sourceFileName: "plain.txt", isActive: false, sortOrder: 4, createdBy: 42, updatedBy: 43, createdAt: now, updatedAt: now },
+      { id: 9, productId: 3, productName: "Original", productIsActive: false, name: "HTML", description: "HTML description", subject: "HTML subject", contentMode: "html", bodyText: "stale fallback", bodyHtml: '<div onclick="bad()"><h1>Hello {{leadFirstName}}</h1><script>bad()</script></div>', sourceFileName: "../nested/design.html", isActive: false, sortOrder: 5, createdBy: 42, updatedBy: 43, createdAt: now, updatedAt: now },
+    ]);
+    const copied = { id: 12, name: "Copied", description: "Edited description", isActive: true, sortOrder: 2, createdBy: 1, updatedBy: 1, createdAt: new Date("2026-09-20T00:00:00Z"), updatedAt: new Date("2026-09-20T00:00:00Z") };
+    const copy = vi.spyOn(db, "createEmailProductWithTemplates").mockResolvedValue(copied);
+
+    const result = await appRouter.createCaller(context(admin)).emailLibrary.copyProduct({
+      id: 3,
+      product: { name: " Copied ", description: " Edited description ", isActive: true, sortOrder: 2 },
+    });
+
+    expect(result).toEqual(copied);
+    expect(copy).toHaveBeenCalledWith(
+      { name: "Copied", description: "Edited description", isActive: true, sortOrder: 2, createdBy: 1, updatedBy: 1 },
+      [
+        expect.objectContaining({ name: "Plain", description: "Plain description", subject: "Plain subject", contentMode: "plain", bodyText: "Plain body", bodyHtml: null, sourceFileName: "plain.txt", isActive: false, sortOrder: 4, createdBy: 1, updatedBy: 1 }),
+        expect.objectContaining({ name: "HTML", description: "HTML description", subject: "HTML subject", contentMode: "html", bodyText: "Hello {{leadFirstName}}", bodyHtml: expect.not.stringContaining("script"), sourceFileName: "design.html", isActive: false, sortOrder: 5, createdBy: 1, updatedBy: 1 }),
+      ],
+    );
+    expect(String(copy.mock.calls[0]?.[1][1]?.bodyHtml)).not.toContain("onclick");
+  });
+
+  it("returns NOT_FOUND when the source product is missing and maps DB conflicts", async () => {
+    vi.spyOn(db, "getEmailProduct").mockResolvedValue(undefined);
+    const copy = vi.spyOn(db, "createEmailProductWithTemplates");
+    await expect(appRouter.createCaller(context(admin)).emailLibrary.copyProduct({
+      id: 999,
+      product: { name: "Missing source copy", description: null, isActive: true, sortOrder: 0 },
+    })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(copy).not.toHaveBeenCalled();
+
+    vi.restoreAllMocks();
+    vi.spyOn(db, "getEmailProduct").mockResolvedValue({ id: 3, name: "Original", description: null, isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now });
+    vi.spyOn(db, "listEmailMessageTemplates").mockResolvedValue([]);
+    vi.spyOn(db, "createEmailProductWithTemplates").mockRejectedValue(Object.assign(new Error("duplicate"), { code: "ER_DUP_ENTRY" }));
+    await expect(appRouter.createCaller(context(admin)).emailLibrary.copyProduct({
+      id: 3,
+      product: { name: "Existing", description: null, isActive: true, sortOrder: 0 },
+    })).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("maps wrapped Drizzle duplicate errors without masking unrelated failures", async () => {
+    vi.spyOn(db, "getEmailProduct").mockResolvedValue({ id: 3, name: "Original", description: null, isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now });
+    vi.spyOn(db, "listEmailMessageTemplates").mockResolvedValue([]);
+    const copy = vi.spyOn(db, "createEmailProductWithTemplates").mockRejectedValue(new Error("query failed", { cause: Object.assign(new Error("duplicate"), { code: "ER_DUP_ENTRY" }) }));
+    const input = { id: 3, product: { name: "Existing", description: null, isActive: true, sortOrder: 0 } };
+    await expect(appRouter.createCaller(context(admin)).emailLibrary.copyProduct(input)).rejects.toMatchObject({ code: "CONFLICT" });
+    copy.mockRejectedValue(new Error("connection unavailable"));
+    await expect(appRouter.createCaller(context(admin)).emailLibrary.copyProduct(input)).rejects.toThrow("connection unavailable");
   });
 
   it("sanitizes an uploaded HTML template and derives its text fallback", async () => {
