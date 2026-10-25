@@ -291,3 +291,14 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Provide mobile-safe scrollable forms with visible actions, password confirmation/show-hide, and pending/cancel protection | Completed |
 | Update English System guide and pass 157 tests, TypeScript, production build, live account/session/rollback QA | Completed |
 | Remove disposable accounts, credentials, permissions, SMTP profiles, sessions, reset requests, invitations, groups, audits, and captures | Completed |
+
+
+## Completed update: Independent staff email and template permissions — 2026-10-25
+- [x] Added separate **Emails** and **Use email templates** switches to staff access, direct account creation, and invitations.
+- [x] New accounts and invitations default both flags off. Existing stored records receive their previous email/template capability once; explicit false remains unchanged on subsequent startup upgrades.
+- [x] Emails controls Mails, manual sends, sent/lead history, email activity logging, and connection tests independently of Manage communications.
+- [x] Template selection, HTML-template drafts, and staff template tests require both flags; mail-only staff retain plain-text composition.
+- [x] Library management and global header/footer remain Super Admin-only. Assigned SMTP metadata remains read-only and secret-free.
+- [x] Redact restricted email content in communications, audit values, and completed follow-up archive while preserving other contact/follow-up functionality.
+- [x] Verify all four live API combinations, three desktop staff UI scenarios, and 320px Super Admin permission controls. No real email sent.
+- [x] Pass 173 tests, TypeScript, production build, and diff checks; remove four temporary accounts/leads and all related credentials, SMTP profiles, sessions, and audits.

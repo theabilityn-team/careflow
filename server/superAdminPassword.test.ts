@@ -8,6 +8,7 @@ const db = vi.hoisted(() => ({
   changeSystemAdminPassword: vi.fn(),
   upsertSystemAdminCredential: vi.fn(),
   ensureSystemAdminSmtpSettings: vi.fn(),
+  backfillLegacyEmailPermissions: vi.fn(),
 }));
 
 vi.mock("./db", () => db);
@@ -66,6 +67,7 @@ describe("Super Admin password management", () => {
     });
     await ensureSuperAdmin();
     expect(db.ensureSystemAdminSmtpSettings).toHaveBeenCalledOnce();
+    expect(db.backfillLegacyEmailPermissions).toHaveBeenCalledOnce();
     expect(db.upsertSystemAdminCredential).not.toHaveBeenCalled();
   });
 });

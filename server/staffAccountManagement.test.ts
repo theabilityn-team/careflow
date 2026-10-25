@@ -33,6 +33,8 @@ const permissions = {
   scanDocuments: false,
   viewClinical: false,
   manageContacts: true,
+  manageEmails: false,
+  useEmailTemplates: false,
   changeStatus: true,
   exportData: false,
 };

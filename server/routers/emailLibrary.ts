@@ -68,7 +68,8 @@ function nestLibrary(products: Awaited<ReturnType<typeof db.listEmailProducts>>,
 
 export const emailLibraryRouter = router({
   library: protectedProcedure.query(async ({ ctx }) => {
-    await assertPermission(ctx.user, "manageContacts");
+    await assertPermission(ctx.user, "manageEmails");
+    await assertPermission(ctx.user, "useEmailTemplates");
     const [products, templates] = await Promise.all([db.listEmailProducts(false), db.listEmailMessageTemplates(false)]);
     return nestLibrary(products, templates);
   }),

@@ -108,7 +108,7 @@ describe("SMTP settings authorization and API shaping", () => {
   });
 
   it("sends a test email only to the entered recipient using the selected template", async () => {
-    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en", permissions: "{}", createdAt: new Date(), updatedAt: new Date() });
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en", permissions: JSON.stringify({ manageEmails: true, useEmailTemplates: true }), createdAt: new Date(), updatedAt: new Date() });
     vi.spyOn(db, "getStaffSmtpSettings").mockResolvedValue(stored);
     vi.spyOn(db, "getSelectableEmailMessageTemplate").mockResolvedValue({ id: 8, productId: 3, productName: "Recovery Mat", productIsActive: true, name: "SMTP test design", description: null, subject: "Test from {{senderName}}", contentMode: "html", bodyText: "Hello Test Recipient", bodyHtml: "<h1>Hello {{leadFullName}}</h1>", sourceFileName: "smtp-test.html", isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: new Date(), updatedAt: new Date() });
     const getFrame = vi.spyOn(db, "getEmailTemplate").mockResolvedValue(undefined);
@@ -123,7 +123,7 @@ describe("SMTP settings authorization and API shaping", () => {
   });
 
   it("rejects a test email when no active selected template exists", async () => {
-    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en", permissions: "{}", createdAt: new Date(), updatedAt: new Date() });
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en", permissions: JSON.stringify({ manageEmails: true, useEmailTemplates: true }), createdAt: new Date(), updatedAt: new Date() });
     vi.spyOn(db, "getStaffSmtpSettings").mockResolvedValue(stored);
     vi.spyOn(db, "getSelectableEmailMessageTemplate").mockResolvedValue(undefined);
     const send = vi.spyOn(smtp, "sendStaffSmtpEmail");

@@ -5,6 +5,12 @@ import * as db from "../db";
 import { assertPermission, getUserAccess } from "../permissions";
 import { protectedProcedure, router } from "../_core/trpc";
 
+function hideEmailFollowUpText<T extends { method: string; outcome: string; notes: string | null }>(item: T) {
+  return item.method === "email"
+    ? { ...item, outcome: "Email communication", notes: null }
+    : item;
+}
+
 export const dashboardRouter = router({
   summary: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
@@ -66,7 +72,10 @@ export const dashboardRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "viewLeads");
-      return db.getCompletedFollowUps({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" }, input);
+      const archive = await db.getCompletedFollowUps({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" }, input);
+      return access.role === "super_admin" || access.permissions.manageEmails
+        ? archive
+        : { ...archive, items: archive.items.map(hideEmailFollowUpText) };
     }),
   notifications: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "viewLeads");

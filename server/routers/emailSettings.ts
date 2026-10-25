@@ -3,7 +3,7 @@ import { z } from "zod";
 import { SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
 import { composeEmailHtml, composeRichEmailHtml, DEFAULT_EMAIL_FOOTER_HTML, DEFAULT_EMAIL_HEADER_HTML, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "../mailContent";
-import { getUserAccess } from "../permissions";
+import { assertPermission, getUserAccess } from "../permissions";
 import { protectedProcedure, router } from "../_core/trpc";
 import { isSmtpConfigured, sendStaffSmtpEmail, verifyStaffSmtp } from "../smtp";
 
@@ -193,6 +193,7 @@ export const emailSettingsRouter = router({
 
   testConnection: protectedProcedure.input(ownerInput).mutation(async ({ ctx, input }) => {
     const owner = await resolveSmtpOwner(ctx.user, input?.userId);
+    if (!owner.isSuperAdmin) await assertPermission(ctx.user, "manageEmails");
     const settings = await db.getStaffSmtpSettings(owner.ownerId);
     if (!settings) throw new TRPCError({ code: "BAD_REQUEST", message: "Super Admin must save SMTP settings before testing the connection." });
     const testedAt = Date.now();
@@ -207,7 +208,11 @@ export const emailSettingsRouter = router({
   }),
 
   testEmailTemplates: protectedProcedure.input(ownerInput).query(async ({ ctx, input }) => {
-    await resolveSmtpOwner(ctx.user, input?.userId);
+    const owner = await resolveSmtpOwner(ctx.user, input?.userId);
+    if (!owner.isSuperAdmin) {
+      await assertPermission(ctx.user, "manageEmails");
+      await assertPermission(ctx.user, "useEmailTemplates");
+    }
     const [products, templates] = await Promise.all([db.listEmailProducts(false), db.listEmailMessageTemplates(false)]);
     return products.map(product => ({
       id: product.id,
@@ -223,6 +228,10 @@ export const emailSettingsRouter = router({
 
   sendTestEmail: protectedProcedure.input(testEmailInput).mutation(async ({ ctx, input }) => {
     const owner = await resolveSmtpOwner(ctx.user, input.userId);
+    if (!owner.isSuperAdmin) {
+      await assertPermission(ctx.user, "manageEmails");
+      await assertPermission(ctx.user, "useEmailTemplates");
+    }
     const settings = await db.getStaffSmtpSettings(owner.ownerId);
     if (!settings) throw new TRPCError({ code: "BAD_REQUEST", message: "Super Admin must save SMTP settings before sending a test email." });
     const selectedTemplate = await db.getSelectableEmailMessageTemplate(input.messageTemplateId);

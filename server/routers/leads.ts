@@ -75,6 +75,34 @@ function hideClinical<T extends { diagnosis: string | null; clinicalNotes: strin
   return { ...lead, diagnosis: null, clinicalNotes: null, additionalInformation: null };
 }
 
+function hideEmailCommunicationText<T extends { method: string; outcome: string; notes: string | null }>(communication: T) {
+  return communication.method === "email"
+    ? { ...communication, outcome: "Email communication", notes: null }
+    : communication;
+}
+
+function hideEmailAuditValues<T extends {
+  detail: string | null;
+  changes: Array<{ field: string; before: unknown; after: unknown }>;
+  snapshotBefore: Record<string, unknown>;
+  snapshotAfter: Record<string, unknown>;
+  source?: string | null;
+}>(event: T) {
+  const changes = event.changes.filter(change => change.field !== "email");
+  const redactSnapshot = (snapshot: Record<string, unknown>) => {
+    const { email: _email, ...safeSnapshot } = snapshot;
+    return safeSnapshot;
+  };
+  const isEmailCommunication = event.source === "communication" && /^email\s*:/i.test(event.detail ?? "");
+  return {
+    ...event,
+    detail: isEmailCommunication ? "Email communication recorded" : event.detail,
+    changes,
+    snapshotBefore: redactSnapshot(event.snapshotBefore),
+    snapshotAfter: redactSnapshot(event.snapshotAfter),
+  };
+}
+
 function throwDuplicate(error: unknown): never {
   if (isLeadDuplicateError(error)) throw new TRPCError({ code: "CONFLICT", message: "Duplicate lead detected. The matching record may belong to another staff member; contact the Super Admin if you cannot access it." });
   if (isDuplicateKeyError(error)) throw new TRPCError({ code: "CONFLICT", message: "Duplicate lead detected by email, phone, or profile identity." });
@@ -129,6 +157,13 @@ export const leadsRouter = router({
     const result = await db.getLead(input.id, { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
     if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     const auditEvents = prepareAuditEvents(result.auditEvents, access.permissions.viewClinical);
+    if (access.role !== "super_admin" && !access.permissions.manageEmails) {
+      const safeAuditEvents = auditEvents.map(hideEmailAuditValues);
+      const communications = result.communications.map(hideEmailCommunicationText);
+      return access.permissions.viewClinical
+        ? { ...result, communications, auditEvents: safeAuditEvents }
+        : { ...result, lead: hideClinical(result.lead), documents: [], communications, auditEvents: safeAuditEvents };
+    }
     return access.permissions.viewClinical ? { ...result, auditEvents } : { ...result, lead: hideClinical(result.lead), documents: [], auditEvents };
   }),
 
@@ -240,6 +275,7 @@ export const leadsRouter = router({
     }).refine(value => !value.completeFollowUp || Boolean(value.followUpId), { message: "Select the active follow-up to complete.", path: ["followUpId"] }))
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "manageContacts");
+      if (input.method === "email") await assertPermission(ctx.user, "manageEmails");
       if (!await db.canAccessLead(input.leadId, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
       let result;
       try {

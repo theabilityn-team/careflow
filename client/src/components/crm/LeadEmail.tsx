@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { formatEasternDate } from "@shared/time";
 import { AlertTriangle, CheckCircle2, Code2, Eye, FileCode2, Library, Loader2, Mail, Send } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 const STARTER_SUBJECT = "A message from {{senderName}}";
@@ -52,9 +52,9 @@ type LeadEmailHistoryData = {
   }>;
 };
 
-export function LeadEmailComposerDialog({ lead, onSent }: { lead: LeadRecipient; onSent: () => Promise<void> | void }) {
+export function LeadEmailComposerDialog({ lead, canUseTemplates, onSent }: { lead: LeadRecipient; canUseTemplates: boolean; onSent: () => Promise<void> | void }) {
   const [open, setOpen] = useState(false);
-  const library = trpc.emailLibrary.library.useQuery(undefined, { enabled: open });
+  const library = trpc.emailLibrary.library.useQuery(undefined, { enabled: open && canUseTemplates });
   const sendEmail = trpc.mail.send.useMutation();
   const [productId, setProductId] = useState("");
   const [messageTemplateId, setMessageTemplateId] = useState("");
@@ -63,6 +63,7 @@ export function LeadEmailComposerDialog({ lead, onSent }: { lead: LeadRecipient;
   const [bodyText, setBodyText] = useState(STARTER_BODY);
   const [bodyHtml, setBodyHtml] = useState("");
   const [previewHtml, setPreviewHtml] = useState(true);
+  useEffect(() => { if (!canUseTemplates) { setProductId(""); setMessageTemplateId(""); setSubject(STARTER_SUBJECT); setContentMode("plain"); setBodyText(STARTER_BODY); setBodyHtml(""); } }, [canUseTemplates]);
   const selectedProduct = library.data?.find(item => String(item.id) === productId);
   const selectedTemplate = selectedProduct?.templates.find(item => String(item.id) === messageTemplateId);
 
@@ -102,6 +103,7 @@ export function LeadEmailComposerDialog({ lead, onSent }: { lead: LeadRecipient;
   }
 
   async function send() {
+    if (!canUseTemplates && (messageTemplateId || contentMode === "html")) return toast.error("Use email templates permission is required for this draft.");
     if (!lead.email?.trim()) return toast.error("Add an email address to this lead before sending.");
     try {
       const result = await sendEmail.mutateAsync({
@@ -131,19 +133,19 @@ export function LeadEmailComposerDialog({ lead, onSent }: { lead: LeadRecipient;
     <DialogContent className="bottom-0 left-0 top-auto flex max-h-[95dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-b-none rounded-t-[26px] border-x-0 border-b-0 p-0 sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[92vh] sm:w-[calc(100%-2rem)] sm:max-w-4xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border">
       <DialogHeader className="shrink-0 border-b border-slate-100 px-5 pb-4 pt-5 pr-14 text-left sm:px-6 sm:pb-5 sm:pt-6">
         <DialogTitle className="break-words text-xl leading-7 sm:text-2xl">Send email to {lead.firstName} {lead.lastName}</DialogTitle>
-        <DialogDescription className="break-words text-sm leading-5 sm:leading-6">To <span className="break-all font-medium text-slate-700">{lead.email}</span>. Choose an approved product template or write a plain-text message, then review the final draft.</DialogDescription>
+        <DialogDescription className="break-words text-sm leading-5 sm:leading-6">To <span className="break-all font-medium text-slate-700">{lead.email}</span>. {canUseTemplates ? "Choose an approved product template or write a plain-text message, then review the final draft." : "Write a plain-text message and review the final draft. Template access is not enabled for your account."}</DialogDescription>
       </DialogHeader>
       <div className="min-w-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-4 py-5 overscroll-contain sm:px-6">
-        <div className="min-w-0 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4">
+        {canUseTemplates && <div className="min-w-0 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4">
           <div className="mb-4 flex items-start gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-cyan-800 shadow-sm"><Library className="h-4 w-4" /></div><div><p className="font-semibold text-slate-900">Start from an approved template</p><p className="text-sm leading-6 text-slate-600">Choose a product and an active Super Admin template. The subject and message remain editable.</p></div></div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="min-w-0 space-y-2"><Label>Product</Label><Select value={productId} onValueChange={selectProduct}><SelectTrigger className="w-full min-w-0 bg-white [&_[data-slot=select-value]]:truncate"><SelectValue placeholder={library.isLoading ? "Loading products…" : "Select a product"} /></SelectTrigger><SelectContent align="start" className="max-w-[calc(100vw-2rem)]">{library.data?.map(product => <SelectItem key={product.id} value={String(product.id)} className="max-w-[calc(100vw-3rem)]"><span className="block truncate">{product.name}</span></SelectItem>)}</SelectContent></Select></div>
             <div className="min-w-0 space-y-2"><Label>Email template</Label><Select value={messageTemplateId} onValueChange={applyTemplate} disabled={!productId || !selectedProduct?.templates.length}><SelectTrigger className="w-full min-w-0 bg-white [&_[data-slot=select-value]]:truncate"><SelectValue placeholder={!productId ? "Select a product first" : selectedProduct?.templates.length ? "Select a template" : "No active templates"} /></SelectTrigger><SelectContent align="start" className="max-w-[calc(100vw-2rem)]">{selectedProduct?.templates.map(template => <SelectItem key={template.id} value={String(template.id)} className="max-w-[calc(100vw-3rem)]"><span className="block truncate">{template.name} · {template.contentMode === "html" ? "HTML" : "Plain text"}</span></SelectItem>)}</SelectContent></Select></div>
           </div>
           {selectedTemplate && <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="flex items-center gap-1.5 text-xs leading-5 text-cyan-900">{selectedTemplate.contentMode === "html" && <FileCode2 className="h-3.5 w-3.5" />}<span><strong>Applied:</strong> {selectedTemplate.name}{selectedTemplate.description ? ` · ${selectedTemplate.description}` : ""}</span></p><Button type="button" variant="ghost" size="sm" className="h-7 justify-start px-2 text-xs text-cyan-900 hover:bg-cyan-100" onClick={clearTemplate}>Clear template</Button></div>}
-        </div>
+        </div>}
         <div className="min-w-0 space-y-2"><Label>Subject</Label><Input value={subject} onChange={event => setSubject(event.target.value)} maxLength={240} className="w-full min-w-0" /></div>
-        {contentMode === "html" ? <div className="space-y-3">
+        {canUseTemplates && contentMode === "html" ? <div className="space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><Label>HTML message</Label><p className="mt-1 text-xs text-slate-400">The source is sanitized again immediately before sending.</p></div><div className="grid grid-cols-2 gap-2 sm:flex"><Button type="button" variant={!previewHtml ? "default" : "outline"} size="sm" onClick={() => setPreviewHtml(false)}><Code2 className="mr-2 h-3.5 w-3.5" />Edit HTML</Button><Button type="button" variant={previewHtml ? "default" : "outline"} size="sm" onClick={() => setPreviewHtml(true)}><Eye className="mr-2 h-3.5 w-3.5" />Preview</Button></div></div>
           {previewHtml ? <iframe title="Lead email draft preview" sandbox="" srcDoc={bodyHtml} className="h-[min(420px,45dvh)] w-full rounded-xl border border-slate-200 bg-white sm:h-[420px]" /> : <Textarea className="font-mono text-xs" value={bodyHtml} onChange={event => setBodyHtml(event.target.value)} rows={18} maxLength={250_000} />}
         </div> : <div className="space-y-2"><Label>Message</Label><Textarea value={bodyText} onChange={event => setBodyText(event.target.value)} rows={10} maxLength={50_000} placeholder="Write the email message" /></div>}

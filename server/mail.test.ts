@@ -8,7 +8,7 @@ import * as smtp from "./smtp";
 const now = new Date("2026-09-13T00:00:00Z");
 const staff = { id: 17, openId: "staff:17", name: "Staff Member", email: "staff@example.com", loginMethod: "local", role: "user" as const, createdAt: now, updatedAt: now, lastSignedIn: now };
 const admin = { id: SYSTEM_ADMIN_ACTOR_ID, openId: "system:admin", name: "Super Administrator", email: "admin@admin.com", loginMethod: "local", role: "admin" as const, createdAt: now, updatedAt: now, lastSignedIn: now };
-const permissions = { userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en" as const, permissions: JSON.stringify({ viewLeads: true, createLeads: true, editLeads: true, scanDocuments: false, viewClinical: false, manageContacts: true, changeStatus: true, exportData: false }), createdAt: now, updatedAt: now };
+const permissions = { userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en" as const, permissions: JSON.stringify({ viewLeads: true, createLeads: true, editLeads: true, scanDocuments: false, viewClinical: false, manageContacts: true, manageEmails: true, useEmailTemplates: true, changeStatus: true, exportData: false }), createdAt: now, updatedAt: now };
 const smtpSettings = { userId: 17, smtpHost: "smtp.example.com", smtpPort: 587, smtpSecurity: "starttls" as const, smtpUsername: "staff@example.com", smtpPassword: "secret", fromEmail: "staff@example.com", fromName: "Staff Member", replyToEmail: null, isEnabled: true, verifiedAt: Date.now(), lastTestedAt: Date.now(), lastTestError: null, createdAt: now, updatedAt: now };
 
 function context(user: TrpcContext["user"] = staff): TrpcContext {
@@ -140,7 +140,7 @@ describe("manual lead email", () => {
   });
 
   it("shows one lead's email history across all staff senders to every authorized lead viewer", async () => {
-    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...permissions, permissions: JSON.stringify({ viewLeads: true, manageContacts: false }) });
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...permissions, permissions: JSON.stringify({ viewLeads: true, manageEmails: true }) });
     vi.spyOn(db, "canAccessLead").mockResolvedValue(true);
     vi.spyOn(db, "listLeadOutboundEmails").mockResolvedValue({
       total: 2,
@@ -174,7 +174,7 @@ describe("manual lead email", () => {
   });
 
   it("allows an authorized lead viewer to open an email sent by another staff member", async () => {
-    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...permissions, permissions: JSON.stringify({ viewLeads: true, manageContacts: false }) });
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...permissions, permissions: JSON.stringify({ viewLeads: true, manageEmails: true }) });
     vi.spyOn(db, "canAccessLead").mockResolvedValue(true);
     vi.spyOn(db, "getLeadOutboundEmail").mockResolvedValue({
       id: 91,

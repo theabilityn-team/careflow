@@ -1,15 +1,6 @@
-import type { PermissionKey } from "@/lib/crm";
+import { DEFAULT_TECHNICAL_PERMISSIONS } from "@shared/permissions";
 
-export const DEFAULT_STAFF_ACCOUNT_PERMISSIONS: Record<PermissionKey, boolean> = {
-  viewLeads: true,
-  createLeads: true,
-  editLeads: true,
-  scanDocuments: false,
-  viewClinical: false,
-  manageContacts: true,
-  changeStatus: true,
-  exportData: false,
-};
+export const DEFAULT_STAFF_ACCOUNT_PERMISSIONS = { ...DEFAULT_TECHNICAL_PERMISSIONS };
 
 export const STAFF_PASSWORD_HINT = "10–200 characters, including an uppercase letter, a lowercase letter, and a number.";
 export const normalizeStaffAccountEmail = (email: string) => email.trim().toLowerCase();

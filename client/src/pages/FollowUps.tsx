@@ -51,6 +51,8 @@ function CompleteFollowUpDialog({ item, onClose, onCompleted }: {
   const [outcome, setOutcome] = useState("Follow-up completed");
   const [notes, setNotes] = useState("");
   const [nextFollowUp, setNextFollowUp] = useState("");
+  const { data: access } = trpc.dashboard.access.useQuery();
+  const canLogEmails = Boolean(access?.permissions.manageEmails);
   const complete = trpc.leads.addCommunication.useMutation();
 
   function close() {
@@ -62,6 +64,7 @@ function CompleteFollowUpDialog({ item, onClose, onCompleted }: {
   }
 
   async function save() {
+    if (method === "email" && !canLogEmails) return toast.error("The Emails permission is required.");
     if (!item || !outcome.trim()) return toast.error("Add the contact outcome.");
     const nextTimestamp = nextFollowUp ? parseEasternDateTimeInput(nextFollowUp) : null;
     if (nextFollowUp && !Number.isFinite(nextTimestamp)) return toast.error("Select a valid Eastern Time date and time.");
@@ -92,7 +95,7 @@ function CompleteFollowUpDialog({ item, onClose, onCompleted }: {
         <DialogDescription>Only the selected reminder at {item ? formatDate(item.scheduledFor, true) : "the selected time"} will be completed. Other reminders for this lead remain active.</DialogDescription>
       </DialogHeader>
       <div className="grid gap-4 py-2 sm:grid-cols-2">
-        <div className="space-y-2"><Label>Contact method</Label><Select value={method} onValueChange={setMethod}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{METHOD_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+        <div className="space-y-2"><Label>Contact method</Label><Select value={method} onValueChange={setMethod}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{METHOD_OPTIONS.filter(([value]) => value !== "email" || canLogEmails).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
         <div className="space-y-2"><Label>Another follow-up (optional, ET)</Label><Input type="datetime-local" value={nextFollowUp} onChange={event => setNextFollowUp(event.target.value)} /></div>
         <div className="space-y-2 sm:col-span-2"><Label>Outcome *</Label><Input value={outcome} onChange={event => setOutcome(event.target.value)} placeholder="Reached the lead and discussed next steps" /></div>
         <div className="space-y-2 sm:col-span-2"><Label>Notes</Label><Textarea value={notes} onChange={event => setNotes(event.target.value)} rows={4} placeholder="Optional details from the conversation" /></div>

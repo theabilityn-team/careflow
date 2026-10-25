@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
 import { inferSupportedStateCode } from "../shared/leadClassification";
 import { inferStoredDocumentType } from "../shared/referralDocuments";
+import { upgradeLegacyEmailPermissions } from "../shared/permissions";
 import {
   authSessions,
   auditEvents,
@@ -710,6 +711,27 @@ export async function upsertStaffPermissions(input: {
   const db = await requireDb();
   await db.insert(staffPermissions).values(input).onDuplicateKeyUpdate({
     set: { jobTitle: input.jobTitle, isActive: input.isActive, permissions: input.permissions },
+  });
+}
+
+export async function backfillLegacyEmailPermissions() {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const counts = { accounts: 0, invitations: 0 };
+    for (const [table, primaryKey, key] of [[staffPermissions, staffPermissions.userId, "accounts"], [staffInvites, staffInvites.id, "invitations"]] as const) {
+      const rows = await tx.select({ id: primaryKey, permissions: table.permissions }).from(table).for("update");
+      for (const row of rows) {
+        let value: unknown;
+        try { value = JSON.parse(row.permissions); } catch { continue; }
+        if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+        const saved = value as Record<string, unknown>;
+        if (Object.hasOwn(saved, "manageEmails") && Object.hasOwn(saved, "useEmailTemplates")) continue;
+        const permissions = JSON.stringify(upgradeLegacyEmailPermissions(saved));
+        await tx.update(table).set({ permissions }).where(and(eq(primaryKey, row.id), eq(table.permissions, row.permissions)));
+        counts[key]++;
+      }
+    }
+    return counts;
   });
 }
 

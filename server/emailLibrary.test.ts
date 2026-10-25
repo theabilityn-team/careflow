@@ -7,7 +7,7 @@ import { appRouter } from "./routers";
 const now = new Date("2026-09-19T00:00:00Z");
 const staff = { id: 17, openId: "staff:17", name: "Staff Member", email: "staff@example.com", loginMethod: "local", role: "user" as const, createdAt: now, updatedAt: now, lastSignedIn: now };
 const admin = { id: 1, openId: "system:admin", name: "Super Administrator", email: "admin@admin.com", loginMethod: "system", role: "admin" as const, createdAt: now, updatedAt: now, lastSignedIn: now };
-const permissions = { userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en" as const, permissions: JSON.stringify({ viewLeads: true, createLeads: true, editLeads: true, scanDocuments: false, viewClinical: false, manageContacts: true, changeStatus: true, exportData: false }), createdAt: now, updatedAt: now };
+const permissions = { userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en" as const, permissions: JSON.stringify({ viewLeads: true, createLeads: true, editLeads: true, scanDocuments: false, viewClinical: false, manageContacts: true, manageEmails: true, useEmailTemplates: true, changeStatus: true, exportData: false }), createdAt: now, updatedAt: now };
 
 function context(user: typeof staff | typeof admin | null): TrpcContext {
   return { user, req: { headers: {} } as TrpcContext["req"], res: {} as TrpcContext["res"] };
