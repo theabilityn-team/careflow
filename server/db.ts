@@ -428,6 +428,42 @@ export async function updateEmailProduct(id: number, input: Partial<Omit<typeof 
   return getEmailProduct(id);
 }
 
+export async function deleteEmailProduct(id: number, actorId: number) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const product = (await tx.select().from(emailProducts).where(eq(emailProducts.id, id)).limit(1).for("update"))[0];
+    if (!product) return null;
+
+    const templates = await tx.select({
+      id: emailMessageTemplates.id,
+      name: emailMessageTemplates.name,
+    }).from(emailMessageTemplates)
+      .where(eq(emailMessageTemplates.productId, id))
+      .for("update");
+
+    await tx.delete(emailMessageTemplates).where(eq(emailMessageTemplates.productId, id));
+    await tx.delete(emailProducts).where(eq(emailProducts.id, id));
+    await tx.insert(auditEvents).values({
+      leadId: null,
+      actorId,
+      action: "email.product_deleted",
+      source: "email_library",
+      detail: `Deleted email product "${product.name}" (ID ${product.id}) and ${templates.length} template${templates.length === 1 ? "" : "s"}.`,
+      changes: null,
+      snapshotBefore: JSON.stringify({
+        productId: product.id,
+        productName: product.name,
+        deletedTemplateCount: templates.length,
+        templates,
+      }),
+      snapshotAfter: null,
+      occurredAt: Date.now(),
+    });
+
+    return { deletedTemplateCount: templates.length };
+  });
+}
+
 export async function listEmailMessageTemplates(includeInactive = false) {
   const db = await requireDb();
   return db.select({
@@ -482,14 +518,63 @@ export async function getEmailMessageTemplate(id: number) {
 
 export async function createEmailMessageTemplate(input: typeof emailMessageTemplates.$inferInsert) {
   const db = await requireDb();
-  const result = await db.insert(emailMessageTemplates).values(input);
-  return getEmailMessageTemplate(Number(result[0].insertId));
+  const templateId = await db.transaction(async tx => {
+    const product = (await tx.select({ id: emailProducts.id }).from(emailProducts).where(eq(emailProducts.id, input.productId)).limit(1).for("update"))[0];
+    if (!product) throw new Error("Email product not found while creating email template.");
+    const result = await tx.insert(emailMessageTemplates).values(input);
+    return Number(result[0].insertId);
+  });
+  return getEmailMessageTemplate(templateId);
 }
 
 export async function updateEmailMessageTemplate(id: number, input: Partial<Omit<typeof emailMessageTemplates.$inferInsert, "id" | "createdBy">>) {
   const db = await requireDb();
-  await db.update(emailMessageTemplates).set(input).where(eq(emailMessageTemplates.id, id));
+  await db.transaction(async tx => {
+    const existing = (await tx.select({ productId: emailMessageTemplates.productId }).from(emailMessageTemplates).where(eq(emailMessageTemplates.id, id)).limit(1))[0];
+    if (!existing) throw new Error("Email template not found while updating email template.");
+
+    const currentProduct = (await tx.select({ id: emailProducts.id }).from(emailProducts).where(eq(emailProducts.id, existing.productId)).limit(1).for("update"))[0];
+    if (!currentProduct) throw new Error("Email product not found while updating email template.");
+
+    const template = (await tx.select({ id: emailMessageTemplates.id }).from(emailMessageTemplates).where(eq(emailMessageTemplates.id, id)).limit(1).for("update"))[0];
+    if (!template) throw new Error("Email template not found while updating email template.");
+
+    const destinationProductId = input.productId ?? existing.productId;
+    if (destinationProductId !== existing.productId) {
+      const destinationProduct = (await tx.select({ id: emailProducts.id }).from(emailProducts).where(eq(emailProducts.id, destinationProductId)).limit(1).for("update"))[0];
+      if (!destinationProduct) throw new Error("Email product not found while moving email template.");
+    }
+
+    await tx.update(emailMessageTemplates).set(input).where(eq(emailMessageTemplates.id, id));
+  });
   return getEmailMessageTemplate(id);
+}
+
+export async function deleteEmailMessageTemplate(id: number, actorId: number) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const template = (await tx.select().from(emailMessageTemplates).where(eq(emailMessageTemplates.id, id)).limit(1).for("update"))[0];
+    if (!template) return null;
+
+    await tx.delete(emailMessageTemplates).where(eq(emailMessageTemplates.id, id));
+    await tx.insert(auditEvents).values({
+      leadId: null,
+      actorId,
+      action: "email.template_deleted",
+      source: "email_library",
+      detail: `Deleted email template "${template.name}" (ID ${template.id}).`,
+      changes: null,
+      snapshotBefore: JSON.stringify({
+        templateId: template.id,
+        templateName: template.name,
+        productId: template.productId,
+      }),
+      snapshotAfter: null,
+      occurredAt: Date.now(),
+    });
+
+    return { success: true } as const;
+  });
 }
 
 export async function getSelectableEmailMessageTemplate(id: number) {

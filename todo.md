@@ -257,3 +257,20 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Validate owner/Super Admin access and deny shared non-owner/anonymous management | Completed |
 | Verify Copy and group management UI on 320/390px phones and desktop | Completed |
 | Run 139 tests, TypeScript, production build, live transaction checks, and complete fixture cleanup | Completed |
+
+
+## Completed update: Permanent email library deletion — 2026-10-25
+
+| Requirement | Status |
+|---|---|
+| Add visible Delete product and Delete template alongside existing Archive/Copy/Edit actions | Completed |
+| Require explicit irreversible deletion confirmation, default focus on Cancel | Completed |
+| Cascade product deletion to all templates including archived entries, atomically | Completed |
+| Delete a single template without affecting its product or sibling templates | Completed |
+| Preserve previously sent email content, immutable names/IDs, and open/click tracking | Completed |
+| Record deletion audit events and restrict API management to Super Admin | Completed |
+| Lock parent products during template creation/moves to prevent deletion race orphans | Completed |
+| Refresh library and SMTP template choices only after successful deletion, protect pending submissions | Completed |
+| Verify 320/390px mobile and 1280px desktop controls and confirmations without deleting real library items | Completed |
+| Pass 144 tests, TypeScript, production build, live transaction rollback/history/parent-guard checks | Completed |
+| Remove all disposable product/template/history/audit fixtures and QA artifacts | Completed |

@@ -132,6 +132,12 @@ export const emailLibraryRouter = router({
     }
   }),
 
+  deleteProduct: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const result = await db.deleteEmailProduct(input.id, ctx.user.id);
+    if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Email product not found." });
+    return result;
+  }),
+
   createTemplate: adminProcedure.input(messageTemplateFields).mutation(async ({ ctx, input }) => {
     if (!await db.getEmailProduct(input.productId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Select an existing email product." });
     try {
@@ -149,5 +155,11 @@ export const emailLibraryRouter = router({
     } catch (error) {
       duplicateFriendly(error);
     }
+  }),
+
+  deleteTemplate: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const result = await db.deleteEmailMessageTemplate(input.id, ctx.user.id);
+    if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Email template not found." });
+    return result;
   }),
 });
