@@ -1,4 +1,5 @@
 import { EmptyState, PageHeader, PageLoading } from "@/components/crm/CrmUi";
+import { CreateStaffAccountDialog, EditStaffAccountDialog, StaffPasswordDialog } from "@/components/crm/StaffAccountDialogs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,21 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PERMISSION_LABELS, PermissionKey, formatDate, initials } from "@/lib/crm";
+import { DEFAULT_STAFF_ACCOUNT_PERMISSIONS as defaultPermissions } from "@/lib/staffAccountForms";
 import { trpc } from "@/lib/trpc";
 import { Check, Clipboard, KeyRound, Link2, Loader2, MailPlus, ShieldCheck, UserPlus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-
-const defaultPermissions: Record<PermissionKey, boolean> = {
-  viewLeads: true,
-  createLeads: true,
-  editLeads: true,
-  scanDocuments: false,
-  viewClinical: false,
-  manageContacts: true,
-  changeStatus: true,
-  exportData: false,
-};
 
 export default function Staff() {
   const utils = trpc.useUtils();
@@ -41,16 +32,16 @@ export default function Staff() {
   const openResetCount = resets.data?.filter(item => item.status === "pending" || item.status === "ready").length ?? 0;
 
   return <div className="mx-auto max-w-[1300px]">
-    <PageHeader eyebrow="Super Admin" title="Staff and access control" description="Invite technical staff, manage access, review password resets, and monitor each staff SMTP sender." actions={<InviteDialog onCreated={() => invites.refetch()} />} />
+    <PageHeader eyebrow="Super Admin" title="Staff and access control" description="Create staff logins directly or use invitations. Edit accounts, set passwords, manage access, and monitor each staff SMTP sender." actions={<div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap"><CreateStaffAccountDialog /><InviteDialog onCreated={() => invites.refetch()} /></div>} />
     <Tabs defaultValue="staff" className="space-y-5">
       <TabsList className="h-auto w-full flex-nowrap justify-start overflow-x-auto rounded-xl bg-white p-1 shadow-sm">
-        <TabsTrigger value="staff" className="rounded-lg">Active directory ({staff.data?.length ?? 0})</TabsTrigger>
+        <TabsTrigger value="staff" className="rounded-lg">Staff accounts ({staff.data?.length ?? 0})</TabsTrigger>
         <TabsTrigger value="invites" className="rounded-lg">Invitations ({invites.data?.length ?? 0})</TabsTrigger>
         <TabsTrigger value="password-resets" className="rounded-lg">Password resets ({openResetCount})</TabsTrigger>
       </TabsList>
       <TabsContent value="staff" className="mt-0">
         <div className="space-y-4">
-          {!staff.data?.length ? <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-6"><EmptyState title="No technical staff" description="Invite a technical staff member to create the first staff account." /></CardContent></Card> : staff.data.map(member => <StaffCard key={member.id} member={member} onSave={async values => {
+          {!staff.data?.length ? <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-6"><EmptyState title="No technical staff" description="Use Create account to set up a staff login directly, or invite a technical staff member." /></CardContent></Card> : staff.data.map(member => <StaffCard key={member.id} member={member} onSave={async values => {
             try {
               await update.mutateAsync(values);
               toast.success("Staff access updated.");
@@ -78,12 +69,12 @@ function StaffCard({ member, onSave }: { member: any; onSave: (values: any) => P
   useEffect(() => { setJobTitle(member.jobTitle); setActive(member.isActive); setPermissions(member.permissions); }, [member]);
 
   return <Card className="min-w-0 rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.04)]"><CardContent className="p-4 sm:p-6"><div className="flex min-w-0 flex-col gap-5 xl:flex-row xl:items-start">
-    <div className="flex min-w-0 items-start gap-4 xl:min-w-64"><Avatar className="h-12 w-12 shrink-0"><AvatarFallback className="bg-slate-100 text-sm font-semibold">{initials(member.name?.split(" ")[0], member.name?.split(" ").slice(1).join(" "))}</AvatarFallback></Avatar><div className="min-w-0"><p className="break-words font-semibold text-slate-900 [overflow-wrap:anywhere]">{member.name || "Unnamed staff member"}</p><p className="break-all text-sm text-slate-500">{member.email || member.loginIdentifier || "No login identifier"}</p><div className="mt-2 flex flex-wrap gap-2"><Badge variant="outline" className={member.smtpEnabled && member.smtpVerifiedAt ? "border-emerald-200 bg-emerald-50 text-emerald-700" : member.smtpEnabled ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-500"}>{member.smtpEnabled && member.smtpVerifiedAt ? "SMTP ready" : member.smtpEnabled ? "SMTP not verified" : "SMTP not configured"}</Badge></div><p className="mt-2 break-words text-xs text-slate-400">Last sign-in {formatDate(member.lastSignedIn, true)}</p>{member.smtpLastTestError && <p className="mt-1 break-words text-xs text-rose-500 [overflow-wrap:anywhere]">SMTP: {member.smtpLastTestError}</p>}</div></div>
-    <div className="grid flex-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="flex min-w-0 items-start gap-4 xl:w-64 xl:shrink-0"><Avatar className="h-12 w-12 shrink-0"><AvatarFallback className="bg-slate-100 text-sm font-semibold">{initials(member.name?.split(" ")[0], member.name?.split(" ").slice(1).join(" "))}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><p className="break-words font-semibold text-slate-900 [overflow-wrap:anywhere]">{member.name || "Unnamed staff member"}</p><p className="break-all text-sm text-slate-500">{member.email || member.loginIdentifier || "No login identifier"}</p><div className="mt-2 flex flex-wrap gap-2"><Badge variant="outline" className={member.smtpEnabled && member.smtpVerifiedAt ? "border-emerald-200 bg-emerald-50 text-emerald-700" : member.smtpEnabled ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-500"}>{member.smtpEnabled && member.smtpVerifiedAt ? "SMTP ready" : member.smtpEnabled ? "SMTP not verified" : "SMTP not configured"}</Badge></div><p className="mt-2 break-words text-xs text-slate-400">Last sign-in {formatDate(member.lastSignedIn, true)}</p>{member.smtpLastTestError && <p className="mt-1 break-words text-xs text-rose-500 [overflow-wrap:anywhere]">SMTP: {member.smtpLastTestError}</p>}<div className="mt-3 grid gap-2"><EditStaffAccountDialog member={member} /><StaffPasswordDialog member={member} /></div></div></div>
+    <div className="grid flex-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
       <div className="space-y-2 sm:col-span-2"><Label>Job title</Label><Input value={jobTitle} onChange={event => setJobTitle(event.target.value)} /></div>
       <div className="flex min-w-0 items-center justify-between gap-4 rounded-xl bg-slate-50 p-4 sm:col-span-2"><div className="min-w-0"><p className="text-sm font-medium">Active account</p><p className="break-words text-xs text-slate-500">Allow this staff member to use assigned features</p></div><Switch className="shrink-0" checked={active} onCheckedChange={setActive} /></div>
       {(Object.entries(PERMISSION_LABELS) as Array<[PermissionKey, readonly [string, string]]>).map(([key, [label, description]]) => <div key={key} className="flex min-h-24 min-w-0 items-start justify-between gap-3 rounded-xl border border-slate-100 p-4"><div className="min-w-0"><p className="break-words text-sm font-medium text-slate-800">{label}</p><p className="mt-1 break-words text-xs leading-5 text-slate-400">{description}</p></div><Switch className="shrink-0" checked={permissions[key]} onCheckedChange={checked => setPermissions(current => ({ ...current, [key]: checked }))} /></div>)}
-      <div className="flex justify-end sm:col-span-2 xl:col-span-4"><Button className="w-full sm:w-auto" disabled={saving} onClick={async () => { setSaving(true); try { await onSave({ userId: member.id, jobTitle, isActive: active, permissions }); } finally { setSaving(false); } }}><Check className="mr-2 h-4 w-4" />Save access</Button></div>
+      <div className="flex justify-end sm:col-span-2 2xl:col-span-4"><Button className="w-full sm:w-auto" disabled={saving} onClick={async () => { setSaving(true); try { await onSave({ userId: member.id, jobTitle, isActive: active, permissions }); } finally { setSaving(false); } }}><Check className="mr-2 h-4 w-4" />Save access</Button></div>
     </div>
   </div></CardContent></Card>;
 }
@@ -128,5 +119,5 @@ function InviteDialog({ onCreated }: { onCreated: () => void }) {
     }
   }
 
-  return <Dialog open={open} onOpenChange={value => { setOpen(value); if (!value) setUrl(""); }}><DialogTrigger asChild><Button className="w-full bg-teal-700 hover:bg-teal-800 sm:w-auto"><UserPlus className="mr-2 h-4 w-4" />Invite technical staff</Button></DialogTrigger><DialogContent className="sm:max-w-2xl"><DialogHeader><DialogTitle>Create technical staff account</DialogTitle><DialogDescription>Set the staff member's access before sharing their secure invitation link.</DialogDescription></DialogHeader>{url ? <div className="min-w-0 py-4"><div className="min-w-0 rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200 sm:p-5"><div className="flex items-center gap-2 font-semibold text-emerald-900"><Check className="h-4 w-4" />Invitation ready</div><p className="mt-2 break-words text-sm leading-6 text-emerald-800 [overflow-wrap:anywhere]">Send this link only to {email}. It expires in seven days.</p><div className="mt-4 flex min-w-0 flex-col gap-2 sm:flex-row"><Input readOnly value={url} className="min-w-0 bg-white" /><Button onClick={() => { navigator.clipboard.writeText(url); toast.success("Invitation link copied."); }}><Clipboard className="mr-2 h-4 w-4" />Copy</Button></div></div></div> : <><div className="grid gap-4 py-2 sm:grid-cols-2"><div className="space-y-2"><Label>Full name</Label><Input value={name} onChange={event => setName(event.target.value)} /></div><div className="space-y-2"><Label>Email</Label><Input type="email" value={email} onChange={event => setEmail(event.target.value)} /></div><div className="space-y-2 sm:col-span-2"><Label>Job title</Label><Input value={jobTitle} onChange={event => setJobTitle(event.target.value)} /></div><div className="sm:col-span-2"><p className="mb-3 text-sm font-semibold">Initial permissions</p><div className="grid gap-3 sm:grid-cols-2">{(Object.entries(PERMISSION_LABELS) as Array<[PermissionKey, readonly [string, string]]>).map(([key, [label, description]]) => <div key={key} className="flex min-w-0 items-start justify-between gap-3 rounded-xl border border-slate-100 p-4"><div className="min-w-0"><p className="break-words text-sm font-medium">{label}</p><p className="mt-1 break-words text-xs leading-5 text-slate-400">{description}</p></div><Switch className="shrink-0" checked={permissions[key]} onCheckedChange={checked => setPermissions(current => ({ ...current, [key]: checked }))} /></div>)}</div></div></div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={submit} disabled={create.isPending || !name || !email}><MailPlus className="mr-2 h-4 w-4" />Create invitation</Button></DialogFooter></>}</DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={value => { setOpen(value); if (!value) setUrl(""); }}><DialogTrigger asChild><Button variant="outline" className="w-full sm:w-auto"><MailPlus className="mr-2 h-4 w-4" />Invite technical staff</Button></DialogTrigger><DialogContent className="sm:max-w-2xl"><DialogHeader><DialogTitle>Invite technical staff</DialogTitle><DialogDescription>Set the staff member's access before sharing their secure invitation link.</DialogDescription></DialogHeader>{url ? <div className="min-w-0 py-4"><div className="min-w-0 rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200 sm:p-5"><div className="flex items-center gap-2 font-semibold text-emerald-900"><Check className="h-4 w-4" />Invitation ready</div><p className="mt-2 break-words text-sm leading-6 text-emerald-800 [overflow-wrap:anywhere]">Send this link only to {email}. It expires in seven days.</p><div className="mt-4 flex min-w-0 flex-col gap-2 sm:flex-row"><Input readOnly value={url} className="min-w-0 bg-white" /><Button onClick={() => { navigator.clipboard.writeText(url); toast.success("Invitation link copied."); }}><Clipboard className="mr-2 h-4 w-4" />Copy</Button></div></div></div> : <><div className="grid gap-4 py-2 sm:grid-cols-2"><div className="space-y-2"><Label>Full name</Label><Input value={name} onChange={event => setName(event.target.value)} /></div><div className="space-y-2"><Label>Email</Label><Input type="email" value={email} onChange={event => setEmail(event.target.value)} /></div><div className="space-y-2 sm:col-span-2"><Label>Job title</Label><Input value={jobTitle} onChange={event => setJobTitle(event.target.value)} /></div><div className="sm:col-span-2"><p className="mb-3 text-sm font-semibold">Initial permissions</p><div className="grid gap-3 sm:grid-cols-2">{(Object.entries(PERMISSION_LABELS) as Array<[PermissionKey, readonly [string, string]]>).map(([key, [label, description]]) => <div key={key} className="flex min-w-0 items-start justify-between gap-3 rounded-xl border border-slate-100 p-4"><div className="min-w-0"><p className="break-words text-sm font-medium">{label}</p><p className="mt-1 break-words text-xs leading-5 text-slate-400">{description}</p></div><Switch className="shrink-0" checked={permissions[key]} onCheckedChange={checked => setPermissions(current => ({ ...current, [key]: checked }))} /></div>)}</div></div></div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={submit} disabled={create.isPending || !name || !email}><MailPlus className="mr-2 h-4 w-4" />Create invitation</Button></DialogFooter></>}</DialogContent></Dialog>;
 }

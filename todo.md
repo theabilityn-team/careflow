@@ -274,3 +274,20 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 | Verify 320/390px mobile and 1280px desktop controls and confirmations without deleting real library items | Completed |
 | Pass 144 tests, TypeScript, production build, live transaction rollback/history/parent-guard checks | Completed |
 | Remove all disposable product/template/history/audit fixtures and QA artifacts | Completed |
+
+
+## Completed update: Direct Super Admin staff account management — 2026-10-25
+
+| Requirement | Status |
+|---|---|
+| Create staff account directly with name, login email, password, job title, activation, and initial permissions | Completed |
+| Retain optional invitation flow as a separate secondary action | Completed |
+| Add Edit account for name/login email and Change password on every staff card | Completed |
+| Preserve staff user ID/openId, ownership/groups/history/access, and existing SMTP settings when editing identity | Completed |
+| Revoke target sessions/reset links on login-email or password change; clear password lockouts | Completed |
+| Reject duplicate/reserved emails and unauthorized/nonlocal/admin targets; return no credential secrets on success or failure | Completed |
+| Prepare disabled per-account SMTP defaults and safely revoke obsolete pending invitations | Completed |
+| Preserve Save access controls and revoke target sessions on account deactivation | Completed |
+| Provide mobile-safe scrollable forms with visible actions, password confirmation/show-hide, and pending/cancel protection | Completed |
+| Update English System guide and pass 157 tests, TypeScript, production build, live account/session/rollback QA | Completed |
+| Remove disposable accounts, credentials, permissions, SMTP profiles, sessions, reset requests, invitations, groups, audits, and captures | Completed |

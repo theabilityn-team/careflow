@@ -713,6 +713,188 @@ export async function upsertStaffPermissions(input: {
   });
 }
 
+async function getLockedLocalStaffAccount(tx: any, userId: number) {
+  const user = (await tx.select().from(users).where(eq(users.id, userId)).limit(1).for("update"))[0];
+  const credential = (await tx.select().from(localCredentials).where(eq(localCredentials.userId, userId)).limit(1).for("update"))[0];
+  if (!user || user.role !== "user" || !credential || user.loginMethod !== "local") return null;
+  return { user, credential };
+}
+
+export async function createDirectStaffAccount(input: {
+  openId: string;
+  name: string;
+  email: string;
+  identifier: string;
+  passwordHash: string;
+  passwordSalt: string;
+  jobTitle: string;
+  isActive: boolean;
+  permissions: string;
+  actorId: number;
+}) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const duplicate = (await tx.select({ userId: users.id }).from(users).leftJoin(localCredentials, eq(localCredentials.userId, users.id)).where(or(
+      eq(users.email, input.email),
+      eq(localCredentials.identifier, input.identifier),
+    )).limit(1).for("update"))[0];
+    if (duplicate) throw Object.assign(new Error("A staff account already exists for this email."), { code: "DUPLICATE_STAFF_ACCOUNT" });
+
+    const userResult = await tx.insert(users).values({
+      openId: input.openId,
+      name: input.name,
+      email: input.email,
+      loginMethod: "local",
+      role: "user",
+      lastSignedIn: new Date(),
+    });
+    const userId = Number(userResult[0].insertId);
+    await tx.insert(localCredentials).values({
+      userId,
+      identifier: input.identifier,
+      passwordHash: input.passwordHash,
+      passwordSalt: input.passwordSalt,
+      passwordUpdatedAt: Date.now(),
+    });
+    await tx.insert(staffPermissions).values({
+      userId,
+      jobTitle: input.jobTitle,
+      isActive: input.isActive,
+      permissions: input.permissions,
+    });
+    await tx.insert(staffSmtpSettings).values({
+      userId,
+      smtpHost: "",
+      smtpPort: 587,
+      smtpSecurity: "starttls",
+      smtpUsername: input.email,
+      smtpPassword: "",
+      fromEmail: input.email,
+      fromName: input.name,
+      isEnabled: false,
+    });
+    await tx.update(staffInvites).set({ status: "revoked" }).where(and(eq(sql`lower(trim(${staffInvites.email}))`, input.email), eq(staffInvites.status, "pending")));
+    await tx.insert(auditEvents).values({
+      leadId: null,
+      actorId: input.actorId,
+      action: "staff.account_created",
+      source: "staff",
+      detail: `Created technical staff account ${userId}.`,
+      changes: serializeAudit({ userId, email: input.email, fullName: input.name, jobTitle: input.jobTitle, isActive: input.isActive }),
+      snapshotBefore: null,
+      snapshotAfter: null,
+      occurredAt: Date.now(),
+    });
+    return userId;
+  });
+}
+
+export async function editStaffAccount(input: {
+  userId: number;
+  fullName: string;
+  email: string;
+  actorId: number;
+}) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const account = await getLockedLocalStaffAccount(tx, input.userId);
+    if (!account) return null;
+    const oldEmail = (account.user.email ?? account.credential.identifier).trim().toLowerCase();
+    const emailChanged = oldEmail !== input.email;
+    if (emailChanged) {
+      const duplicate = (await tx.select({ userId: users.id }).from(users).leftJoin(localCredentials, eq(localCredentials.userId, users.id)).where(and(
+        or(eq(users.email, input.email), eq(localCredentials.identifier, input.email)),
+        ne(users.id, input.userId),
+      )).limit(1).for("update"))[0];
+      if (duplicate) throw Object.assign(new Error("A staff account already exists for this email."), { code: "DUPLICATE_STAFF_ACCOUNT" });
+    }
+    await tx.update(users).set({ name: input.fullName, email: input.email }).where(eq(users.id, input.userId));
+    if (emailChanged) {
+      await tx.update(localCredentials).set({ identifier: input.email }).where(eq(localCredentials.userId, input.userId));
+      await tx.delete(authSessions).where(eq(authSessions.userId, input.userId));
+      await tx.update(passwordResetRequests).set({ status: "expired", tokenHash: null, expiresAt: null }).where(and(
+        eq(passwordResetRequests.userId, input.userId),
+        inArray(passwordResetRequests.status, ["pending", "ready"]),
+      ));
+      await tx.update(staffInvites).set({ status: "revoked" }).where(and(
+        inArray(staffInvites.email, [oldEmail, input.email]),
+        eq(staffInvites.status, "pending"),
+      ));
+    }
+    await tx.insert(auditEvents).values({
+      leadId: null,
+      actorId: input.actorId,
+      action: "staff.account_edited",
+      source: "staff",
+      detail: `Updated identity for technical staff account ${input.userId}.`,
+      changes: serializeAudit({ userId: input.userId, fullName: input.fullName, emailChanged }),
+      snapshotBefore: null,
+      snapshotAfter: null,
+      occurredAt: Date.now(),
+    });
+    return { success: true as const, emailChanged };
+  });
+}
+
+export async function setStaffAccountPassword(input: {
+  userId: number;
+  passwordHash: string;
+  passwordSalt: string;
+  actorId: number;
+}) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const account = await getLockedLocalStaffAccount(tx, input.userId);
+    if (!account) return null;
+    const now = Date.now();
+    await tx.update(localCredentials).set({
+      passwordHash: input.passwordHash,
+      passwordSalt: input.passwordSalt,
+      passwordUpdatedAt: now,
+      failedLoginCount: 0,
+      lockedUntil: null,
+    }).where(eq(localCredentials.userId, input.userId));
+    await tx.delete(authSessions).where(eq(authSessions.userId, input.userId));
+    await tx.update(passwordResetRequests).set({ status: "expired", tokenHash: null, expiresAt: null }).where(and(
+      eq(passwordResetRequests.userId, input.userId),
+      inArray(passwordResetRequests.status, ["pending", "ready"]),
+    ));
+    await tx.insert(auditEvents).values({
+      leadId: null,
+      actorId: input.actorId,
+      action: "staff.account_password_changed",
+      source: "staff",
+      detail: `Changed password for technical staff account ${input.userId}.`,
+      changes: serializeAudit({ userId: input.userId }),
+      snapshotBefore: null,
+      snapshotAfter: null,
+      occurredAt: now,
+    });
+    return { success: true as const };
+  });
+}
+
+export async function updateStaffAccess(input: {
+  userId: number;
+  jobTitle: string;
+  isActive: boolean;
+  permissions: string;
+}) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const account = await getLockedLocalStaffAccount(tx, input.userId);
+    if (!account) return false;
+    const existing = (await tx.select().from(staffPermissions).where(eq(staffPermissions.userId, input.userId)).limit(1).for("update"))[0];
+    if (!existing) {
+      await tx.insert(staffPermissions).values(input);
+    } else {
+      await tx.update(staffPermissions).set({ jobTitle: input.jobTitle, isActive: input.isActive, permissions: input.permissions }).where(eq(staffPermissions.userId, input.userId));
+    }
+    if (existing?.isActive && !input.isActive) await tx.delete(authSessions).where(eq(authSessions.userId, input.userId));
+    return true;
+  });
+}
+
 export async function createStaffInvite(input: typeof staffInvites.$inferInsert) {
   const db = await requireDb();
   const result = await db.insert(staffInvites).values(input);

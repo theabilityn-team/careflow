@@ -6,10 +6,27 @@ import { adminProcedure, protectedProcedure, publicProcedure, router } from "../
 import { DEFAULT_TECHNICAL_PERMISSIONS, normalizePermissions, PERMISSION_KEYS } from "../permissions";
 import { createLoginSession, hashPassword } from "../auth";
 import { isPasswordResetUsable, staffPasswordSchema } from "../passwordSecurity";
+import { SUPER_ADMIN_EMAIL } from "@shared/const";
 
 const permissionShape = Object.fromEntries(PERMISSION_KEYS.map(key => [key, z.boolean()])) as Record<(typeof PERMISSION_KEYS)[number], z.ZodBoolean>;
 const permissionsSchema = z.object(permissionShape);
 const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
+const normalizedEmailSchema = z.string().trim().toLowerCase().email().max(320);
+const accountNameSchema = z.string().trim().min(2).max(160);
+
+function isDuplicateError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const value = error as { code?: unknown; cause?: unknown; errno?: unknown; sqlState?: unknown };
+  return value.code === "DUPLICATE_STAFF_ACCOUNT" || value.code === "ER_DUP_ENTRY" || value.errno === 1062 || isDuplicateError(value.cause);
+}
+
+function accountManagementError(error: unknown): never {
+  if (isDuplicateError(error)) {
+    throw new TRPCError({ code: "CONFLICT", message: "A staff account already exists for this email." });
+  }
+  if (error instanceof TRPCError) throw error;
+  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The staff account could not be saved. Please try again." });
+}
 
 export const staffRouter = router({
   list: adminProcedure.query(async () => {
@@ -27,8 +44,66 @@ export const staffRouter = router({
     .input(z.object({ userId: z.number().int().positive(), jobTitle: z.string().trim().min(2).max(120), isActive: z.boolean(), permissions: permissionsSchema }))
     .mutation(async ({ ctx, input }) => {
       if (input.userId === ctx.user.id && !input.isActive) throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot deactivate your own account." });
-      await db.upsertStaffPermissions({ ...input, permissions: JSON.stringify(input.permissions) });
+      const updated = await db.updateStaffAccess({ ...input, permissions: JSON.stringify(input.permissions) });
+      if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Technical staff account not found." });
       return { success: true };
+    }),
+
+  createAccount: adminProcedure
+    .input(z.object({
+      fullName: accountNameSchema,
+      email: normalizedEmailSchema,
+      password: staffPasswordSchema,
+      jobTitle: z.string().trim().min(2).max(120),
+      isActive: z.boolean(),
+      permissions: permissionsSchema,
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.email === SUPER_ADMIN_EMAIL) throw new TRPCError({ code: "CONFLICT", message: "The Super Admin email is reserved." });
+      const { hash, salt } = await hashPassword(input.password);
+      try {
+        const userId = await db.createDirectStaffAccount({
+          openId: `local:${randomBytes(16).toString("hex")}`,
+          name: input.fullName,
+          email: input.email,
+          identifier: input.email,
+          passwordHash: hash,
+          passwordSalt: salt,
+          jobTitle: input.jobTitle,
+          isActive: input.isActive,
+          permissions: JSON.stringify(input.permissions),
+          actorId: ctx.user.id,
+        });
+        return { userId };
+      } catch (error) {
+        return accountManagementError(error);
+      }
+    }),
+
+  editAccount: adminProcedure
+    .input(z.object({ userId: z.number().int().positive(), fullName: accountNameSchema, email: normalizedEmailSchema }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.email === SUPER_ADMIN_EMAIL) throw new TRPCError({ code: "CONFLICT", message: "The Super Admin email is reserved." });
+      try {
+        const result = await db.editStaffAccount({ ...input, actorId: ctx.user.id });
+        if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Technical staff account not found." });
+        return result;
+      } catch (error) {
+        return accountManagementError(error);
+      }
+    }),
+
+  setAccountPassword: adminProcedure
+    .input(z.object({ userId: z.number().int().positive(), password: staffPasswordSchema }))
+    .mutation(async ({ ctx, input }) => {
+      const { hash, salt } = await hashPassword(input.password);
+      try {
+        const result = await db.setStaffAccountPassword({ userId: input.userId, passwordHash: hash, passwordSalt: salt, actorId: ctx.user.id });
+        if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Technical staff account not found." });
+        return result;
+      } catch (error) {
+        return accountManagementError(error);
+      }
     }),
 
   createInvite: adminProcedure
