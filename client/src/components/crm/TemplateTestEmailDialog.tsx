@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SelectIdentity } from "@/components/crm/SelectIdentity";
 import { Loader2, Mail, Send } from "lucide-react";
 
 export type TestEmailTemplate = { id: number; name: string; contentMode: "plain" | "html" };
@@ -45,6 +46,7 @@ export function TemplateTestEmailDialog({
   sending,
 }: Props) {
   const hasActiveSender = accounts?.some(account => account.isActive && account.smtpEnabled);
+  const selectedSender = accounts?.find(account => String(account.userId) === senderUserId);
 
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="bottom-0 left-0 top-auto flex max-h-[94dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-b-none rounded-t-[26px] border-x-0 border-b-0 p-0 sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[90vh] sm:w-[calc(100%-2rem)] sm:max-w-xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border">
@@ -63,12 +65,12 @@ export function TemplateTestEmailDialog({
         <div className="min-w-0 space-y-2">
           <Label>SMTP sender *</Label>
           <Select value={senderUserId} onValueChange={onSenderChange}>
-            <SelectTrigger className="h-11 w-full min-w-0 overflow-hidden bg-white text-left [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate">
-              <SelectValue placeholder={accountsLoading ? "Loading sender accounts…" : "Select sender account"} />
+            <SelectTrigger className="h-auto min-h-11 w-full min-w-0 bg-white text-left">
+              <SelectValue placeholder={accountsLoading ? "Loading sender accounts…" : "Select sender account"}>{selectedSender && <SelectIdentity name={selectedSender.name} email={`${selectedSender.smtpFromEmail || selectedSender.accountEmail || "No sender email"}${!selectedSender.isActive ? " · inactive" : !selectedSender.smtpEnabled ? " · disabled" : selectedSender.smtpVerifiedAt ? " · verified" : " · not verified"}`} />}</SelectValue>
             </SelectTrigger>
             <SelectContent align="start" className="max-w-[calc(100vw-2rem)] sm:max-w-lg">
-              {accounts?.map(account => <SelectItem key={account.userId} value={String(account.userId)} disabled={!account.isActive || !account.smtpEnabled} className="max-w-[calc(100vw-3rem)] sm:max-w-lg">
-                <span className="block min-w-0 truncate">{account.name} · {account.smtpFromEmail || account.accountEmail || "No sender email"}{!account.isActive ? " · inactive" : !account.smtpEnabled ? " · disabled" : account.smtpVerifiedAt ? " · verified" : " · not verified"}</span>
+              {accounts?.map(account => <SelectItem key={account.userId} value={String(account.userId)} textValue={`${account.name} ${account.smtpFromEmail || account.accountEmail || "No sender email"}`} disabled={!account.isActive || !account.smtpEnabled} className="sm:max-w-lg">
+                <SelectIdentity name={account.name} email={`${account.smtpFromEmail || account.accountEmail || "No sender email"}${!account.isActive ? " · inactive" : !account.smtpEnabled ? " · disabled" : account.smtpVerifiedAt ? " · verified" : " · not verified"}`} />
               </SelectItem>)}
             </SelectContent>
           </Select>

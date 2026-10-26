@@ -128,6 +128,23 @@ function orderChanges(before: Partial<typeof salesOrders.$inferSelect> | null, a
     .map(field => ({ field, before: previous[field as keyof typeof previous] ?? null, after: next[field as keyof typeof next] ?? null }));
 }
 
+function customerDeletionReference(customer: { id: number; leadId: number }, deletedOrderCount: number) {
+  return { customerId: customer.id, leadId: customer.leadId, deletedOrderCount };
+}
+
+function orderDeletionReference(order: Partial<typeof salesOrders.$inferSelect>) {
+  return {
+    orderId: order.id ?? null,
+    customerId: order.customerId ?? null,
+    reference: orderReference(order.id ?? 0, order.externalReference ?? null),
+    externalReference: order.externalReference ?? null,
+  };
+}
+
+function deletionChange(field: string, before: unknown) {
+  return [{ field, before, after: null }];
+}
+
 function customerProjection(viewer?: SalesReadViewer) {
   return {
     id: customers.id,
@@ -436,10 +453,21 @@ export async function updateSalesOrder(input: OrderWrite & { id: number; actorId
   if (!db) throw new Error("Database is not available");
   totalCents(input.quantity, input.unitPriceCents);
   return db.transaction(async tx => {
+    const initial = (await tx.select({ id: salesOrders.id, customerId: salesOrders.customerId }).from(salesOrders).where(eq(salesOrders.id, input.id)).limit(1))[0];
+    if (!initial) return null;
+    const parentIds = Array.from(new Set([initial.customerId, input.customerId])).sort((a, b) => a - b);
+    const lockedCustomers = new Map<number, { id: number }>();
+    for (const parentId of parentIds) {
+      const customer = (await tx.select({ id: customers.id }).from(customers).where(eq(customers.id, parentId)).limit(1).for("update"))[0];
+      if (customer) lockedCustomers.set(parentId, customer);
+    }
+    if (!lockedCustomers.has(initial.customerId)) return null;
+    if (!lockedCustomers.has(input.customerId)) throw Object.assign(new Error("Customer not found."), { code: "CUSTOMER_NOT_FOUND" });
     const before = (await tx.select().from(salesOrders).where(eq(salesOrders.id, input.id)).limit(1).for("update"))[0];
     if (!before) return null;
-    const customer = (await tx.select({ id: customers.id }).from(customers).where(eq(customers.id, input.customerId)).limit(1))[0];
-    if (!customer) throw Object.assign(new Error("Customer not found."), { code: "CUSTOMER_NOT_FOUND" });
+    if (before.customerId !== initial.customerId) {
+      throw Object.assign(new Error("The order changed customer while it was being edited."), { code: "CONFLICT" });
+    }
     const ownerId = input.ownerUserId ?? before.ownerUserId;
     let ownerName = before.ownerName;
     if (ownerId !== before.ownerUserId) {
@@ -494,6 +522,79 @@ export async function updateSalesOrder(input: OrderWrite & { id: number; actorId
       }));
     }
     return { orderId: input.id, changed: true };
+  });
+}
+
+export async function deleteSalesCustomer(input: { id: number; actorId: number; actorName: string | null; actorEmail: string | null; expectedOrderCount?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  return db.transaction(async tx => {
+    const customer = (await tx.select({ id: customers.id, leadId: customers.leadId }).from(customers)
+      .where(eq(customers.id, input.id)).limit(1).for("update"))[0];
+    if (!customer) return null;
+    const orders = await tx.select().from(salesOrders).where(eq(salesOrders.customerId, customer.id)).orderBy(asc(salesOrders.id)).for("update");
+    if (input.expectedOrderCount !== undefined && input.expectedOrderCount !== orders.length) {
+      throw Object.assign(new Error("The customer order count changed."), { code: "CONFLICT" });
+    }
+    const customerReference = customerDeletionReference(customer, orders.length);
+    await tx.insert(auditEvents).values(enrichAuditValues({
+      leadId: customer.leadId,
+      actorId: input.actorId,
+      action: "customer.deleted",
+      source: "manual",
+      detail: `Deleted customer #${customer.id} and ${orders.length} order${orders.length === 1 ? "" : "s"}; preserved lead #${customer.leadId}.`,
+      changes: serializeAudit(deletionChange("customer", customerReference)),
+      snapshotBefore: serializeAudit(customerReference),
+      snapshotAfter: null,
+      occurredAt: Date.now(),
+    }));
+    for (const order of orders) {
+      const reference = orderDeletionReference(order);
+      await tx.insert(auditEvents).values(enrichAuditValues({
+        leadId: customer.leadId,
+        actorId: input.actorId,
+        action: "order.deleted",
+        source: "manual",
+        detail: `Deleted order ${reference.reference} with customer #${customer.id}; preserved lead #${customer.leadId}.`,
+        changes: serializeAudit(deletionChange("order", reference)),
+        snapshotBefore: serializeAudit(reference),
+        snapshotAfter: null,
+        occurredAt: Date.now(),
+      }));
+    }
+    if (orders.length) await tx.delete(salesOrders).where(eq(salesOrders.customerId, customer.id));
+    await tx.delete(customers).where(eq(customers.id, customer.id));
+    return { customerId: customer.id, leadId: customer.leadId, deletedOrderCount: orders.length };
+  });
+}
+
+export async function deleteSalesOrder(input: { id: number; actorId: number; actorName: string | null; actorEmail: string | null }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  return db.transaction(async tx => {
+    const initial = (await tx.select({ id: salesOrders.id, customerId: salesOrders.customerId }).from(salesOrders)
+      .where(eq(salesOrders.id, input.id)).limit(1))[0];
+    if (!initial) return null;
+    const customer = (await tx.select({ id: customers.id, leadId: customers.leadId }).from(customers)
+      .where(eq(customers.id, initial.customerId)).limit(1).for("update"))[0];
+    if (!customer) return null;
+    const order = (await tx.select().from(salesOrders).where(eq(salesOrders.id, input.id)).limit(1).for("update"))[0];
+    if (!order) return null;
+    if (order.customerId !== customer.id) throw Object.assign(new Error("The order changed customer."), { code: "CONFLICT" });
+    const reference = orderDeletionReference(order);
+    await tx.insert(auditEvents).values(enrichAuditValues({
+      leadId: customer.leadId,
+      actorId: input.actorId,
+      action: "order.deleted",
+      source: "manual",
+      detail: `Deleted order ${reference.reference} from customer #${customer.id}; preserved lead #${customer.leadId}.`,
+      changes: serializeAudit(deletionChange("order", reference)),
+      snapshotBefore: serializeAudit(reference),
+      snapshotAfter: null,
+      occurredAt: Date.now(),
+    }));
+    await tx.delete(salesOrders).where(eq(salesOrders.id, input.id));
+    return { orderId: order.id, customerId: customer.id };
   });
 }
 

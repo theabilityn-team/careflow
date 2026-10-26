@@ -10,7 +10,7 @@ const positiveEpoch = z.number().int().positive().max(MAX_EPOCH_MS);
 const nonnegativeCents = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const quantity = z.number().int().positive().max(1_000_000);
 const customerId = z.number().int().positive();
-const orderId = z.number().int().positive();
+const orderId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const currency = z.enum(db.ORDER_CURRENCIES);
 const status = z.enum(db.ORDER_STATUSES);
 const pageInput = {
@@ -64,8 +64,16 @@ function mapSalesError(error: unknown): never {
   const code = (error as { code?: unknown } | null)?.code;
   if (code === "INVALID_OWNER") throw new TRPCError({ code: "BAD_REQUEST", message: "Select an active credited staff member." });
   if (code === "CUSTOMER_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Customer not found." });
+  if (code === "CONFLICT") throw new TRPCError({ code: "CONFLICT", message: "This order changed while it was being saved. Refresh and try again." });
   if (error instanceof TRPCError) throw error;
   throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The order could not be saved. Please try again." });
+}
+
+function mapOrderDeleteError(error: unknown): never {
+  if (error instanceof TRPCError) throw error;
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "CONFLICT") throw new TRPCError({ code: "CONFLICT", message: "This order changed while it was being deleted. Refresh and try again." });
+  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The order could not be deleted. Please try again." });
 }
 
 export const ordersRouter = router({
@@ -118,6 +126,24 @@ export const ordersRouter = router({
         return { orderId: result.orderId };
       } catch (error) {
         return mapSalesError(error);
+      }
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: orderId }))
+    .mutation(async ({ ctx, input }) => {
+      await assertSalesAccess(ctx.user);
+      try {
+        const result = await db.deleteSalesOrder({
+          id: input.id,
+          actorId: ctx.user.id,
+          actorName: ctx.user.name,
+          actorEmail: ctx.user.email,
+        });
+        if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Order not found." });
+        return result;
+      } catch (error) {
+        return mapOrderDeleteError(error);
       }
     }),
 

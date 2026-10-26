@@ -16,9 +16,10 @@ vi.mock("../client/src/lib/sales", async importOriginal => {
   const customer = { id: 1, leadId: 12, fullName: "Own Customer", firstName: "Own", lastName: "Customer", email: "own@example.invalid", phone: null, stateCode: "FL", customerSince: 1_700_000_000_000, notes: null, createdBy: 33, createdByName: "Leader", createdAt: new Date(), updatedAt: new Date(), orderCount: 1, leadStatus: "customer" };
   const order = { id: 1, customerId: 1, customerName: customer.fullName, leadId: 12, reference: "QA-OWN", externalReference: "QA-OWN", productName: "Own Product", quantity: 1, unitPriceCents: 1000, totalCents: 1000, currency: "USD", status: "paid", orderedAt: 1_700_000_000_000, ownerUserId: 17, ownerName: "Me", createdBy: 33, createdByName: "Leader", updatedBy: 33, notes: null, createdAt: new Date(), updatedAt: new Date() };
   return { ...actual, salesTrpc: {
+    useUtils: () => Object.fromEntries(["customers", "orders", "leads", "dashboard"].map(key => [key, { invalidate: vi.fn(async () => undefined) }])),
     dashboard: { access: { useQuery: () => ({ data: mocks.access, isLoading: false }) } },
-    customers: { list: { useQuery: () => ({ data: { items: [customer], total: 1, page: 1, pageSize: 25, totalPages: 1 }, isLoading: false }) }, get: { useQuery: () => ({ data: { customer, orders: [order], canOpenLead: false }, isLoading: false, refetch: vi.fn() }) }, choices: { useQuery: () => ({ data: [customer] }) } },
-    orders: { owners: { useQuery: mocks.ownersQuery }, list: { useQuery: () => ({ data: { items: [order], total: 1, page: 1, pageSize: 25, totalPages: 1 }, isLoading: false, refetch: vi.fn() }) }, get: { useQuery: () => ({ data: null, isLoading: false }) } },
+    customers: { delete: { useMutation: () => ({ mutateAsync: vi.fn() }) }, list: { useQuery: () => ({ data: { items: [customer], total: 1, page: 1, pageSize: 25, totalPages: 1 }, isLoading: false }) }, get: { useQuery: () => ({ data: { customer, orders: [order], canOpenLead: false }, isLoading: false, refetch: vi.fn() }) }, choices: { useQuery: () => ({ data: [customer] }) } },
+    orders: { delete: { useMutation: () => ({ mutateAsync: vi.fn() }) }, owners: { useQuery: mocks.ownersQuery }, list: { useQuery: () => ({ data: { items: [order], total: 1, page: 1, pageSize: 25, totalPages: 1 }, isLoading: false, refetch: vi.fn() }) }, get: { useQuery: () => ({ data: null, isLoading: false }) } },
   } };
 });
 import Customers from "../client/src/pages/Customers";
@@ -33,6 +34,7 @@ describe("ordinary staff read-only sales UI", () => {
     expect(html).toContain("Own Customer");
     expect(html).toContain("Read-only access");
     expect(html).not.toContain("Customers are unavailable");
+    expect(html).not.toContain("Delete customer");
   });
   it("renders own orders with no Add/Edit action or staff owner selector", () => {
     const html = renderToStaticMarkup(React.createElement(Orders));
@@ -40,6 +42,7 @@ describe("ordinary staff read-only sales UI", () => {
     expect(html).toContain("Read-only access");
     expect(html).not.toContain("Add order");
     expect(html).not.toContain(">Edit<");
+    expect(html).not.toContain("Delete order");
     expect(html).not.toContain("All credited owners");
     expect(mocks.ownersQuery).toHaveBeenCalledWith(undefined, { enabled: false });
   });
@@ -57,5 +60,7 @@ describe("ordinary staff read-only sales UI", () => {
     expect(html).not.toContain("Open lead");
     expect(html).not.toContain("Add order");
     expect(html).toContain("orders credited to you");
+    expect(html).not.toContain("Delete customer");
+    expect(html).not.toContain("Delete order");
   });
 });

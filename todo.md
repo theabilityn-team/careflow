@@ -340,3 +340,14 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Added Purchased from/to and Clear dates. Filter uses orderedAt, includes the full Eastern day at both bounds, allows open bounds, resets pagination, and suppresses stale rows for invalid range.
 - [x] Shared client/server calendar validation and DST-aware inclusive SQL bounds preserve existing owner/customer/status/search ACL and count/item query parity.
 - [x] Verified 225 tests, TypeScript, production build, read-only live SQL/API parity for four ranges, and actual component rendering at 320/360/390px and desktop. No business records, credentials, emails, or orders were modified; in-memory QA render artifacts removed.
+
+
+## Completed update: Sales deletion and systemic selector readability — 2026-10-26
+- [x] Leader and Super Admin can delete Customers and individual Orders from desktop/mobile lists and customer detail; ordinary staff retain read-only sales UI/API.
+- [x] Customer confirmation states the exact associated order count and cascades all orders, while original lead/status/ownership/documents/communications/follow-ups remain unchanged. Individual deletion preserves customer/siblings.
+- [x] Transactional locks, server provenance, retained audit history, stale-count conflict, safe errors, and parent locking prevent partial deletion/orphan order races; leads can be promoted again.
+- [x] Pending Cancel/Confirm disabled, synchronous double-click guard, no nested card buttons, inline retry errors, and list/detail cache refresh are implemented.
+- [x] Shared Select defaults to full width at every breakpoint, grows vertically, wraps all option text/email, and lets popups grow within viewport. Removed local fixed numeric trigger heights; intentional currency/pager widths remain.
+- [x] Stacked name/email identities in Mails, Order customer, SMTP account, and template test selectors; removed product/template truncation in lead email.
+- [x] 236 tests, TypeScript, production build, >100-order live cascade/rollback/denial/preservation/re-promotion, fake-transport actual Delete success/pending/single-submit, and 320/360/390/1280px dropdown checks passed.
+- [x] Disposable records and browser/render artifacts cleaned. No real customer/order/lead was deleted; no email sent.

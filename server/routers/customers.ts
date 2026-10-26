@@ -10,7 +10,7 @@ const pageInput = {
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(25),
 };
-const customerId = z.number().int().positive();
+const customerId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const stateCode = z.string().trim().length(2).toUpperCase();
 
 async function requireSales(user: Parameters<typeof assertSalesAccess>[0]) {
@@ -24,6 +24,13 @@ async function requireSalesRead(user: Parameters<typeof assertSalesReadAccess>[0
 function mapSalesError(error: unknown): never {
   if (error instanceof TRPCError) throw error;
   throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The customer could not be saved. Please try again." });
+}
+
+function mapCustomerDeleteError(error: unknown): never {
+  if (error instanceof TRPCError) throw error;
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "CONFLICT") throw new TRPCError({ code: "CONFLICT", message: "The customer order count changed. Refresh and try again." });
+  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The customer could not be deleted. Please try again." });
 }
 
 export const customersRouter = router({
@@ -73,6 +80,25 @@ export const customersRouter = router({
         return result;
       } catch (error) {
         return mapSalesError(error);
+      }
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: customerId, expectedOrderCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      await requireSales(ctx.user);
+      try {
+        const result = await db.deleteSalesCustomer({
+          id: input.id,
+          expectedOrderCount: input.expectedOrderCount,
+          actorId: ctx.user.id,
+          actorName: ctx.user.name,
+          actorEmail: ctx.user.email,
+        });
+        if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Customer not found." });
+        return result;
+      } catch (error) {
+        return mapCustomerDeleteError(error);
       }
     }),
 

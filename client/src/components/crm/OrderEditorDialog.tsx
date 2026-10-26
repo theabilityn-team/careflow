@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SelectIdentity } from "@/components/crm/SelectIdentity";
 import { Textarea } from "@/components/ui/textarea";
 import { salesTrpc, type CustomerChoice, type OrderDraft, type OrderOwner, type OrderRow, ORDER_STATUSES, SALES_CURRENCIES, draftFromOrder, errorMessage, orderPayloadFromDraft, validateOrderDraft, easternDateTimeInput, salesAccessAllowed, type OrderStatus, type SalesCurrency } from "@/lib/sales";
 import { Loader2, Pencil, Plus, Search } from "lucide-react";
@@ -93,9 +94,9 @@ export default function OrderEditorDialog({ order, customer, owners: ownersProp,
       <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-4 py-4 sm:grid-cols-2 sm:px-6">
         <div className="space-y-2 sm:col-span-2">
           <Label>Customer *</Label>
-          {customer ? <div className="rounded-lg border min-w-0 break-words [overflow-wrap:anywhere] bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-800">{customer.fullName}{customer.email ? ` · ${customer.email}` : ""}</div> : <>
+          {customer ? <div className="min-w-0 rounded-lg border bg-slate-50 px-3 py-2.5 text-sm text-slate-800"><SelectIdentity name={customer.fullName} email={customer.email} /></div> : <>
             <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input value={customerSearch} onChange={event => setCustomerSearch(event.target.value)} placeholder="Search customers by name or email" className="pl-9" /></div>
-            <Select value={form.customerId} onValueChange={value => update("customerId", value)}><SelectTrigger className="w-full sm:w-full"><SelectValue placeholder={choicesFetching ? "Loading customers…" : "Select customer"} /></SelectTrigger><SelectContent>{choices.map((item: CustomerChoice) => <SelectItem key={item.id} value={String(item.id)}>{item.fullName}{item.email ? ` · ${item.email}` : ""}</SelectItem>)}</SelectContent></Select>
+            <Select value={form.customerId} onValueChange={value => update("customerId", value)}><SelectTrigger className="w-full sm:w-full"><SelectValue placeholder={choicesFetching ? "Loading customers…" : "Select customer"}>{selectedCustomer && <SelectIdentity name={selectedCustomer.fullName} email={selectedCustomer.email} />}</SelectValue></SelectTrigger><SelectContent align="start">{choices.map((item: CustomerChoice) => <SelectItem key={item.id} value={String(item.id)} textValue={`${item.fullName} ${item.email || ""}`}><SelectIdentity name={item.fullName} email={item.email} /></SelectItem>)}</SelectContent></Select>
           </>}
         </div>
         <div className="space-y-2"><Label>Product or service *</Label><Input value={form.productName} onChange={event => update("productName", event.target.value)} maxLength={160} /></div>
