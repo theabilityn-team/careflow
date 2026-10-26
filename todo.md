@@ -351,3 +351,14 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Stacked name/email identities in Mails, Order customer, SMTP account, and template test selectors; removed product/template truncation in lead email.
 - [x] 236 tests, TypeScript, production build, >100-order live cascade/rollback/denial/preservation/re-promotion, fake-transport actual Delete success/pending/single-submit, and 320/360/390/1280px dropdown checks passed.
 - [x] Disposable records and browser/render artifacts cleaned. No real customer/order/lead was deleted; no email sent.
+
+
+## Completed update: Direct email and CC/BCC — 2026-10-26
+- [x] Mails offers Choose lead or Enter email with optional recipient name; direct sending never creates, guesses, or links a lead, even when the address matches one.
+- [x] Mails and Lead-level Send email have optional CC/BCC, comma/semicolon parsing, 20-address limits, strict CR/LF validation, and case-insensitive To → CC → BCC deduplication.
+- [x] Verified assigned SMTP, active product/HTML template permission, global frame, sanitization, tracking, and sender ownership remain intact. Empty optional copies preserve normal sending.
+- [x] Migration 0022 makes only outbound leadId nullable and adds nullable CC/BCC JSON storage. History distinguishes Direct email and shows permitted copy recipients.
+- [x] BCC is delivered exclusively in SMTP envelope, never visible MIME headers/body/communication/audit/error strings; APIs return BCC only to the actual sender or Super Admin, including cross-staff lead history.
+- [x] Responsive expanded fields, inline invalid-recipient feedback, guarded single-submit, safe draft cleanup, and fixed lead composer footer verified using real components with an entirely mocked transport.
+- [x] Shared notice clarifies message-level engagement aggregates To/CC/BCC rather than identifying the opener.
+- [x] 247 tests, TypeScript, production build, real database direct/linked storage + BCC privacy with mocked SMTP, and no-network MIME test passed. Temporary accounts/lead/emails/scripts/harness/captures removed; no real email sent.

@@ -1,3 +1,4 @@
+import { hydrateOutboundRecipients } from "./outboundRecipients";
 import { enrichAuditValues } from "./auditIdentity";
 import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
@@ -611,8 +612,11 @@ export async function recordOutboundEmailClick(trackingToken: string, occurredAt
 export async function listOutboundEmails(viewer: { userId: number; isSuperAdmin: boolean }) {
   const db = await requireDb();
   const visibility = viewer.isSuperAdmin ? undefined : eq(outboundEmails.senderUserId, viewer.userId);
-  return db.select({
+  const messages = await db.select({
     id: outboundEmails.id,
+    senderUserId: outboundEmails.senderUserId,
+    ccEmails: outboundEmails.ccEmails,
+    bccEmails: outboundEmails.bccEmails,
     leadId: outboundEmails.leadId,
     recipientEmail: outboundEmails.recipientEmail,
     recipientName: outboundEmails.recipientName,
@@ -636,12 +640,14 @@ export async function listOutboundEmails(viewer: { userId: number; isSuperAdmin:
     .where(visibility)
     .orderBy(desc(outboundEmails.sentAt))
     .limit(200);
+  return messages.map(hydrateOutboundRecipients);
 }
 
 export async function getOutboundEmail(id: number, viewer: { userId: number; isSuperAdmin: boolean }) {
   const db = await requireDb();
   const visibility = viewer.isSuperAdmin ? undefined : eq(outboundEmails.senderUserId, viewer.userId);
-  return (await db.select().from(outboundEmails).where(and(eq(outboundEmails.id, id), visibility)).limit(1))[0];
+  const row = (await db.select().from(outboundEmails).where(and(eq(outboundEmails.id, id), visibility)).limit(1))[0];
+  return row ? hydrateOutboundRecipients(row) : undefined;
 }
 
 export async function listLeadOutboundEmails(leadId: number) {
@@ -651,6 +657,8 @@ export async function listLeadOutboundEmails(leadId: number) {
       id: outboundEmails.id,
       leadId: outboundEmails.leadId,
       senderUserId: outboundEmails.senderUserId,
+      ccEmails: outboundEmails.ccEmails,
+      bccEmails: outboundEmails.bccEmails,
       recipientEmail: outboundEmails.recipientEmail,
       recipientName: outboundEmails.recipientName,
       fromEmail: outboundEmails.fromEmail,
@@ -688,19 +696,20 @@ export async function listLeadOutboundEmails(leadId: number) {
     failedCount: Number(summary?.failed ?? 0),
     openedCount: Number(summary?.opened ?? 0),
     clickedCount: Number(summary?.clicked ?? 0),
-    messages,
+    messages: messages.map(hydrateOutboundRecipients),
   };
 }
 
 export async function getLeadOutboundEmail(id: number, leadId: number) {
   const db = await requireDb();
-  return (await db.select({
+  const row = (await db.select({
     ...getTableColumns(outboundEmails),
     senderName: sql<string>`coalesce(${users.name}, case when ${outboundEmails.senderUserId} = ${SYSTEM_ADMIN_ACTOR_ID} then 'Super Administrator' else 'CareFlow user' end)`,
   }).from(outboundEmails)
     .leftJoin(users, eq(users.id, outboundEmails.senderUserId))
     .where(and(eq(outboundEmails.id, id), eq(outboundEmails.leadId, leadId)))
     .limit(1))[0];
+  return row ? hydrateOutboundRecipients(row) : undefined;
 }
 
 export async function upsertStaffPermissions(input: {

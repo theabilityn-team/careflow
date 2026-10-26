@@ -1,3 +1,5 @@
+import { EmailCopyRecipients, EmailRecipientsSummary } from "@/components/crm/EmailCopyRecipients";
+import { normalizeMailRecipients, parseEmailAddressList } from "@shared/emailRecipients";
 import { EmptyState, PageLoading } from "@/components/crm/CrmUi";
 import { EmailEngagementBadges, EmailEngagementDetails, EmailEngagementNotice } from "@/components/crm/EmailEngagement";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -12,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { formatEasternDate } from "@shared/time";
 import { AlertTriangle, CheckCircle2, Code2, Eye, FileCode2, Library, Loader2, Mail, Send } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const STARTER_SUBJECT = "A message from {{senderName}}";
@@ -36,6 +38,8 @@ type LeadEmailHistoryData = {
     senderName: string;
     fromEmail: string;
     recipientEmail: string;
+    ccEmails?: string[];
+    bccEmails?: string[];
     productName: string | null;
     templateName: string | null;
     subject: string;
@@ -63,6 +67,10 @@ export function LeadEmailComposerDialog({ lead, canUseTemplates, onSent }: { lea
   const [bodyText, setBodyText] = useState(STARTER_BODY);
   const [bodyHtml, setBodyHtml] = useState("");
   const [previewHtml, setPreviewHtml] = useState(true);
+  const [cc, setCc] = useState("");
+  const [bcc, setBcc] = useState("");
+  const [recipientError, setRecipientError] = useState<string | null>(null);
+  const sending = useRef(false);
   useEffect(() => { if (!canUseTemplates) { setProductId(""); setMessageTemplateId(""); setSubject(STARTER_SUBJECT); setContentMode("plain"); setBodyText(STARTER_BODY); setBodyHtml(""); } }, [canUseTemplates]);
   const selectedProduct = library.data?.find(item => String(item.id) === productId);
   const selectedTemplate = selectedProduct?.templates.find(item => String(item.id) === messageTemplateId);
@@ -75,6 +83,7 @@ export function LeadEmailComposerDialog({ lead, canUseTemplates, onSent }: { lea
     setBodyText(STARTER_BODY);
     setBodyHtml("");
     setPreviewHtml(true);
+    setCc(""); setBcc(""); setRecipientError(null);
   }
 
   function selectProduct(value: string) {
@@ -103,30 +112,36 @@ export function LeadEmailComposerDialog({ lead, canUseTemplates, onSent }: { lea
   }
 
   async function send() {
+    if (sending.current) return;
     if (!canUseTemplates && (messageTemplateId || contentMode === "html")) return toast.error("Use email templates permission is required for this draft.");
     if (!lead.email?.trim()) return toast.error("Add an email address to this lead before sending.");
+    let copies: ReturnType<typeof normalizeMailRecipients>;
+    try { copies = normalizeMailRecipients({ to: lead.email, cc: parseEmailAddressList(cc), bcc: parseEmailAddressList(bcc) }); }
+    catch (error) { setRecipientError(error instanceof Error ? error.message : "Check recipient addresses."); return; }
+    setRecipientError(null); sending.current = true;
     try {
       const result = await sendEmail.mutateAsync({
         leadId: lead.id,
+        cc: copies.cc, bcc: copies.bcc,
         messageTemplateId: messageTemplateId ? Number(messageTemplateId) : null,
         subject,
         contentMode,
         bodyText,
         bodyHtml: contentMode === "html" ? bodyHtml : null,
       });
-      await onSent();
+      await Promise.resolve().then(() => onSent()).catch(() => undefined);
       setOpen(false);
       resetDraft();
       if (result.communicationLogged) toast.success("Email sent and added to this lead's history.");
       else toast.warning("Email sent and recorded, but Communication history could not be updated.");
     } catch (error) {
-      await onSent();
+      await Promise.resolve().then(() => onSent()).catch(() => undefined);
       toast.error(error instanceof Error ? error.message : "Email could not be sent.");
-    }
+    } finally { sending.current = false; }
   }
 
   const disabledReason = !lead.email?.trim() ? "Add an email address to this lead before sending." : undefined;
-  return <Dialog open={open} onOpenChange={value => { setOpen(value); if (!value && !sendEmail.isPending) resetDraft(); }}>
+  return <Dialog open={open} onOpenChange={value => { if (sending.current) return; setOpen(value); if (!value && !sendEmail.isPending) resetDraft(); }}>
     <DialogTrigger asChild>
       <Button variant="outline" disabled={Boolean(disabledReason)} title={disabledReason} className="min-w-0"><Mail className="mr-2 h-4 w-4 shrink-0" /><span className="truncate">Send email</span></Button>
     </DialogTrigger>
@@ -136,6 +151,7 @@ export function LeadEmailComposerDialog({ lead, canUseTemplates, onSent }: { lea
         <DialogDescription className="break-words text-sm leading-5 sm:leading-6">To <span className="break-all font-medium text-slate-700">{lead.email}</span>. {canUseTemplates ? "Choose an approved product template or write a plain-text message, then review the final draft." : "Write a plain-text message and review the final draft. Template access is not enabled for your account."}</DialogDescription>
       </DialogHeader>
       <div className="min-w-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-4 py-5 overscroll-contain sm:px-6">
+        <EmailCopyRecipients cc={cc} bcc={bcc} disabled={sendEmail.isPending} error={recipientError} onCcChange={value => { setCc(value); setRecipientError(null); }} onBccChange={value => { setBcc(value); setRecipientError(null); }} />
         {canUseTemplates && <div className="min-w-0 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4">
           <div className="mb-4 flex items-start gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-cyan-800 shadow-sm"><Library className="h-4 w-4" /></div><div><p className="font-semibold text-slate-900">Start from an approved template</p><p className="text-sm leading-6 text-slate-600">Choose a product and an active Super Admin template. The subject and message remain editable.</p></div></div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -163,10 +179,10 @@ export function LeadEmailHistory({ leadId, history, isLoading }: { leadId: numbe
   return <>
     <Card className="rounded-2xl border-0 bg-white shadow-sm">
       <CardHeader className="border-b border-slate-100"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle className="text-lg">Lead email history</CardTitle><p className="mt-1 text-sm text-slate-500">Every outbound email attempt for this lead, regardless of which staff account sent it.</p></div><div className="flex flex-wrap gap-2"><Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50">{history?.sentCount ?? 0} sent</Badge><Badge className="bg-sky-50 text-sky-700 hover:bg-sky-50">{history?.openedCount ?? 0} opened</Badge><Badge className="bg-violet-50 text-violet-700 hover:bg-violet-50">{history?.clickedCount ?? 0} clicked</Badge>{Boolean(history?.failedCount) && <Badge className="bg-rose-50 text-rose-700 hover:bg-rose-50">{history?.failedCount} failed</Badge>}<Badge variant="outline">{history?.total ?? 0} total attempts</Badge></div></div></CardHeader>
-      <CardContent><EmailEngagementNotice className="mb-4 mt-5" />{!history?.messages.length ? <EmptyState title="No emails recorded" description="Emails sent from this lead profile, automatic lead reminders, or the Mails workspace will appear here for every authorized staff member." /> : <div className="divide-y divide-slate-100">{history.messages.map(item => <button key={item.id} onClick={() => setMessageId(item.id)} className="flex min-h-14 w-full min-w-0 flex-col gap-3 py-4 text-left transition-opacity hover:opacity-70 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><div className="flex min-w-0 flex-wrap items-center gap-2"><p className="min-w-0 break-words font-semibold text-slate-900 [overflow-wrap:anywhere]">{item.subject}</p>{item.productName && <Badge variant="outline" className="max-w-full whitespace-normal border-cyan-200 bg-cyan-50 text-left text-cyan-800">{item.productName}</Badge>}{item.templateName && <Badge variant="outline" className="max-w-full whitespace-normal text-left">{item.templateName}</Badge>}</div><p className="mt-1 break-words text-sm text-slate-500 [overflow-wrap:anywhere]">Sent by {item.senderName} · <span className="break-all">{item.fromEmail}</span></p><p className="mt-1 break-all text-xs text-slate-400">To {item.recipientEmail}</p><div className="mt-2"><EmailEngagementBadges email={item} /></div></div><div className="flex flex-wrap items-center gap-3"><Badge variant="outline" className={item.status === "sent" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}>{item.status === "sent" ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <AlertTriangle className="mr-1 h-3 w-3" />}{item.status}</Badge><span className="text-xs text-slate-400">{formatEasternDate(item.sentAt, true)}</span></div></button>)}</div>}</CardContent>
+      <CardContent><EmailEngagementNotice className="mb-4 mt-5" />{!history?.messages.length ? <EmptyState title="No emails recorded" description="Emails sent from this lead profile, automatic lead reminders, or the Mails workspace will appear here for every authorized staff member." /> : <div className="divide-y divide-slate-100">{history.messages.map(item => <button key={item.id} onClick={() => setMessageId(item.id)} className="flex min-h-14 w-full min-w-0 flex-col gap-3 py-4 text-left transition-opacity hover:opacity-70 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><div className="flex min-w-0 flex-wrap items-center gap-2"><p className="min-w-0 break-words font-semibold text-slate-900 [overflow-wrap:anywhere]">{item.subject}</p>{item.productName && <Badge variant="outline" className="max-w-full whitespace-normal border-cyan-200 bg-cyan-50 text-left text-cyan-800">{item.productName}</Badge>}{item.templateName && <Badge variant="outline" className="max-w-full whitespace-normal text-left">{item.templateName}</Badge>}</div><p className="mt-1 break-words text-sm text-slate-500 [overflow-wrap:anywhere]">Sent by {item.senderName} · <span className="break-all">{item.fromEmail}</span></p><p className="mt-1 break-all text-xs text-slate-400">To {item.recipientEmail}</p><EmailRecipientsSummary ccEmails={item.ccEmails} bccEmails={item.bccEmails} /><div className="mt-2"><EmailEngagementBadges email={item} /></div></div><div className="flex flex-wrap items-center gap-3"><Badge variant="outline" className={item.status === "sent" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}>{item.status === "sent" ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <AlertTriangle className="mr-1 h-3 w-3" />}{item.status}</Badge><span className="text-xs text-slate-400">{formatEasternDate(item.sentAt, true)}</span></div></button>)}</div>}</CardContent>
     </Card>
     <Dialog open={Boolean(messageId)} onOpenChange={value => { if (!value) setMessageId(undefined); }}>
-      <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-3xl flex-col overflow-hidden"><DialogHeader className="shrink-0"><DialogTitle>{message.data?.subject || "Email details"}</DialogTitle><DialogDescription>{message.data ? <>Sent by {message.data.senderName} from <span className="break-all">{message.data.fromEmail}</span> · {formatEasternDate(message.data.sentAt, true)}</> : "Loading email…"}</DialogDescription></DialogHeader>{message.isLoading ? <PageLoading /> : message.data && <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain"><div className="flex min-w-0 flex-wrap gap-2 text-xs"><Badge variant="outline" className="max-w-full whitespace-normal break-all text-left">To {message.data.recipientEmail}</Badge>{message.data.productName && <Badge variant="outline" className="max-w-full whitespace-normal border-cyan-200 bg-cyan-50 text-left text-cyan-800">Product: {message.data.productName}</Badge>}{message.data.templateName && <Badge variant="outline" className="max-w-full whitespace-normal text-left">Template: {message.data.templateName}</Badge>}<Badge variant="outline">{message.data.status}</Badge></div>{message.data.status === "sent" && <EmailEngagementDetails email={message.data} />}{message.data.error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Delivery failed</AlertTitle><AlertDescription className="break-words [overflow-wrap:anywhere]">{message.data.error}</AlertDescription></Alert>}<iframe title="Lead sent email preview" sandbox="" srcDoc={message.data.bodyHtml} className="h-[min(420px,45dvh)] w-full rounded-xl border border-slate-200 bg-white sm:h-[420px]" /></div>}</DialogContent>
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-3xl flex-col overflow-hidden"><DialogHeader className="shrink-0"><DialogTitle>{message.data?.subject || "Email details"}</DialogTitle><DialogDescription>{message.data ? <>Sent by {message.data.senderName} from <span className="break-all">{message.data.fromEmail}</span> · {formatEasternDate(message.data.sentAt, true)}</> : "Loading email…"}</DialogDescription></DialogHeader>{message.isLoading ? <PageLoading /> : message.data && <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain"><div className="flex min-w-0 flex-wrap gap-2 text-xs"><Badge variant="outline" className="max-w-full whitespace-normal break-all text-left">To {message.data.recipientEmail}</Badge>{message.data.productName && <Badge variant="outline" className="max-w-full whitespace-normal border-cyan-200 bg-cyan-50 text-left text-cyan-800">Product: {message.data.productName}</Badge>}{message.data.templateName && <Badge variant="outline" className="max-w-full whitespace-normal text-left">Template: {message.data.templateName}</Badge>}<Badge variant="outline">{message.data.status}</Badge></div><EmailRecipientsSummary ccEmails={message.data.ccEmails} bccEmails={message.data.bccEmails} />{message.data.status === "sent" && <EmailEngagementDetails email={message.data} />}{message.data.error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Delivery failed</AlertTitle><AlertDescription className="break-words [overflow-wrap:anywhere]">{message.data.error}</AlertDescription></Alert>}<iframe title="Lead sent email preview" sandbox="" srcDoc={message.data.bodyHtml} className="h-[min(420px,45dvh)] w-full rounded-xl border border-slate-200 bg-white sm:h-[420px]" /></div>}</DialogContent>
     </Dialog>
   </>;
 }

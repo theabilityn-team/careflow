@@ -155,6 +155,13 @@
       "when": 1793019625952,
       "tag": "0021_tough_riptide",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1793024917738,
+      "tag": "0022_icy_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

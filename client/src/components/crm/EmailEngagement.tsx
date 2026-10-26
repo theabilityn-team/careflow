@@ -42,5 +42,5 @@ export function EmailEngagementDetails({ email }: { email: EmailEngagement }) {
 }
 
 export function EmailEngagementNotice({ className = "" }: { className?: string }) {
-  return <Alert className={`border-amber-200 bg-amber-50 text-amber-950 ${className}`}><ShieldCheck className="h-4 w-4" /><AlertTitle>Engagement tracking is approximate</AlertTitle><AlertDescription>Opens require the recipient's email app to load images. Privacy protection and security scanners can create automatic opens or clicks. CareFlow stores only first/last timestamps and counts—never recipient IP addresses, devices, or browser fingerprints.</AlertDescription></Alert>;
+  return <Alert className={`border-amber-200 bg-amber-50 text-amber-950 ${className}`}><ShieldCheck className="h-4 w-4" /><AlertTitle>Engagement tracking is approximate</AlertTitle><AlertDescription>Opens require the recipient's email app to load images. Counts combine all recipients of a message, including CC/BCC, and cannot identify who opened it. Privacy protection and security scanners can create automatic opens or clicks. CareFlow stores only first/last timestamps and counts—never recipient IP addresses, devices, or browser fingerprints.</AlertDescription></Alert>;
 }

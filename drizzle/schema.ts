@@ -346,8 +346,10 @@ export const communications = mysqlTable("communications", {
 export const outboundEmails = mysqlTable("outbound_emails", {
   id: int("id").autoincrement().primaryKey(),
   senderUserId: int("senderUserId").notNull(),
-  leadId: int("leadId").notNull(),
+  leadId: int("leadId"),
   recipientEmail: varchar("recipientEmail", { length: 320 }).notNull(),
+  ccEmails: text("ccEmails"),
+  bccEmails: text("bccEmails"),
   recipientName: varchar("recipientName", { length: 241 }).notNull(),
   fromEmail: varchar("fromEmail", { length: 320 }).notNull(),
   productId: int("productId"),
