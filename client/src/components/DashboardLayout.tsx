@@ -8,8 +8,9 @@ import {
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
+import { canManageEmailSettings } from "@/lib/emailSettingsAccess";
 import { trpc } from "@/lib/trpc";
-import { BookOpenCheck, ClipboardCheck, ContactRound, Files, FolderKanban, KeyRound, LayoutDashboard, Library, LogOut, Mail, PanelLeft, ScanLine, Send, UsersRound } from "lucide-react";
+import { BookOpenCheck, ClipboardCheck, ContactRound, Files, FolderKanban, KeyRound, LayoutDashboard, Library, LogOut, Mail, PanelLeft, ScanLine, Send, ShoppingBag, UsersRound, UserCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -52,8 +53,10 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
     { icon: Files, label: "Bulk image import", path: "/bulk-import", show: (access?.permissions.scanDocuments && access?.permissions.viewClinical) ?? false },
     { icon: ClipboardCheck, label: "Follow-ups", path: "/follow-ups", show: access?.permissions.viewLeads ?? true },
     { icon: Send, label: "Mails", path: "/mails", show: access?.permissions.manageEmails ?? false },
+    { icon: UserCheck, label: "Customers", path: "/customers", show: Boolean(access?.isActive) },
+    { icon: ShoppingBag, label: "Orders", path: "/orders", show: Boolean(access?.isActive) },
     { icon: Library, label: "Email templates", path: "/email-templates", show: access?.role === "super_admin" },
-    { icon: Mail, label: "Email settings", path: "/email-settings", show: access?.role === "technical_staff" || access?.role === "super_admin" },
+    { icon: Mail, label: "Email settings", path: "/email-settings", show: canManageEmailSettings(access?.role) },
     { icon: BookOpenCheck, label: "System guide", path: "/guide", show: true },
     { icon: UsersRound, label: "Staff & access", path: "/staff", show: access?.role === "super_admin" },
   ].filter(item => item.show);
@@ -106,7 +109,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
           </SidebarContent>
           <SidebarFooter className="border-t border-slate-100 p-3">
             <DropdownMenu>
-              <DropdownMenuTrigger asChild><button className="flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-slate-50"><Avatar className="h-9 w-9 border border-slate-200"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{user?.name?.slice(0, 1).toUpperCase() ?? "U"}</AvatarFallback></Avatar>{!isCollapsed && <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user?.name ?? "Staff member"}</p><p className="truncate text-xs text-slate-400">{access?.jobTitle ?? "Loading access…"}</p></div>}</button></DropdownMenuTrigger>
+              <DropdownMenuTrigger asChild><button className="flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-slate-50"><Avatar className="h-9 w-9 border border-slate-200"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{user?.name?.slice(0, 1).toUpperCase() ?? "U"}</AvatarFallback></Avatar>{!isCollapsed && <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user?.name ?? "Staff member"}</p><p className="truncate text-xs text-slate-400">{access?.isLeader && access.role !== "super_admin" ? "Leader" : access?.jobTitle ?? "Loading access…"}</p></div>}</button></DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">{access?.role === "super_admin" && <DropdownMenuItem onClick={() => setPasswordDialogOpen(true)} className="cursor-pointer"><KeyRound className="mr-2 h-4 w-4" />Change admin password</DropdownMenuItem>}<DropdownMenuItem onClick={logout} className="cursor-pointer text-rose-600 focus:text-rose-600"><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem></DropdownMenuContent>
             </DropdownMenu>
           </SidebarFooter>

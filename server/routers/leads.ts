@@ -6,7 +6,7 @@ import { prepareAuditEvents } from "../leadAudit";
 import { createLeadExport, LEAD_STATUS_LABELS } from "../leadExport";
 import { isDuplicateKeyError, isLeadDuplicateError } from "../leadIdentity";
 import { normalizeDateOfBirth } from "../leadIdentity";
-import { assertPermission } from "../permissions";
+import { assertPermission, hasGlobalLeadAccess } from "../permissions";
 import { storagePut } from "../storage";
 import { protectedProcedure, router } from "../_core/trpc";
 
@@ -130,13 +130,13 @@ export const leadsRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "viewLeads");
-      const result = await db.listLeads(input, { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
+      const result = await db.listLeads(input, { userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
       return access.permissions.viewClinical ? result : { ...result, items: result.items.map(hideClinical) };
     }),
 
   exportSummary: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "exportData");
-    const counts = await db.getLeadStatusCounts({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
+    const counts = await db.getLeadStatusCounts({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
     return { total: counts.reduce((sum, item) => sum + Number(item.count), 0), counts: Object.fromEntries(counts.map(item => [item.status, Number(item.count)])), limit: 5000 };
   }),
 
@@ -144,7 +144,7 @@ export const leadsRouter = router({
     .input(z.object({ statuses: z.array(statusEnum).min(1).max(15), format: z.enum(["csv", "xlsx", "pdf"]) }))
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "exportData");
-      const rows = await db.getLeadExportRows(input.statuses, { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
+      const rows = await db.getLeadExportRows(input.statuses, { userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
       if (!rows.length) throw new TRPCError({ code: "NOT_FOUND", message: "No leads match the selected statuses." });
       const file = await createLeadExport(input.format, rows, input.statuses);
       const timestamp = new Date().toISOString().replaceAll(":", "-").replace(".000Z", "Z");
@@ -154,7 +154,7 @@ export const leadsRouter = router({
 
   get: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
-    const result = await db.getLead(input.id, { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
+    const result = await db.getLead(input.id, { userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
     if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     const auditEvents = prepareAuditEvents(result.auditEvents, access.permissions.viewClinical);
     if (access.role !== "super_admin" && !access.permissions.manageEmails) {
@@ -207,7 +207,7 @@ export const leadsRouter = router({
       const existing = await db.findExistingLeadIdentityMatches(input.leads);
       const analyzed = analyzeBulkLeadDuplicates(input.leads, existing);
       return Promise.all(analyzed.map(async result => {
-        if (!result.existing || await db.canAccessLead(result.existing.leadId, ctx.user.id, access.role === "super_admin")) return result;
+        if (!result.existing || await db.canAccessLead(result.existing.leadId, ctx.user.id, hasGlobalLeadAccess(access))) return result;
         return { ...result, existing: { leadId: 0, firstName: "Existing", lastName: "lead", matchedBy: result.existing.matchedBy } };
       }));
     }),
@@ -242,7 +242,7 @@ export const leadsRouter = router({
     .input(z.object({ id: z.number().int().positive(), lead: leadUpdateFields }))
     .mutation(async ({ ctx, input }) => {
       const viewAccess = await assertPermission(ctx.user, "viewLeads");
-      if (!await db.canAccessLead(input.id, ctx.user.id, viewAccess.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
+      if (!await db.canAccessLead(input.id, ctx.user.id, hasGlobalLeadAccess(viewAccess))) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
       const nonStatusFields = Object.keys(input.lead).filter(key => key !== "status");
       if (nonStatusFields.length > 0) await assertPermission(ctx.user, "editLeads");
       if (input.lead.status) await assertPermission(ctx.user, "changeStatus");
@@ -276,7 +276,7 @@ export const leadsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "manageContacts");
       if (input.method === "email") await assertPermission(ctx.user, "manageEmails");
-      if (!await db.canAccessLead(input.leadId, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
+      if (!await db.canAccessLead(input.leadId, ctx.user.id, hasGlobalLeadAccess(access))) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
       let result;
       try {
         result = await db.addCommunicationWithAudit({ ...input, createdBy: ctx.user.id });

@@ -1,6 +1,5 @@
 import { PageHeader, PageLoading } from "@/components/crm/CrmUi";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -8,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { canManageEmailSettings } from "@/lib/emailSettingsAccess";
 import { trpc } from "@/lib/trpc";
 import { formatEasternDate } from "@shared/time";
 import { AlertTriangle, CheckCircle2, Database, Loader2, MailCheck, Send, ServerCog } from "lucide-react";
@@ -29,18 +29,17 @@ const empty = {
 export default function EmailSettings() {
   const utils = trpc.useUtils();
   const access = trpc.dashboard.access.useQuery();
-  const isSuperAdmin = access.data?.role === "super_admin";
-  const canUseSmtp = access.data?.role === "technical_staff" || isSuperAdmin;
-  const canTestSmtp = Boolean(isSuperAdmin || (access.data?.isActive && access.data?.permissions.manageEmails));
-  const canUseTemplates = Boolean(canTestSmtp && access.data?.permissions.useEmailTemplates);
+  const isSuperAdmin = canManageEmailSettings(access.data?.role);
+  const canTestSmtp = isSuperAdmin;
+  const canUseTemplates = isSuperAdmin;
   const accounts = trpc.emailSettings.managedAccounts.useQuery(undefined, { enabled: isSuperAdmin });
   const [selectedUserId, setSelectedUserId] = useState<number>();
   const settingsInput = useMemo(() => isSuperAdmin && selectedUserId ? { userId: selectedUserId } : {}, [isSuperAdmin, selectedUserId]);
   const settings = trpc.emailSettings.get.useQuery(settingsInput, {
-    enabled: Boolean(canUseSmtp && (!isSuperAdmin || selectedUserId)),
+    enabled: Boolean(isSuperAdmin && selectedUserId),
   });
   const testEmailTemplates = trpc.emailSettings.testEmailTemplates.useQuery(settingsInput, {
-    enabled: Boolean(canUseTemplates && (!isSuperAdmin || selectedUserId)),
+    enabled: Boolean(isSuperAdmin && selectedUserId),
   });
   const [form, setForm] = useState(empty);
   const [testDialog, setTestDialog] = useState(false);
@@ -96,7 +95,7 @@ export default function EmailSettings() {
   }
 
   async function testConnection() {
-    if (!canTestSmtp) return toast.error("The Emails permission is required.");
+    if (!canTestSmtp) return toast.error("Only Super Admin can test SMTP settings.");
     try {
       await test.mutateAsync(selectedUserId ? { userId: selectedUserId } : {});
       await refresh();
@@ -108,7 +107,7 @@ export default function EmailSettings() {
   }
 
   async function sendTestEmail() {
-    if (!canUseTemplates) return toast.error("Emails and Use email templates permissions are required.");
+    if (!canUseTemplates) return toast.error("Only Super Admin can send SMTP test emails.");
     if (!testRecipient.trim()) return toast.error("Enter a recipient email address.");
     if (!testTemplateId) return toast.error("Select an email template.");
     try {
@@ -135,28 +134,12 @@ export default function EmailSettings() {
   }
 
   if (access.isLoading || (isSuperAdmin && accounts.isLoading)) return <PageLoading />;
-  if (!canUseSmtp) return <div className="mx-auto max-w-3xl"><Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-8"><h1 className="text-xl font-semibold">Email settings unavailable</h1><p className="mt-2 text-sm leading-6 text-slate-500">An active CareFlow account is required to view SMTP status.</p></CardContent></Card></div>;
+  if (!isSuperAdmin) return <div className="mx-auto max-w-3xl"><Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-6 sm:p-8"><h1 className="text-xl font-semibold">Email settings unavailable</h1><p className="mt-2 text-sm leading-6 text-slate-500">Only Super Admin configures and tests SMTP accounts. Use Mails or Send email on a lead to send messages from your assigned account.</p></CardContent></Card></div>;
   if (settings.isLoading || (isSuperAdmin && !selectedUserId)) return <PageLoading />;
   if (settings.error || accounts.error) return <Alert variant="destructive" className="min-w-0"><AlertTriangle className="h-4 w-4" /><AlertTitle>Unable to load email settings</AlertTitle><AlertDescription className="break-words [overflow-wrap:anywhere]">{settings.error?.message || accounts.error?.message}</AlertDescription></Alert>;
 
   const selectedTestProduct = testEmailTemplates.data?.find(product => product.id.toString() === testProductId);
   const testEmailDialog = canUseTemplates ? <Dialog open={testDialog} onOpenChange={setTestDialog}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Send test email</DialogTitle><DialogDescription>Choose exactly where to send the test and which active Super Admin template to use. Lead tokens render as “Test Recipient.”</DialogDescription></DialogHeader><div className="min-w-0 space-y-4"><div className="min-w-0 space-y-2"><Label>Recipient email *</Label><Input type="email" value={testRecipient} onChange={event => setTestRecipient(event.target.value)} placeholder="recipient@example.com" /></div><div className="min-w-0 space-y-2"><Label>Product *</Label><Select value={testProductId} onValueChange={value => { setTestProductId(value); setTestTemplateId(""); }}><SelectTrigger className="w-full min-w-0"><SelectValue placeholder={testEmailTemplates.isLoading ? "Loading products…" : "Select a product"} /></SelectTrigger><SelectContent>{testEmailTemplates.data?.map(product => <SelectItem key={product.id} value={String(product.id)}>{product.name}</SelectItem>)}</SelectContent></Select></div><div className="min-w-0 space-y-2"><Label>Email template *</Label><Select value={testTemplateId} onValueChange={setTestTemplateId} disabled={!testProductId}><SelectTrigger className="w-full min-w-0"><SelectValue placeholder={!testProductId ? "Select a product first" : selectedTestProduct?.templates.length ? "Select a template" : "No active templates"} /></SelectTrigger><SelectContent>{selectedTestProduct?.templates.map(template => <SelectItem key={template.id} value={String(template.id)}>{template.name} · {template.contentMode === "html" ? "HTML" : "Plain text"}</SelectItem>)}</SelectContent></Select></div>{!testEmailTemplates.isLoading && !testEmailTemplates.data?.length && <Alert><AlertTriangle className="h-4 w-4" /><AlertTitle>No active email templates</AlertTitle><AlertDescription>Super Admin must create and activate a product template before a test email can be sent.</AlertDescription></Alert>}</div><DialogFooter><Button variant="outline" onClick={() => setTestDialog(false)}>Cancel</Button><Button onClick={sendTestEmail} disabled={sendTest.isPending || !testRecipient.trim() || !testTemplateId} className="bg-teal-700 hover:bg-teal-800">{sendTest.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Send test email</Button></DialogFooter></DialogContent></Dialog> : null;
-
-  if (settings.data?.mode === "readonly") {
-    const status = settings.data;
-    return <div className="mx-auto max-w-[850px]">
-      <PageHeader eyebrow="Assigned sender" title="Email status" description="Review your assigned email status. Mailbox test actions depend on the email permissions granted by Super Admin." />
-      <Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]">
-        <CardHeader className="border-b border-slate-100"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle>Your assigned email</CardTitle><p className="mt-1 text-sm text-slate-500">Only Super Admin can change SMTP credentials and sender settings.</p></div><Badge variant="outline" className={status.isEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"}>{status.isEnabled ? "Active" : "Inactive"}</Badge></div></CardHeader>
-        <CardContent className="space-y-6 p-6">
-          <div className="grid gap-4 sm:grid-cols-2"><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs font-medium uppercase tracking-[.14em] text-slate-400">Sender email</p><p className="mt-2 break-all font-medium text-slate-900">{status.fromEmail || "Not assigned"}</p></div><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs font-medium uppercase tracking-[.14em] text-slate-400">Connection</p><p className="mt-2 font-medium text-slate-900">{status.verifiedAt ? "Verified" : "Not verified"}</p><p className="mt-1 text-xs text-slate-400">{status.lastTestedAt ? `Last tested ${formatEasternDate(status.lastTestedAt, true)}` : "Not tested yet"}</p></div></div>
-          {status.lastTestError && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Last SMTP test failed</AlertTitle><AlertDescription>{status.lastTestError}</AlertDescription></Alert>}
-          <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">{canTestSmtp && <Button variant="outline" disabled={test.isPending} onClick={testConnection}>{test.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MailCheck className="mr-2 h-4 w-4" />}Test connection</Button>}{canUseTemplates && <Button disabled={sendTest.isPending} onClick={openTestEmailDialog} className="bg-teal-700 hover:bg-teal-800"><Send className="mr-2 h-4 w-4" />Send test email</Button>}{!canTestSmtp && <p className="text-sm text-slate-500">Email actions are disabled. Ask Super Admin to enable Emails.</p>}{canTestSmtp && !canUseTemplates && <p className="text-sm text-slate-500">Use email templates permission is required for template test emails.</p>}</div>
-        </CardContent>
-      </Card>
-      {testEmailDialog}
-    </div>;
-  }
 
   const managed = settings.data?.mode === "manage" ? settings.data : null;
   const verified = Boolean(managed?.verifiedAt);

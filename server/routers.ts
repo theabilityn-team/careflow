@@ -5,6 +5,8 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, publicProcedure, router } from "./_core/trpc";
 import { authenticateStaffCredentials, authenticateSystemAdmin, createLoginSession, createSystemAdminLoginSession, destroyLoginSession, rotateSystemAdminPassword } from "./auth";
 import { dashboardRouter } from "./routers/dashboard";
+import { customersRouter } from "./routers/customers";
+import { ordersRouter } from "./routers/orders";
 import { emailLibraryRouter } from "./routers/emailLibrary";
 import { emailSettingsRouter } from "./routers/emailSettings";
 import { groupsRouter } from "./routers/groups";
@@ -59,6 +61,8 @@ export const appRouter = router({
       }),
   }),
   dashboard: dashboardRouter,
+  customers: customersRouter,
+  orders: ordersRouter,
   emailLibrary: emailLibraryRouter,
   emailSettings: emailSettingsRouter,
   groups: groupsRouter,

@@ -4,7 +4,7 @@ import { SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
 import { createEmailTrackingToken, instrumentEmailHtml } from "../emailTracking";
 import { composeEmailFramePreview, composeEmailHtml, composeRichEmailHtml, DEFAULT_EMAIL_FOOTER_HTML, DEFAULT_EMAIL_HEADER_HTML, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "../mailContent";
-import { assertPermission } from "../permissions";
+import { assertPermission, hasGlobalLeadAccess } from "../permissions";
 import { isSmtpConfigured, sendStaffSmtpEmail } from "../smtp";
 import { protectedProcedure, router } from "../_core/trpc";
 
@@ -20,7 +20,7 @@ function senderId(user: { id: number; role: "user" | "admin" }) {
 export const mailRouter = router({
   recipients: protectedProcedure.input(z.object({ search: z.string().trim().max(120).optional() })).query(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "manageEmails");
-    return db.listEmailRecipients({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" }, input.search);
+    return db.listEmailRecipients({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) }, input.search);
   }),
 
   template: protectedProcedure.query(async ({ ctx }) => {
@@ -55,13 +55,13 @@ export const mailRouter = router({
 
   history: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "manageEmails");
-    const messages = await db.listOutboundEmails({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
+    const messages = await db.listOutboundEmails({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
     return access.role === "super_admin" ? messages : messages.map(message => ({ ...message, error: message.error ? "Delivery failed. Ask Super Admin to review your assigned SMTP account." : null }));
   }),
 
   message: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "manageEmails");
-    const message = await db.getOutboundEmail(input.id, { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
+    const message = await db.getOutboundEmail(input.id, { userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
     if (!message) throw new TRPCError({ code: "NOT_FOUND", message: "Email not found." });
     const { trackingToken: _trackingToken, ...safeMessage } = message;
     const publicMessage = { ...safeMessage, trackingEnabled: Boolean(_trackingToken) };
@@ -71,7 +71,7 @@ export const mailRouter = router({
   leadHistory: protectedProcedure.input(z.object({ leadId: z.number().int().positive() })).query(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
     await assertPermission(ctx.user, "manageEmails");
-    if (!await db.canAccessLead(input.leadId, ctx.user.id, access.role === "super_admin")) {
+    if (!await db.canAccessLead(input.leadId, ctx.user.id, hasGlobalLeadAccess(access))) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     }
     const history = await db.listLeadOutboundEmails(input.leadId);
@@ -87,7 +87,7 @@ export const mailRouter = router({
   leadMessage: protectedProcedure.input(z.object({ leadId: z.number().int().positive(), id: z.number().int().positive() })).query(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
     await assertPermission(ctx.user, "manageEmails");
-    if (!await db.canAccessLead(input.leadId, ctx.user.id, access.role === "super_admin")) {
+    if (!await db.canAccessLead(input.leadId, ctx.user.id, hasGlobalLeadAccess(access))) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     }
     const message = await db.getLeadOutboundEmail(input.id, input.leadId);
@@ -109,7 +109,7 @@ export const mailRouter = router({
     bodyHtml: z.string().max(250_000).optional().nullable(),
   })).mutation(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "manageEmails");
-    const viewer = { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" };
+    const viewer = { userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) };
     const recipient = await db.getEmailRecipient(input.leadId, viewer);
     if (!recipient) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     if (!recipient.email?.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "This lead does not have an email address." });

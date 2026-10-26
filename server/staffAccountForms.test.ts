@@ -23,7 +23,7 @@ describe("staff account form rules", () => {
     expect(validStaffAccountIdentity("Staff", "staff @example.com")).toBe(false);
   });
   it("keeps existing least-privilege defaults for new staff", () => {
-    expect(Object.keys(DEFAULT_STAFF_ACCOUNT_PERMISSIONS)).toHaveLength(10);
+    expect(Object.keys(DEFAULT_STAFF_ACCOUNT_PERMISSIONS)).toHaveLength(11);
     expect(DEFAULT_STAFF_ACCOUNT_PERMISSIONS.scanDocuments).toBe(false);
     expect(DEFAULT_STAFF_ACCOUNT_PERMISSIONS.viewClinical).toBe(false);
     expect(DEFAULT_STAFF_ACCOUNT_PERMISSIONS.exportData).toBe(false);

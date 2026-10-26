@@ -302,3 +302,20 @@ The supplied images are photographs of a screen and contain visible moiré, so s
 - [x] Redact restricted email content in communications, audit values, and completed follow-up archive while preserving other contact/follow-up functionality.
 - [x] Verify all four live API combinations, three desktop staff UI scenarios, and 320px Super Admin permission controls. No real email sent.
 - [x] Pass 173 tests, TypeScript, production build, and diff checks; remove four temporary accounts/leads and all related credentials, SMTP profiles, sessions, and audits.
+
+
+## Completed update: SMTP setup is Super Admin-only — 2026-10-26
+Staff no longer see Email settings in navigation or SMTP setup/test controls on a direct route. Super Admin retains account selection, per-staff SMTP configuration, and all connection/test-email actions independently of the target staff's email permissions. Staff retain Mails, lead-level sending, approved-template selection, and history. Guide/permission copy now reflects this separation. Verified 177 tests, TypeScript, production build, staff-denied screen render/query gates, backend rejection before provider calls, and read-only admin UI; no records/settings changed or email sent.
+
+
+## Completed update: Leader, Customers, and Orders — 2026-10-26
+- [x] Super Admin assigns the default-off Leader capability in staff permissions. Active Leaders have team-wide lead visibility and Customers/Orders management, without Super Admin configuration or automatic clinical/email/export permission.
+- [x] Explicit Mark as customer creates one linked Customer, retains the original lead and ownership/interest/documents/follow-ups, and audits the promotion. Repeated confirmation is idempotent; existing Customer business status does not create a duplicate.
+- [x] Add manual Orders from Customer detail or Orders with product, quantity, exact-cent unit price/currency, reference, status, Eastern timestamp, credited staff, and business notes.
+- [x] Credited owner can be Me or another active staff account; immutable Created by remains the actual original creator. Edits/reassignments retain order-specific before/after audit history.
+- [x] Ordinary active staff have read-only own Customers/Orders. Customer ownership follows a created/assigned lead or an order credited to that staff; Orders and customer order counts/details are always scoped to credited ownership, never order creator.
+- [x] Customer-only order access never unlocks a foreign lead or clinical data. Foreign customer/order IDs, forged filters, and write attempts are rejected server-side.
+- [x] Responsive list cards, compact pagination, searchable filters, contained dialogs, persistent mobile save/cancel, and safe-area padding verified at 320/360/390px and desktop.
+- [x] Protected caches are cancelled/removed on login, logout, invitation acceptance, and reset login to prevent cross-account data reuse.
+- [x] Migration 0020, live transaction/ownership/rollback and UI tests, 202 regression tests, TypeScript, production build, and HTTP runtime verified.
+- [x] All disposable accounts, leads, Customers, Orders, credentials, SMTP profiles, sessions, identity keys, and audits removed. Main QA artifacts removed; original SMTP/password fingerprints unchanged. No real email or payment sent.

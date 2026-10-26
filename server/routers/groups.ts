@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "../db";
-import { assertPermission } from "../permissions";
+import { assertPermission, hasGlobalLeadAccess } from "../permissions";
 import { protectedProcedure, router } from "../_core/trpc";
 
 const id = z.number().int().positive();
@@ -80,7 +80,7 @@ export const groupsRouter = router({
 
   leadSharing: protectedProcedure.input(z.object({ leadId: id })).query(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
-    if (!await db.canAccessLead(input.leadId, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
+    if (!await db.canAccessLead(input.leadId, ctx.user.id, hasGlobalLeadAccess(access))) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     const canManage = await db.canManageLeadSharing(input.leadId, ctx.user.id, access.role === "super_admin");
     const sharing = await db.listLeadSharing(input.leadId);
     return { canManage, shares: canManage ? sharing.shares : [], groups: sharing.groups };

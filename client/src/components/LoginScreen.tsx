@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { hasSuperLoginParameter } from "@/lib/loginMode";
 import { trpc } from "@/lib/trpc";
+import { clearAccountQueries } from "@/lib/accountQueryCache";
+import { useQueryClient } from "@tanstack/react-query";
 import { SUPER_ADMIN_EMAIL } from "@shared/const";
 import { KeyRound, Loader2, LockKeyhole, Mail, ScanLine, ShieldCheck } from "lucide-react";
 import { FormEvent, useState } from "react";
@@ -11,6 +13,7 @@ import { toast } from "sonner";
 
 export default function LoginScreen() {
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const superAdminMode = hasSuperLoginParameter(window.location.search);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,6 +25,7 @@ export default function LoginScreen() {
       await login.mutateAsync(superAdminMode
         ? { mode: "super_admin", identifier: SUPER_ADMIN_EMAIL, password }
         : { mode: "staff", identifier: email, password });
+      await clearAccountQueries(queryClient);
       await utils.auth.me.invalidate();
       toast.success("Signed in securely.");
     } catch (error) {

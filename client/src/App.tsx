@@ -1,6 +1,9 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import BulkImageImport from "@/pages/BulkImageImport";
+import Customers from "@/pages/Customers";
+import CustomerDetail from "@/pages/CustomerDetail";
+import Orders from "@/pages/Orders";
 import EmailSettings from "@/pages/EmailSettings";
 import EmailTemplates from "@/pages/EmailTemplates";
 import FollowUps from "@/pages/FollowUps";
@@ -36,6 +39,9 @@ function Router() {
     <Route path="/scan"><DashboardPage><Scanner /></DashboardPage></Route>
     <Route path="/bulk-import"><DashboardPage><BulkImageImport /></DashboardPage></Route>
     <Route path="/mails"><DashboardPage><Mails /></DashboardPage></Route>
+    <Route path="/customers"><DashboardPage><Customers /></DashboardPage></Route>
+    <Route path="/customers/:id"><DashboardPage><CustomerDetail /></DashboardPage></Route>
+    <Route path="/orders"><DashboardPage><Orders /></DashboardPage></Route>
     <Route path="/email-templates"><DashboardPage><EmailTemplates /></DashboardPage></Route>
     <Route path="/email-settings"><DashboardPage><EmailSettings /></DashboardPage></Route>
     <Route path="/follow-ups"><DashboardPage><FollowUps /></DashboardPage></Route>

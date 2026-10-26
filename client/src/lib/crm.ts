@@ -87,10 +87,11 @@ export const PERMISSION_LABELS = {
   scanDocuments: ["Add leads from images", "Use single or bulk AI extraction on uploaded document images"],
   viewClinical: ["View clinical data", "Access diagnoses and medical notes"],
   manageContacts: ["Manage communications", "Log calls, SMS, meetings, and follow-ups; email access is separate"],
-  manageEmails: ["Emails", "Open Mails, send emails, view email history, and test the assigned mailbox"],
+  manageEmails: ["Emails", "Open Mails, send from the assigned email, and view email history; SMTP setup is Super Admin-only"],
   useEmailTemplates: ["Use email templates", "Select approved product templates when Emails is enabled; editing remains Super Admin-only"],
   changeStatus: ["Change status", "Move leads through the lifecycle"],
   exportData: ["Export data", "Download customer information"],
+  manageSales: ["Leader", "View all staff leads, mark customers, manage orders, and assign sales credit to staff; no admin setup access"],
 } as const;
 
 export type PermissionKey = keyof typeof PERMISSION_LABELS;

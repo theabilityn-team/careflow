@@ -1,8 +1,11 @@
 import { trpc } from "@/lib/trpc";
+import { clearAccountQueries } from "@/lib/accountQueryCache";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 export function useAuth() {
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const meQuery = trpc.auth.me.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
   const logoutMutation = trpc.auth.logout.useMutation();
 
@@ -11,9 +14,10 @@ export function useAuth() {
       await logoutMutation.mutateAsync();
     } finally {
       utils.auth.me.setData(undefined, null);
+      await clearAccountQueries(queryClient);
       await utils.auth.me.invalidate();
     }
-  }, [logoutMutation, utils]);
+  }, [logoutMutation, queryClient, utils]);
 
   return useMemo(() => ({
     user: meQuery.data ?? null,

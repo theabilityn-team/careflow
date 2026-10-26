@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
 import { inferSupportedStateCode } from "../shared/leadClassification";
 import { inferStoredDocumentType } from "../shared/referralDocuments";
-import { upgradeLegacyEmailPermissions } from "../shared/permissions";
+import { normalizePermissions, upgradeLegacyEmailPermissions } from "../shared/permissions";
 import {
   authSessions,
   auditEvents,
@@ -901,18 +901,33 @@ export async function updateStaffAccess(input: {
   jobTitle: string;
   isActive: boolean;
   permissions: string;
+  actorId?: number;
 }) {
   const db = await requireDb();
   return db.transaction(async tx => {
     const account = await getLockedLocalStaffAccount(tx, input.userId);
     if (!account) return false;
     const existing = (await tx.select().from(staffPermissions).where(eq(staffPermissions.userId, input.userId)).limit(1).for("update"))[0];
+    let beforePermissions = normalizePermissions({});
+    try { beforePermissions = normalizePermissions(JSON.parse(existing?.permissions || "{}")); } catch { /* Invalid saved values fail closed. */ }
+    const afterPermissions = normalizePermissions(JSON.parse(input.permissions));
     if (!existing) {
-      await tx.insert(staffPermissions).values(input);
+      await tx.insert(staffPermissions).values({ userId: input.userId, jobTitle: input.jobTitle, isActive: input.isActive, permissions: input.permissions });
     } else {
       await tx.update(staffPermissions).set({ jobTitle: input.jobTitle, isActive: input.isActive, permissions: input.permissions }).where(eq(staffPermissions.userId, input.userId));
     }
-    if (existing?.isActive && !input.isActive) await tx.delete(authSessions).where(eq(authSessions.userId, input.userId));
+    if (existing?.isActive && (!input.isActive || beforePermissions.manageSales && !afterPermissions.manageSales)) await tx.delete(authSessions).where(eq(authSessions.userId, input.userId));
+    await tx.insert(auditEvents).values({
+      leadId: null,
+      actorId: input.actorId ?? SYSTEM_ADMIN_ACTOR_ID,
+      action: "staff.access_updated",
+      source: "staff",
+      detail: `Updated access for technical staff account ${input.userId}; Leader ${afterPermissions.manageSales ? "enabled" : "disabled"}.`,
+      changes: serializeAudit({ userId: input.userId, leaderBefore: beforePermissions.manageSales, leaderAfter: afterPermissions.manageSales }),
+      snapshotBefore: serializeAudit({ userId: input.userId, isActive: existing?.isActive ?? false, jobTitle: existing?.jobTitle ?? null, permissions: beforePermissions }),
+      snapshotAfter: serializeAudit({ userId: input.userId, isActive: input.isActive, jobTitle: input.jobTitle, permissions: afterPermissions }),
+      occurredAt: Date.now(),
+    });
     return true;
   });
 }

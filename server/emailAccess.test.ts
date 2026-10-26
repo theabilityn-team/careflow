@@ -200,19 +200,25 @@ describe("email access controls", () => {
     await expect(appRouter.createCaller(context(admin)).mail.template()).resolves.toMatchObject({ headerHtml: expect.any(String), footerHtml: expect.any(String) });
   });
 
-  it("keeps staff SMTP metadata available but guards connection and template test operations", async () => {
-    grant({});
-    vi.spyOn(db, "getStaffSmtpSettings").mockResolvedValue(smtpSettings);
+  it("keeps staff SMTP metadata available but guards connection and template test operations even with both email flags", async () => {
+    grant({ manageEmails: true, useEmailTemplates: true });
+    const getSettings = vi.spyOn(db, "getStaffSmtpSettings").mockResolvedValue(smtpSettings);
     const status = await appRouter.createCaller(context()).emailSettings.get();
     expect(status).toMatchObject({ mode: "readonly", userId: staff.id, accountEmail: staff.email, configured: true });
     expect(status).not.toHaveProperty("smtpPassword");
 
     const verify = vi.spyOn(smtp, "verifyStaffSmtp");
+    const send = vi.spyOn(smtp, "sendStaffSmtpEmail");
+    const getUser = vi.spyOn(db, "getUserById");
     const listProducts = vi.spyOn(db, "listEmailProducts");
+    const settingsCallsAfterStatus = getSettings.mock.calls.length;
     await expect(appRouter.createCaller(context()).emailSettings.testConnection()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(context()).emailSettings.testEmailTemplates()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(appRouter.createCaller(context()).emailSettings.sendTestEmail({ recipientEmail: "destination@example.com", messageTemplateId: 8 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(verify).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(getUser).not.toHaveBeenCalled();
+    expect(getSettings).toHaveBeenCalledTimes(settingsCallsAfterStatus);
     expect(listProducts).not.toHaveBeenCalled();
   });
 

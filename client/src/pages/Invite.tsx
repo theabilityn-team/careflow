@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatDate } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
+import { clearAccountQueries } from "@/lib/accountQueryCache";
+import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -14,6 +16,7 @@ export default function Invite() {
   const [, navigate] = useLocation();
   const token = params?.token ?? "";
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const invite = trpc.staff.inspectInvite.useQuery({ token }, { enabled: token.length === 48 });
   const accept = trpc.staff.acceptInvite.useMutation();
   const [password, setPassword] = useState("");
@@ -27,6 +30,7 @@ export default function Invite() {
     }
     try {
       await accept.mutateAsync({ token, password });
+      await clearAccountQueries(queryClient);
       await utils.auth.me.invalidate();
       toast.success("Your email account is active.");
       navigate("/");

@@ -8,7 +8,7 @@ import { createLoginSession, hashPassword } from "../auth";
 import { isPasswordResetUsable, staffPasswordSchema } from "../passwordSecurity";
 import { SUPER_ADMIN_EMAIL } from "@shared/const";
 
-const permissionShape = Object.fromEntries(PERMISSION_KEYS.map(key => [key, z.boolean()])) as Record<(typeof PERMISSION_KEYS)[number], z.ZodBoolean>;
+const permissionShape = Object.fromEntries(PERMISSION_KEYS.map(key => [key, key === "manageSales" ? z.boolean().default(false) : z.boolean()])) as Record<(typeof PERMISSION_KEYS)[number], z.ZodBoolean>;
 const permissionsSchema = z.object(permissionShape);
 const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 const normalizedEmailSchema = z.string().trim().toLowerCase().email().max(320);
@@ -36,6 +36,7 @@ export const staffRouter = router({
       accessRole: row.role === "admin" ? "super_admin" : "technical_staff",
       jobTitle: row.role === "admin" ? "Super Administrator" : row.jobTitle ?? "Technical Staff",
       isActive: row.role === "admin" ? true : row.isActive ?? false,
+      isLeader: Boolean(row.isActive && row.permissions && normalizePermissions(JSON.parse(row.permissions)).manageSales),
       permissions: row.role === "admin" ? normalizePermissions(Object.fromEntries(PERMISSION_KEYS.map(key => [key, true]))) : row.permissions ? normalizePermissions(JSON.parse(row.permissions)) : normalizePermissions({}),
     }));
   }),
@@ -44,7 +45,7 @@ export const staffRouter = router({
     .input(z.object({ userId: z.number().int().positive(), jobTitle: z.string().trim().min(2).max(120), isActive: z.boolean(), permissions: permissionsSchema }))
     .mutation(async ({ ctx, input }) => {
       if (input.userId === ctx.user.id && !input.isActive) throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot deactivate your own account." });
-      const updated = await db.updateStaffAccess({ ...input, permissions: JSON.stringify(input.permissions) });
+      const updated = await db.updateStaffAccess({ ...input, permissions: JSON.stringify(input.permissions), actorId: ctx.user.id });
       if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Technical staff account not found." });
       return { success: true };
     }),

@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
-import { assertPermission, getUserAccess } from "../permissions";
+import { assertPermission, getUserAccess, hasGlobalLeadAccess } from "../permissions";
 import { protectedProcedure, router } from "../_core/trpc";
 
 function hideEmailFollowUpText<T extends { method: string; outcome: string; notes: string | null }>(item: T) {
@@ -14,7 +14,7 @@ function hideEmailFollowUpText<T extends { method: string; outcome: string; note
 export const dashboardRouter = router({
   summary: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
-    const summary = await db.getDashboardSummary({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
+    const summary = await db.getDashboardSummary({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
     if (access.permissions.viewClinical) return summary;
     return {
       ...summary,
@@ -28,20 +28,20 @@ export const dashboardRouter = router({
   }),
   followUps: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
-    return db.getUpcomingFollowUps({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
+    return db.getUpcomingFollowUps({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
   }),
   followUpCalendar: protectedProcedure
     .input(z.object({ from: z.number().int().nonnegative(), to: z.number().int().positive() }).refine(value => value.to >= value.from && value.to - value.from <= 370 * 24 * 60 * 60 * 1000, "Select a valid calendar range up to 370 days."))
     .query(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "viewLeads");
-      return db.getFollowUpCalendar({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" }, input);
+      return db.getFollowUpCalendar({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) }, input);
     }),
   updateFollowUp: protectedProcedure
     .input(z.object({ id: z.number().int().positive(), scheduledFor: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "manageContacts");
       const reminder = await db.getActiveFollowUp(input.id);
-      if (!reminder || !await db.canAccessLead(reminder.leadId, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
+      if (!reminder || !await db.canAccessLead(reminder.leadId, ctx.user.id, hasGlobalLeadAccess(access))) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
       try {
         const result = await db.updateActiveFollowUp({ ...input, actorId: ctx.user.id });
         if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
@@ -56,7 +56,7 @@ export const dashboardRouter = router({
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "manageContacts");
       const reminder = await db.getActiveFollowUp(input.id);
-      if (!reminder || !await db.canAccessLead(reminder.leadId, ctx.user.id, access.role === "super_admin")) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
+      if (!reminder || !await db.canAccessLead(reminder.leadId, ctx.user.id, hasGlobalLeadAccess(access))) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
       const result = await db.deleteActiveFollowUp({ id: input.id, actorId: ctx.user.id });
       if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
       return { success: true, leadId: result.leadId } as const;
@@ -72,14 +72,14 @@ export const dashboardRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "viewLeads");
-      const archive = await db.getCompletedFollowUps({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" }, input);
+      const archive = await db.getCompletedFollowUps({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) }, input);
       return access.role === "super_admin" || access.permissions.manageEmails
         ? archive
         : { ...archive, items: archive.items.map(hideEmailFollowUpText) };
     }),
   notifications: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
-    return db.listFollowUpNotifications({ userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
+    return db.listFollowUpNotifications({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
   }),
   reminderAutomationStatus: protectedProcedure.query(async ({ ctx }) => {
     const access = await getUserAccess(ctx.user);
@@ -112,7 +112,7 @@ export const dashboardRouter = router({
   }),
   markNotificationRead: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
-    await db.markFollowUpReminderRead(input.id, { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" });
+    await db.markFollowUpReminderRead(input.id, { userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
     return { success: true } as const;
   }),
   access: protectedProcedure.query(async ({ ctx }) => getUserAccess(ctx.user)),

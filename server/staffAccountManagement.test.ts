@@ -37,6 +37,7 @@ const permissions = {
   useEmailTemplates: false,
   changeStatus: true,
   exportData: false,
+  manageSales: false,
 };
 
 function context(user: typeof admin | typeof staff | null): TrpcContext {

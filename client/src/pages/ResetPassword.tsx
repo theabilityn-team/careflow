@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatDate } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
+import { clearAccountQueries } from "@/lib/accountQueryCache";
+import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -14,6 +16,7 @@ export default function ResetPassword() {
   const [, navigate] = useLocation();
   const token = params?.token ?? "";
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const request = trpc.staff.inspectPasswordReset.useQuery({ token }, { enabled: token.length === 48 });
   const complete = trpc.staff.completePasswordReset.useMutation();
   const [password, setPassword] = useState("");
@@ -27,6 +30,7 @@ export default function ResetPassword() {
     }
     try {
       await complete.mutateAsync({ token, password });
+      await clearAccountQueries(queryClient);
       await utils.auth.me.invalidate();
       toast.success("Password changed successfully.");
       navigate("/");

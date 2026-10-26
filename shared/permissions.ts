@@ -9,6 +9,7 @@ export const PERMISSION_KEYS = [
   "useEmailTemplates",
   "changeStatus",
   "exportData",
+  "manageSales",
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -25,6 +26,7 @@ export const DEFAULT_TECHNICAL_PERMISSIONS: Permissions = {
   useEmailTemplates: false,
   changeStatus: true,
   exportData: false,
+  manageSales: false,
 };
 
 export function normalizePermissions(value: unknown): Permissions {

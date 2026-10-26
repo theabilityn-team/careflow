@@ -396,3 +396,42 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Lead = typeof leads.$inferSelect;
 export type InsertLead = typeof leads.$inferInsert;
+
+
+export const customers = mysqlTable("customers", {
+  id: int("id").autoincrement().primaryKey(),
+  leadId: int("leadId").notNull(),
+  customerSince: bigint("customerSince", { mode: "number" }).notNull(),
+  notes: text("notes"),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  uniqueLead: uniqueIndex("customers_leadId_unique").on(table.leadId),
+  customerSince: index("customers_customerSince_idx").on(table.customerSince),
+}));
+
+export const salesOrders = mysqlTable("sales_orders", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customerId").notNull(),
+  externalReference: varchar("externalReference", { length: 80 }),
+  productName: varchar("productName", { length: 160 }).notNull(),
+  quantity: int("quantity").default(1).notNull(),
+  unitPriceCents: bigint("unitPriceCents", { mode: "number" }).notNull(),
+  currency: varchar("currency", { length: 3 }).default("USD").notNull(),
+  status: mysqlEnum("status", ["pending", "paid", "fulfilled", "cancelled", "refunded"]).default("paid").notNull(),
+  orderedAt: bigint("orderedAt", { mode: "number" }).notNull(),
+  ownerUserId: int("ownerUserId").notNull(),
+  ownerName: varchar("ownerName", { length: 160 }).notNull(),
+  createdBy: int("createdBy").notNull(),
+  createdByName: varchar("createdByName", { length: 160 }).notNull(),
+  updatedBy: int("updatedBy").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  uniqueReference: uniqueIndex("sales_orders_externalReference_unique").on(table.externalReference),
+  customerDate: index("sales_orders_customer_date_idx").on(table.customerId, table.orderedAt),
+  ownerDate: index("sales_orders_owner_date_idx").on(table.ownerUserId, table.orderedAt),
+  statusDate: index("sales_orders_status_date_idx").on(table.status, table.orderedAt),
+}));

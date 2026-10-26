@@ -1,6 +1,7 @@
 import { PageHeader, PageLoading, StatusPill } from "@/components/crm/CrmUi";
 import { CopyContactButton } from "@/components/crm/CopyContactButton";
 import { LeadEmailComposerDialog, LeadEmailHistory } from "@/components/crm/LeadEmail";
+import { LeadCustomerActions } from "@/components/crm/LeadCustomerActions";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,7 @@ export default function LeadDetail() {
       {access?.permissions.editLeads && <div className="min-w-0 [&>button]:w-full sm:[&>button]:w-auto"><EditLeadDialog lead={lead} assignees={assignees} canViewClinical={access.permissions.viewClinical} canChangeStatus={access.permissions.changeStatus} onSave={async values => { await update.mutateAsync({ id, lead: values as any }); toast.success("Profile details saved and audited."); }} /></div>}
       {access?.permissions.manageContacts && <div className="min-w-0 [&>button]:w-full sm:[&>button]:w-auto"><ContactDialog canLogEmails={Boolean(access?.permissions.manageEmails)} onSave={async values => { await addContact.mutateAsync({ leadId: id, ...values }); toast.success("Contact activity and follow-up saved."); }} /></div>}
       {access?.permissions.manageEmails && <div className="min-w-0 min-[360px]:col-span-2 [&>button]:w-full sm:col-span-1 sm:[&>button]:w-auto"><LeadEmailComposerDialog lead={lead} canUseTemplates={Boolean(access?.permissions.useEmailTemplates)} onSent={async () => { await Promise.all([emailHistory.refetch(), utils.leads.get.invalidate({ id }), utils.mail.history.invalidate(), utils.dashboard.invalidate()]); }} /></div>}
+      {access?.isActive && access?.isLeader && <div className="min-w-0 min-[360px]:col-span-2 [&>button]:w-full sm:col-span-1 sm:[&>button]:w-auto"><LeadCustomerActions lead={lead} /></div>}
     </div>} />
 
     <div className="mb-6 flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-slate-950 to-slate-900 p-5 text-white sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-teal-300">Lead classification</p><div className="mt-3 flex flex-wrap gap-2"><Badge className="bg-indigo-400/15 text-indigo-200 hover:bg-indigo-400/15"><MapPin className="mr-1 h-3.5 w-3.5" />{stateLabel(lead.stateCode)}</Badge><Badge className="bg-rose-400/15 text-rose-200 hover:bg-rose-400/15"><LockKeyhole className="mr-1 h-3.5 w-3.5" />{diagnosisCategoryLabel(lead.diagnosisCategory)}</Badge><Badge className="bg-cyan-400/15 text-cyan-100 hover:bg-cyan-400/15"><FileText className="mr-1 h-3.5 w-3.5" />{documentTypeLabel(lead.sourceDocumentType)}</Badge><Badge className="bg-amber-400/15 text-amber-100 hover:bg-amber-400/15"><Languages className="mr-1 h-3.5 w-3.5" />{languageLabel(lead.preferredLanguage)} reminders</Badge></div></div><LeadAccessDialog leadId={id} staff={assignees} /></div>

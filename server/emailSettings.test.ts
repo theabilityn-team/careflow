@@ -107,15 +107,17 @@ describe("SMTP settings authorization and API shaping", () => {
     expect(merged.smtpPassword).toBe("replacement-secret");
   });
 
-  it("sends a test email only to the entered recipient using the selected template", async () => {
-    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en", permissions: JSON.stringify({ manageEmails: true, useEmailTemplates: true }), createdAt: new Date(), updatedAt: new Date() });
+  it("lets Super Admin send a test email through a selected staff mailbox regardless of staff email flags", async () => {
+    const now = new Date();
+    vi.spyOn(db, "getUserById").mockResolvedValue({ id: 17, openId: "staff:17", name: "Staff Member", email: "staff@example.com", loginMethod: "local", role: "user", createdAt: now, updatedAt: now, lastSignedIn: now });
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en", permissions: JSON.stringify({ manageEmails: false, useEmailTemplates: false }), createdAt: now, updatedAt: now });
     vi.spyOn(db, "getStaffSmtpSettings").mockResolvedValue(stored);
     vi.spyOn(db, "getSelectableEmailMessageTemplate").mockResolvedValue({ id: 8, productId: 3, productName: "Recovery Mat", productIsActive: true, name: "SMTP test design", description: null, subject: "Test from {{senderName}}", contentMode: "html", bodyText: "Hello Test Recipient", bodyHtml: "<h1>Hello {{leadFullName}}</h1>", sourceFileName: "smtp-test.html", isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: new Date(), updatedAt: new Date() });
     const getFrame = vi.spyOn(db, "getEmailTemplate").mockResolvedValue(undefined);
     vi.spyOn(db, "updateStaffSmtpTestResult").mockResolvedValue(undefined);
     const send = vi.spyOn(smtp, "sendStaffSmtpEmail").mockResolvedValue({ configured: true, sent: true, error: null, messageId: "test-message" });
 
-    const result = await appRouter.createCaller(context("user", 17)).emailSettings.sendTestEmail({ recipientEmail: "destination@example.com", messageTemplateId: 8 });
+    const result = await appRouter.createCaller(context("admin", SYSTEM_ADMIN_ACTOR_ID)).emailSettings.sendTestEmail({ userId: 17, recipientEmail: "destination@example.com", messageTemplateId: 8 });
 
     expect(result).toMatchObject({ success: true, recipientEmail: "destination@example.com", templateName: "SMTP test design" });
     expect(getFrame).toHaveBeenCalledWith(SYSTEM_ADMIN_ACTOR_ID);
@@ -123,12 +125,14 @@ describe("SMTP settings authorization and API shaping", () => {
   });
 
   it("rejects a test email when no active selected template exists", async () => {
-    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en", permissions: JSON.stringify({ manageEmails: true, useEmailTemplates: true }), createdAt: new Date(), updatedAt: new Date() });
+    const now = new Date();
+    vi.spyOn(db, "getUserById").mockResolvedValue({ id: 17, openId: "staff:17", name: "Staff Member", email: "staff@example.com", loginMethod: "local", role: "user", createdAt: now, updatedAt: now, lastSignedIn: now });
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ userId: 17, jobTitle: "Technical Staff", isActive: true, preferredLanguage: "en", permissions: JSON.stringify({ manageEmails: false, useEmailTemplates: false }), createdAt: now, updatedAt: now });
     vi.spyOn(db, "getStaffSmtpSettings").mockResolvedValue(stored);
     vi.spyOn(db, "getSelectableEmailMessageTemplate").mockResolvedValue(undefined);
     const send = vi.spyOn(smtp, "sendStaffSmtpEmail");
 
-    await expect(appRouter.createCaller(context("user", 17)).emailSettings.sendTestEmail({ recipientEmail: "destination@example.com", messageTemplateId: 99 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(appRouter.createCaller(context("admin", SYSTEM_ADMIN_ACTOR_ID)).emailSettings.sendTestEmail({ userId: 17, recipientEmail: "destination@example.com", messageTemplateId: 99 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(send).not.toHaveBeenCalled();
   });
 });
