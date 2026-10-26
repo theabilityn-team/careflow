@@ -319,3 +319,15 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Protected caches are cancelled/removed on login, logout, invitation acceptance, and reset login to prevent cross-account data reuse.
 - [x] Migration 0020, live transaction/ownership/rollback and UI tests, 202 regression tests, TypeScript, production build, and HTTP runtime verified.
 - [x] All disposable accounts, leads, Customers, Orders, credentials, SMTP profiles, sessions, identity keys, and audits removed. Main QA artifacts removed; original SMTP/password fingerprints unchanged. No real email or payment sent.
+
+
+## Completed update: Privilege-safe staff impersonation — 2026-10-26
+- [x] Super Admin can impersonate any active staff including Leaders; active Leaders can impersonate only ordinary active staff. Self, inactive, nested, and forged source/target requests are rejected server-side.
+- [x] Additive migration 0021 stores server-only original-session overlays and nullable original-operator audit provenance. No password sharing or target login-counter/credential changes.
+- [x] Original cookie session, actor rights, and target activity/role are revalidated on every request; one-hour maximum never exceeds original expiry. Revoked/expired parent sessions cannot restore access.
+- [x] Exact target permissions and ownership replace the actor workspace; no administrator/Leader permission union. Start is transactional with audit; stop/auto-end remove overlay before restoring identity.
+- [x] Impersonate confirmation, limited Leader Staff directory, responsive persistent banner, Return to my account, and Sign out completely are implemented.
+- [x] All business audit inserts preserve the effective staff actor and append original operator via isolated request context. Lead/order histories display Impersonated by.
+- [x] Account cache reset, cross-workspace notifications, identity polling, and stale-workspace mutation guards prevent old-account results/actions. Uncertain overlay or deletion state fails closed; API/log errors are secret-free.
+- [x] Passed 214 tests, TypeScript, production build, live policy/expiry/revocation/audit tests, actual Leader start/return/cross-workspace UI, and 320/360/390px plus desktop checks.
+- [x] All four QA accounts, fake lead, sessions, overlays, credentials, SMTP defaults, and audits removed; real credential/SMTP fingerprints unchanged. No real business record or email changed.

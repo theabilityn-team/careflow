@@ -1,3 +1,5 @@
+import { ImpersonationBanner } from "@/components/crm/Impersonation";
+import { ACCOUNT_SWITCH_EVENT, impersonationInfo } from "@/lib/impersonation";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +28,11 @@ const MAX_WIDTH = 360;
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem(SIDEBAR_WIDTH_KEY)) || DEFAULT_WIDTH);
   const { loading, user } = useAuth();
+  useEffect(() => {
+    const switched = (event: StorageEvent) => { if (event.key === ACCOUNT_SWITCH_EVENT) window.location.assign("/"); };
+    window.addEventListener("storage", switched);
+    return () => window.removeEventListener("storage", switched);
+  }, []);
   useEffect(() => localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)), [sidebarWidth]);
 
   if (loading) return <DashboardLayoutSkeleton />;
@@ -35,6 +42,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
 function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNode; setSidebarWidth: (width: number) => void }) {
   const { user, logout } = useAuth();
+  const impersonating = impersonationInfo(user);
   const { data: access } = trpc.dashboard.access.useQuery(undefined, { refetchInterval: 30_000 });
   const { data: notifications = [] } = trpc.dashboard.notifications.useQuery(undefined, { enabled: Boolean(access?.permissions.viewLeads) });
   const unreadDue = notifications.filter(item => !item.readAt && item.remindAt <= Date.now()).length;
@@ -58,7 +66,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
     { icon: Library, label: "Email templates", path: "/email-templates", show: access?.role === "super_admin" },
     { icon: Mail, label: "Email settings", path: "/email-settings", show: canManageEmailSettings(access?.role) },
     { icon: BookOpenCheck, label: "System guide", path: "/guide", show: true },
-    { icon: UsersRound, label: "Staff & access", path: "/staff", show: access?.role === "super_admin" },
+    { icon: UsersRound, label: access?.role === "super_admin" ? "Staff & access" : "Staff accounts", path: "/staff", show: !impersonating && Boolean(access?.isActive && access?.isLeader) },
   ].filter(item => item.show);
   const active = menuItems.find(item => item.path === "/" ? location === "/" : location.startsWith(item.path));
 
@@ -110,14 +118,15 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
           <SidebarFooter className="border-t border-slate-100 p-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild><button className="flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-slate-50"><Avatar className="h-9 w-9 border border-slate-200"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{user?.name?.slice(0, 1).toUpperCase() ?? "U"}</AvatarFallback></Avatar>{!isCollapsed && <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user?.name ?? "Staff member"}</p><p className="truncate text-xs text-slate-400">{access?.isLeader && access.role !== "super_admin" ? "Leader" : access?.jobTitle ?? "Loading access…"}</p></div>}</button></DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">{access?.role === "super_admin" && <DropdownMenuItem onClick={() => setPasswordDialogOpen(true)} className="cursor-pointer"><KeyRound className="mr-2 h-4 w-4" />Change admin password</DropdownMenuItem>}<DropdownMenuItem onClick={logout} className="cursor-pointer text-rose-600 focus:text-rose-600"><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem></DropdownMenuContent>
+              <DropdownMenuContent align="end" className="w-64">{access?.role === "super_admin" && <DropdownMenuItem onClick={() => setPasswordDialogOpen(true)} className="cursor-pointer"><KeyRound className="mr-2 h-4 w-4" />Change admin password</DropdownMenuItem>}<DropdownMenuItem onClick={logout} className="cursor-pointer text-rose-600 focus:text-rose-600"><LogOut className="mr-2 h-4 w-4" />{impersonating ? "Sign out completely" : "Sign out"}</DropdownMenuItem></DropdownMenuContent>
             </DropdownMenu>
           </SidebarFooter>
         </Sidebar>
         <div className={`absolute right-0 top-0 z-50 h-full w-1 cursor-col-resize ${isCollapsed ? "hidden" : ""}`} onMouseDown={() => setIsResizing(true)} />
       </div>
       <SidebarInset className="bg-[#f6f8f7]">
-        {isMobile && <div className="sticky top-0 z-40 flex h-14 min-w-0 items-center gap-3 border-b bg-white/90 px-3 backdrop-blur"><SidebarTrigger /><span className="min-w-0 truncate font-medium">{active?.label ?? "CareFlow"}</span></div>}
+        <div className="sticky top-0 z-50"><ImpersonationBanner />
+        {isMobile && <div className="relative z-40 flex h-14 min-w-0 items-center gap-3 border-b bg-white/90 px-3 backdrop-blur"><SidebarTrigger /><span className="min-w-0 truncate font-medium">{active?.label ?? "CareFlow"}</span></div>}</div>
         {!access?.isActive && <div className="m-4 break-words rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">Your account is awaiting Super Admin approval. CRM data is not available yet.</div>}
         <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
       </SidebarInset>

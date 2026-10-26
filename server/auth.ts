@@ -6,6 +6,8 @@ import type { User } from "../drizzle/schema";
 import { COOKIE_NAME, SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "@shared/const";
 import * as db from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { deleteImpersonationSession } from "./impersonationDb";
+import { resolveImpersonationPrincipal } from "./impersonation";
 
 const scrypt = promisify(nodeScrypt);
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -128,35 +130,60 @@ export function getSessionToken(req: Request) {
   return parseCookieHeader(req.headers.cookie ?? "")[COOKIE_NAME];
 }
 
-export async function authenticateRequest(req: Request) {
+type OriginalSession = { user: User; tokenHash: string; expiresAt: number };
+
+/** Resolve only the original cookie session. This never applies an impersonation overlay. */
+export async function authenticateOriginalRequest(req: Request): Promise<OriginalSession | null> {
   const token = getSessionToken(req);
   if (!token) return null;
   const tokenHash = hashToken(token);
   const staffRecord = await db.getAuthSession(tokenHash);
   if (staffRecord) {
     if (staffRecord.session.expiresAt <= Date.now()) {
-      await db.deleteAuthSession(tokenHash);
+      await Promise.all([
+        db.deleteAuthSession(tokenHash),
+        deleteImpersonationSession(tokenHash).catch(() => undefined),
+      ]);
       return null;
     }
     if (Date.now() - staffRecord.session.lastUsedAt > 5 * 60 * 1000) await db.touchAuthSession(staffRecord.session.id);
-    return staffRecord.user;
+    return { user: staffRecord.user, tokenHash, expiresAt: staffRecord.session.expiresAt };
   }
 
   const adminSession = await db.getSystemAdminSession(tokenHash);
   if (!adminSession) return null;
   if (adminSession.expiresAt <= Date.now()) {
-    await db.deleteSystemAdminSession(tokenHash);
+    await Promise.all([
+      db.deleteSystemAdminSession(tokenHash),
+      deleteImpersonationSession(tokenHash).catch(() => undefined),
+    ]);
     return null;
   }
   if (Date.now() - adminSession.lastUsedAt > 5 * 60 * 1000) await db.touchSystemAdminSession(adminSession.id);
-  return systemAdminPrincipal();
+  return { user: systemAdminPrincipal(), tokenHash, expiresAt: adminSession.expiresAt };
+}
+
+export async function authenticateRequest(req: Request) {
+  const original = await authenticateOriginalRequest(req);
+  if (!original) return null;
+  try {
+    return await resolveImpersonationPrincipal(original);
+  } catch {
+    // An uncertain overlay state must never silently widen target-mode permissions.
+    console.error("[Auth] Impersonation lookup failed");
+    return null;
+  }
 }
 
 export async function destroyLoginSession(req: Request, res: Response) {
   const token = getSessionToken(req);
   if (token) {
     const tokenHash = hashToken(token);
-    await Promise.all([db.deleteAuthSession(tokenHash), db.deleteSystemAdminSession(tokenHash)]);
+    await Promise.all([
+      db.deleteAuthSession(tokenHash),
+      db.deleteSystemAdminSession(tokenHash),
+      deleteImpersonationSession(tokenHash).catch(() => undefined),
+    ]);
   }
   res.clearCookie(COOKIE_NAME, { ...getSessionCookieOptions(req), sameSite: "lax" });
 }

@@ -1,3 +1,4 @@
+import { enrichAuditValues } from "./auditIdentity";
 import {
   and,
   asc,
@@ -269,7 +270,7 @@ export async function promoteLeadToCustomer(input: { leadId: number; customerSin
     const customerId = Number(created[0].insertId);
     const afterLead = { ...lead, status: "customer" as const };
     if (lead.status !== "customer") await tx.update(leads).set({ status: "customer" }).where(eq(leads.id, input.leadId));
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
         leadId: input.leadId,
         actorId: input.actorId,
         action: "customer.promoted",
@@ -279,7 +280,7 @@ export async function promoteLeadToCustomer(input: { leadId: number; customerSin
         snapshotBefore: serializeAudit(leadSnapshot(lead)),
         snapshotAfter: serializeAudit(leadSnapshot(afterLead)),
         occurredAt: Date.now(),
-      });
+      }));
     return { customerId, created: true };
   });
 }
@@ -405,7 +406,7 @@ export async function createSalesOrder(input: OrderWrite & { actorId: number; ac
     });
     const orderId = Number(result[0].insertId);
     const order = (await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1))[0];
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId: null,
       actorId: input.actorId,
       action: "order.created",
@@ -415,7 +416,7 @@ export async function createSalesOrder(input: OrderWrite & { actorId: number; ac
       snapshotBefore: null,
       snapshotAfter: serializeAudit(orderSnapshot(order)),
       occurredAt: Date.now(),
-    });
+    }));
     return { orderId };
   });
 }
@@ -457,7 +458,7 @@ export async function updateSalesOrder(input: OrderWrite & { id: number; actorId
     const reassigned = before.ownerUserId !== after.ownerUserId;
     const businessChanges = changed.filter(change => change.field !== "updatedBy");
     if (businessChanges.length) {
-      await tx.insert(auditEvents).values({
+      await tx.insert(auditEvents).values(enrichAuditValues({
         leadId: null,
         actorId: input.actorId,
         action: reassigned && businessChanges.length === 1 ? "order.reassigned" : "order.updated",
@@ -467,10 +468,10 @@ export async function updateSalesOrder(input: OrderWrite & { id: number; actorId
         snapshotBefore: serializeAudit(orderSnapshot(before)),
         snapshotAfter: serializeAudit(orderSnapshot(after)),
         occurredAt: Date.now(),
-      });
+      }));
     }
     if (reassigned && businessChanges.length > 1) {
-      await tx.insert(auditEvents).values({
+      await tx.insert(auditEvents).values(enrichAuditValues({
         leadId: null,
         actorId: input.actorId,
         action: "order.reassigned",
@@ -480,7 +481,7 @@ export async function updateSalesOrder(input: OrderWrite & { id: number; actorId
         snapshotBefore: serializeAudit(orderSnapshot(before)),
         snapshotAfter: serializeAudit(orderSnapshot(after)),
         occurredAt: Date.now(),
-      });
+      }));
     }
     return { orderId: input.id, changed: true };
   });
@@ -498,6 +499,8 @@ export async function getSalesOrder(id: number, viewer?: SalesReadViewer) {
     id: auditEvents.id,
     leadId: auditEvents.leadId,
     actorId: auditEvents.actorId,
+      impersonatedById: auditEvents.impersonatedById,
+      impersonatedByName: auditEvents.impersonatedByName,
     actorName: users.name,
     actorEmail: users.email,
     action: auditEvents.action,

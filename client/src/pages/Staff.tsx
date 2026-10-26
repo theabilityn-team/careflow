@@ -1,3 +1,4 @@
+import { ImpersonateButton, ImpersonationDirectory } from "@/components/crm/Impersonation";
 import { EmptyState, PageHeader, PageLoading } from "@/components/crm/CrmUi";
 import { CreateStaffAccountDialog, EditStaffAccountDialog, StaffPasswordDialog } from "@/components/crm/StaffAccountDialogs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -17,6 +18,14 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function Staff() {
+  const access = trpc.dashboard.access.useQuery();
+  if (access.isLoading) return <PageLoading />;
+  if (access.data?.role === "super_admin") return <AdminStaff />;
+  if (access.data?.isActive && access.data?.isLeader) return <ImpersonationDirectory />;
+  return <EmptyState title="Staff access unavailable" description="Only Super Admin manages staff accounts. Leaders can impersonate ordinary staff." />;
+}
+
+function AdminStaff() {
   const utils = trpc.useUtils();
   const staff = trpc.staff.list.useQuery();
   const invites = trpc.staff.invites.useQuery();
@@ -69,7 +78,7 @@ function StaffCard({ member, onSave }: { member: any; onSave: (values: any) => P
   useEffect(() => { setJobTitle(member.jobTitle); setActive(member.isActive); setPermissions(member.permissions); }, [member]);
 
   return <Card className="min-w-0 rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.04)]"><CardContent className="p-4 sm:p-6"><div className="flex min-w-0 flex-col gap-5 xl:flex-row xl:items-start">
-    <div className="flex min-w-0 items-start gap-4 xl:w-64 xl:shrink-0"><Avatar className="h-12 w-12 shrink-0"><AvatarFallback className="bg-slate-100 text-sm font-semibold">{initials(member.name?.split(" ")[0], member.name?.split(" ").slice(1).join(" "))}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><p className="break-words font-semibold text-slate-900 [overflow-wrap:anywhere]">{member.name || "Unnamed staff member"}</p><p className="break-all text-sm text-slate-500">{member.email || member.loginIdentifier || "No login identifier"}</p><div className="mt-2 flex flex-wrap gap-2">{member.isLeader && <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100">Leader</Badge>}<Badge variant="outline" className={member.smtpEnabled && member.smtpVerifiedAt ? "border-emerald-200 bg-emerald-50 text-emerald-700" : member.smtpEnabled ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-500"}>{member.smtpEnabled && member.smtpVerifiedAt ? "SMTP ready" : member.smtpEnabled ? "SMTP not verified" : "SMTP not configured"}</Badge></div><p className="mt-2 break-words text-xs text-slate-400">Last sign-in {formatDate(member.lastSignedIn, true)}</p>{member.smtpLastTestError && <p className="mt-1 break-words text-xs text-rose-500 [overflow-wrap:anywhere]">SMTP: {member.smtpLastTestError}</p>}<div className="mt-3 grid gap-2"><EditStaffAccountDialog member={member} /><StaffPasswordDialog member={member} /></div></div></div>
+    <div className="flex min-w-0 items-start gap-4 xl:w-64 xl:shrink-0"><Avatar className="h-12 w-12 shrink-0"><AvatarFallback className="bg-slate-100 text-sm font-semibold">{initials(member.name?.split(" ")[0], member.name?.split(" ").slice(1).join(" "))}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><p className="break-words font-semibold text-slate-900 [overflow-wrap:anywhere]">{member.name || "Unnamed staff member"}</p><p className="break-all text-sm text-slate-500">{member.email || member.loginIdentifier || "No login identifier"}</p><div className="mt-2 flex flex-wrap gap-2">{member.isLeader && <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100">Leader</Badge>}<Badge variant="outline" className={member.smtpEnabled && member.smtpVerifiedAt ? "border-emerald-200 bg-emerald-50 text-emerald-700" : member.smtpEnabled ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-500"}>{member.smtpEnabled && member.smtpVerifiedAt ? "SMTP ready" : member.smtpEnabled ? "SMTP not verified" : "SMTP not configured"}</Badge></div><p className="mt-2 break-words text-xs text-slate-400">Last sign-in {formatDate(member.lastSignedIn, true)}</p>{member.smtpLastTestError && <p className="mt-1 break-words text-xs text-rose-500 [overflow-wrap:anywhere]">SMTP: {member.smtpLastTestError}</p>}<div className="mt-3 grid gap-2"><EditStaffAccountDialog member={member} /><StaffPasswordDialog member={member} />{member.isActive && <ImpersonateButton member={member} />}</div></div></div>
     <div className="grid flex-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
       <div className="space-y-2 sm:col-span-2"><Label>Job title</Label><Input value={jobTitle} onChange={event => setJobTitle(event.target.value)} /></div>
       <div className="flex min-w-0 items-center justify-between gap-4 rounded-xl bg-slate-50 p-4 sm:col-span-2"><div className="min-w-0"><p className="text-sm font-medium">Active account</p><p className="break-words text-xs text-slate-500">Allow this staff member to use assigned features</p></div><Switch className="shrink-0" checked={active} onCheckedChange={setActive} /></div>

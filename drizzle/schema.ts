@@ -67,6 +67,19 @@ export const systemAdminSessions = mysqlTable("system_admin_sessions", {
   lastUsedAt: bigint("lastUsedAt", { mode: "number" }).notNull(),
 });
 
+export const impersonationSessions = mysqlTable("impersonation_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  originTokenHash: varchar("originTokenHash", { length: 64 }).notNull().unique(),
+  actorUserId: int("actorUserId").notNull(),
+  targetUserId: int("targetUserId").notNull(),
+  expiresAt: bigint("expiresAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  actor: index("impersonation_actor_idx").on(table.actorUserId),
+  target: index("impersonation_target_idx").on(table.targetUserId),
+  expiry: index("impersonation_expiry_idx").on(table.expiresAt),
+}));
+
 export const staffPermissions = mysqlTable("staff_permissions", {
   userId: int("userId").primaryKey(),
   jobTitle: varchar("jobTitle", { length: 120 }).default("Technical Staff").notNull(),
@@ -383,6 +396,8 @@ export const auditEvents = mysqlTable("audit_events", {
   id: int("id").autoincrement().primaryKey(),
   leadId: int("leadId"),
   actorId: int("actorId").notNull(),
+  impersonatedById: int("impersonatedById"),
+  impersonatedByName: varchar("impersonatedByName", { length: 160 }),
   action: varchar("action", { length: 120 }).notNull(),
   source: varchar("source", { length: 60 }).default("system").notNull(),
   detail: text("detail"),

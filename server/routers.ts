@@ -14,6 +14,7 @@ import { leadsRouter } from "./routers/leads";
 import { mailRouter } from "./routers/mail";
 import { scannerRouter } from "./routers/scanner";
 import { staffRouter } from "./routers/staff";
+import { impersonationRouter } from "./routers/impersonation";
 import { superAdminPasswordSchema } from "./passwordSecurity";
 
 export const appRouter = router({
@@ -70,6 +71,7 @@ export const appRouter = router({
   mail: mailRouter,
   scanner: scannerRouter,
   staff: staffRouter,
+  impersonation: impersonationRouter,
 });
 
 export type AppRouter = typeof appRouter;

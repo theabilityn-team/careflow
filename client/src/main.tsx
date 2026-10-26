@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { workspaceHeaders } from "@/lib/impersonation";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -17,6 +18,7 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
+      headers: workspaceHeaders,
       fetch(input, init) {
         return globalThis.fetch(input, { ...(init ?? {}), credentials: "include" });
       },

@@ -1,3 +1,4 @@
+import { enrichAuditValues } from "./auditIdentity";
 import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
@@ -444,7 +445,7 @@ export async function deleteEmailProduct(id: number, actorId: number) {
 
     await tx.delete(emailMessageTemplates).where(eq(emailMessageTemplates.productId, id));
     await tx.delete(emailProducts).where(eq(emailProducts.id, id));
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId: null,
       actorId,
       action: "email.product_deleted",
@@ -459,7 +460,7 @@ export async function deleteEmailProduct(id: number, actorId: number) {
       }),
       snapshotAfter: null,
       occurredAt: Date.now(),
-    });
+    }));
 
     return { deletedTemplateCount: templates.length };
   });
@@ -558,7 +559,7 @@ export async function deleteEmailMessageTemplate(id: number, actorId: number) {
     if (!template) return null;
 
     await tx.delete(emailMessageTemplates).where(eq(emailMessageTemplates.id, id));
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId: null,
       actorId,
       action: "email.template_deleted",
@@ -572,7 +573,7 @@ export async function deleteEmailMessageTemplate(id: number, actorId: number) {
       }),
       snapshotAfter: null,
       occurredAt: Date.now(),
-    });
+    }));
 
     return { success: true } as const;
   });
@@ -796,7 +797,7 @@ export async function createDirectStaffAccount(input: {
       isEnabled: false,
     });
     await tx.update(staffInvites).set({ status: "revoked" }).where(and(eq(sql`lower(trim(${staffInvites.email}))`, input.email), eq(staffInvites.status, "pending")));
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId: null,
       actorId: input.actorId,
       action: "staff.account_created",
@@ -806,7 +807,7 @@ export async function createDirectStaffAccount(input: {
       snapshotBefore: null,
       snapshotAfter: null,
       occurredAt: Date.now(),
-    });
+    }));
     return userId;
   });
 }
@@ -843,7 +844,7 @@ export async function editStaffAccount(input: {
         eq(staffInvites.status, "pending"),
       ));
     }
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId: null,
       actorId: input.actorId,
       action: "staff.account_edited",
@@ -853,7 +854,7 @@ export async function editStaffAccount(input: {
       snapshotBefore: null,
       snapshotAfter: null,
       occurredAt: Date.now(),
-    });
+    }));
     return { success: true as const, emailChanged };
   });
 }
@@ -881,7 +882,7 @@ export async function setStaffAccountPassword(input: {
       eq(passwordResetRequests.userId, input.userId),
       inArray(passwordResetRequests.status, ["pending", "ready"]),
     ));
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId: null,
       actorId: input.actorId,
       action: "staff.account_password_changed",
@@ -891,7 +892,7 @@ export async function setStaffAccountPassword(input: {
       snapshotBefore: null,
       snapshotAfter: null,
       occurredAt: now,
-    });
+    }));
     return { success: true as const };
   });
 }
@@ -917,7 +918,7 @@ export async function updateStaffAccess(input: {
       await tx.update(staffPermissions).set({ jobTitle: input.jobTitle, isActive: input.isActive, permissions: input.permissions }).where(eq(staffPermissions.userId, input.userId));
     }
     if (existing?.isActive && (!input.isActive || beforePermissions.manageSales && !afterPermissions.manageSales)) await tx.delete(authSessions).where(eq(authSessions.userId, input.userId));
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId: null,
       actorId: input.actorId ?? SYSTEM_ADMIN_ACTOR_ID,
       action: "staff.access_updated",
@@ -927,7 +928,7 @@ export async function updateStaffAccess(input: {
       snapshotBefore: serializeAudit({ userId: input.userId, isActive: existing?.isActive ?? false, jobTitle: existing?.jobTitle ?? null, permissions: beforePermissions }),
       snapshotAfter: serializeAudit({ userId: input.userId, isActive: input.isActive, jobTitle: input.jobTitle, permissions: afterPermissions }),
       occurredAt: Date.now(),
-    });
+    }));
     return true;
   });
 }
@@ -1391,7 +1392,7 @@ export async function removeLeadGroup(groupId: number, actorId: number) {
 
     const occurredAt = Date.now();
     if (members.length) {
-      await tx.insert(auditEvents).values(members.map(member => ({
+      await tx.insert(auditEvents).values(enrichAuditValues(members.map(member => ({
         leadId: member.leadId,
         actorId,
         action: "lead.group_removed",
@@ -1401,9 +1402,9 @@ export async function removeLeadGroup(groupId: number, actorId: number) {
         snapshotBefore: null,
         snapshotAfter: null,
         occurredAt,
-      })));
+      }))));
     }
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId: null,
       actorId,
       action: "group.deleted",
@@ -1413,7 +1414,7 @@ export async function removeLeadGroup(groupId: number, actorId: number) {
       snapshotBefore: null,
       snapshotAfter: null,
       occurredAt,
-    });
+    }));
     return { detachedLeadIds: members.map(member => member.leadId) };
   });
 }
@@ -1460,6 +1461,8 @@ export async function getLead(leadId: number, viewer?: { userId: number; isSuper
       id: auditEvents.id,
       leadId: auditEvents.leadId,
       actorId: auditEvents.actorId,
+      impersonatedById: auditEvents.impersonatedById,
+      impersonatedByName: auditEvents.impersonatedByName,
       actorName: users.name,
       actorEmail: users.email,
       action: auditEvents.action,
@@ -1724,7 +1727,7 @@ export async function createLeadWithAudit(input: InsertLead, audit: { actorId: n
     if (keys.length) await tx.insert(leadIdentityKeys).values(keys.map(key => ({ leadId, ...key })));
     const created = (await tx.select().from(leads).where(eq(leads.id, leadId)).limit(1))[0];
     const changes = leadChanges({}, created);
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId,
       actorId: audit.actorId,
       action: "lead.created",
@@ -1734,7 +1737,7 @@ export async function createLeadWithAudit(input: InsertLead, audit: { actorId: n
       snapshotBefore: null,
       snapshotAfter: serializeAudit(leadSnapshot(created)),
       occurredAt: Date.now(),
-    });
+    }));
     const latestOwnedGroup = (await tx.select({ id: leadGroups.id, name: leadGroups.name })
       .from(leadGroups)
       .where(eq(leadGroups.ownerId, input.createdBy))
@@ -1742,7 +1745,7 @@ export async function createLeadWithAudit(input: InsertLead, audit: { actorId: n
       .limit(1))[0];
     if (latestOwnedGroup) {
       await tx.insert(leadGroupMembers).values({ groupId: latestOwnedGroup.id, leadId, addedBy: input.createdBy });
-      await tx.insert(auditEvents).values({
+      await tx.insert(auditEvents).values(enrichAuditValues({
         leadId,
         actorId: audit.actorId,
         action: "lead.group_assigned",
@@ -1752,7 +1755,7 @@ export async function createLeadWithAudit(input: InsertLead, audit: { actorId: n
         snapshotBefore: null,
         snapshotAfter: null,
         occurredAt: Date.now(),
-      });
+      }));
     }
     if (created.nextFollowUpAt) await createActiveFollowUp(tx, {
       lead: created,
@@ -1782,7 +1785,7 @@ export async function updateLeadWithAudit(
     }
     await tx.update(leads).set(values).where(eq(leads.id, leadId));
     await replaceLeadIdentityKeys(tx, leadId, after);
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId,
       actorId: audit.actorId,
       action: audit.action,
@@ -1792,7 +1795,7 @@ export async function updateLeadWithAudit(
       snapshotBefore: serializeAudit(leadSnapshot(before)),
       snapshotAfter: serializeAudit(leadSnapshot(after)),
       occurredAt: Date.now(),
-    });
+    }));
     if (changes.some(change => change.field === "assignedTo" || change.field === "email")) {
       const deliveryContext: Partial<typeof followUpReminders.$inferInsert> = {};
       if (changes.some(change => change.field === "assignedTo")) {
@@ -1854,7 +1857,7 @@ export async function addCommunicationWithAudit(input: typeof communications.$in
     });
     else await refreshLeadNextFollowUpAt(tx, input.leadId);
     const after = (await tx.select().from(leads).where(eq(leads.id, input.leadId)).limit(1))[0];
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId: input.leadId,
       actorId: input.createdBy,
       action: completeFollowUp ? "follow_up.completed" : "communication.logged",
@@ -1864,14 +1867,14 @@ export async function addCommunicationWithAudit(input: typeof communications.$in
       snapshotBefore: serializeAudit(leadSnapshot(before)),
       snapshotAfter: serializeAudit(leadSnapshot(after)),
       occurredAt: Date.now(),
-    });
+    }));
     return after;
   });
 }
 
 export async function addAuditEvent(input: typeof auditEvents.$inferInsert) {
   const db = await requireDb();
-  await db.insert(auditEvents).values(input);
+  await db.insert(auditEvents).values(enrichAuditValues(input));
 }
 
 export async function getDashboardSummary(viewer: { userId: number; isSuperAdmin: boolean }) {
@@ -1967,7 +1970,7 @@ export async function updateActiveFollowUp(input: { id: number; scheduledFor: nu
     }).where(eq(followUpReminders.id, input.id));
     await refreshLeadNextFollowUpAt(tx, reminder.leadId);
     const after = (await tx.select().from(leads).where(eq(leads.id, reminder.leadId)).limit(1))[0];
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId: reminder.leadId,
       actorId: input.actorId,
       action: "follow_up.updated",
@@ -1977,7 +1980,7 @@ export async function updateActiveFollowUp(input: { id: number; scheduledFor: nu
       snapshotBefore: serializeAudit(leadSnapshot(before)),
       snapshotAfter: serializeAudit(leadSnapshot(after)),
       occurredAt: Date.now(),
-    });
+    }));
     return { leadId: reminder.leadId };
   });
 }
@@ -1992,7 +1995,7 @@ export async function deleteActiveFollowUp(input: { id: number; actorId: number 
     await tx.delete(followUpReminders).where(eq(followUpReminders.id, input.id));
     await refreshLeadNextFollowUpAt(tx, reminder.leadId);
     const after = (await tx.select().from(leads).where(eq(leads.id, reminder.leadId)).limit(1))[0];
-    await tx.insert(auditEvents).values({
+    await tx.insert(auditEvents).values(enrichAuditValues({
       leadId: reminder.leadId,
       actorId: input.actorId,
       action: "follow_up.deleted",
@@ -2002,7 +2005,7 @@ export async function deleteActiveFollowUp(input: { id: number; actorId: number 
       snapshotBefore: serializeAudit(leadSnapshot(before)),
       snapshotAfter: serializeAudit(leadSnapshot(after)),
       occurredAt: Date.now(),
-    });
+    }));
     return { leadId: reminder.leadId };
   });
 }
