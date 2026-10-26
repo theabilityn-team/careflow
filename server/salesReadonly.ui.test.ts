@@ -43,6 +43,14 @@ describe("ordinary staff read-only sales UI", () => {
     expect(html).not.toContain("All credited owners");
     expect(mocks.ownersQuery).toHaveBeenCalledWith(undefined, { enabled: false });
   });
+  it("offers inclusive Eastern purchase-date bounds without granting attribution access", () => {
+    const html = renderToStaticMarkup(React.createElement(Orders));
+    expect(html).toContain('id="orders-date-from"');
+    expect(html).toContain('id="orders-date-to"');
+    expect(html).toContain('type="date"');
+    expect(html).toContain("Both selected days are included");
+    expect(html).not.toContain("data-order-staff-selector");
+  });
   it("does not link an order-credited customer to a lead the staff cannot access", () => {
     const html = renderToStaticMarkup(React.createElement(CustomerDetail));
     expect(html).toContain("Own Customer");

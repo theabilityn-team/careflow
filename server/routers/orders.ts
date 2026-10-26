@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "../salesDb";
 import { assertSalesAccess, assertSalesReadAccess, hasGlobalLeadAccess } from "../permissions";
+import { getOrderDateRange } from "../../shared/orderDates";
 import { protectedProcedure, router } from "../_core/trpc";
 
 const MAX_EPOCH_MS = 8_640_000_000_000;
@@ -16,6 +17,25 @@ const pageInput = {
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(25),
 };
+const orderListInput = z.object({
+  search: z.string().trim().max(120).optional(),
+  customerId: customerId.optional(),
+  ownerUserId: z.number().int().positive().optional(),
+  status: status.optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  ...pageInput,
+}).superRefine((value, context) => {
+  try {
+    getOrderDateRange(value.dateFrom, value.dateTo);
+  } catch (error) {
+    context.addIssue({
+      code: "custom",
+      message: error instanceof RangeError ? error.message : "Purchase date range is invalid.",
+      path: [],
+    });
+  }
+});
 
 const externalReference = z.string().trim().max(80).optional().nullable().transform(value => value || null);
 const productName = z.string().trim().min(1).max(160);
@@ -50,13 +70,7 @@ function mapSalesError(error: unknown): never {
 
 export const ordersRouter = router({
   list: protectedProcedure
-    .input(z.object({
-      search: z.string().trim().max(120).optional(),
-      customerId: customerId.optional(),
-      ownerUserId: z.number().int().positive().optional(),
-      status: status.optional(),
-      ...pageInput,
-    }))
+    .input(orderListInput)
     .query(async ({ ctx, input }) => {
       const access = await assertSalesReadAccess(ctx.user);
       return db.listOrders(input, { userId: ctx.user.id, isGlobal: hasGlobalLeadAccess(access) });

@@ -331,3 +331,12 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Account cache reset, cross-workspace notifications, identity polling, and stale-workspace mutation guards prevent old-account results/actions. Uncertain overlay or deletion state fails closed; API/log errors are secret-free.
 - [x] Passed 214 tests, TypeScript, production build, live policy/expiry/revocation/audit tests, actual Leader start/return/cross-workspace UI, and 320/360/390px plus desktop checks.
 - [x] All four QA accounts, fake lead, sessions, overlays, credentials, SMTP defaults, and audits removed; real credential/SMTP fingerprints unchanged. No real business record or email changed.
+
+
+## Completed update: Readable order staff selectors and purchase dates — 2026-10-26
+- [x] Expanded desktop Add/Edit order dialog to 896px; credited-owner selector spans the full form row.
+- [x] Added reusable wider staff popup with separate wrapping name/email lines, full selected identity, accessible label, and readable touch spacing. Me, other staff, and inactive current attribution are preserved.
+- [x] Orders staff filter is wider with responsive grid layout and full staff identity; customer/status selectors also fill their available fields.
+- [x] Added Purchased from/to and Clear dates. Filter uses orderedAt, includes the full Eastern day at both bounds, allows open bounds, resets pagination, and suppresses stale rows for invalid range.
+- [x] Shared client/server calendar validation and DST-aware inclusive SQL bounds preserve existing owner/customer/status/search ACL and count/item query parity.
+- [x] Verified 225 tests, TypeScript, production build, read-only live SQL/API parity for four ranges, and actual component rendering at 320/360/390px and desktop. No business records, credentials, emails, or orders were modified; in-memory QA render artifacts removed.

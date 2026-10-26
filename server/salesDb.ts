@@ -20,6 +20,7 @@ import {
   staffPermissions,
   users,
 } from "../drizzle/schema";
+import { getOrderDateRange, type OrderDateRange } from "../shared/orderDates";
 import { getDb } from "./db";
 import { leadChanges, leadSnapshot, parseAuditJson, serializeAudit } from "./leadAudit";
 
@@ -285,11 +286,20 @@ export async function promoteLeadToCustomer(input: { leadId: number; customerSin
   });
 }
 
-function buildOrderFilters(input: { search?: string; customerId?: number; ownerUserId?: number; status?: OrderStatus }) {
+export function orderDateSqlPredicate(range: OrderDateRange) {
+  const filters = [];
+  if (range.orderedFrom !== undefined) filters.push(sql`${salesOrders.orderedAt} >= ${range.orderedFrom}`);
+  if (range.orderedTo !== undefined) filters.push(sql`${salesOrders.orderedAt} <= ${range.orderedTo}`);
+  return filters.length ? and(...filters) : undefined;
+}
+
+export function buildOrderFilters(input: { search?: string; customerId?: number; ownerUserId?: number; status?: OrderStatus; dateFrom?: string; dateTo?: string }) {
   const filters = [];
   if (input.customerId) filters.push(eq(salesOrders.customerId, input.customerId));
   if (input.ownerUserId) filters.push(eq(salesOrders.ownerUserId, input.ownerUserId));
   if (input.status) filters.push(eq(salesOrders.status, input.status));
+  const dateFilter = orderDateSqlPredicate(getOrderDateRange(input.dateFrom, input.dateTo));
+  if (dateFilter) filters.push(dateFilter);
   const term = input.search?.trim();
   if (term) {
     const pattern = `%${term}%`;
@@ -306,7 +316,7 @@ function buildOrderFilters(input: { search?: string; customerId?: number; ownerU
   return filters;
 }
 
-export async function listOrders(input: { search?: string; customerId?: number; ownerUserId?: number; status?: OrderStatus; page?: number; pageSize?: number }, viewer?: SalesReadViewer) {
+export async function listOrders(input: { search?: string; customerId?: number; ownerUserId?: number; status?: OrderStatus; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number }, viewer?: SalesReadViewer) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
   const filters = buildOrderFilters(input);
