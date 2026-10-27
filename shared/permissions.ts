@@ -4,6 +4,7 @@ export const PERMISSION_KEYS = [
   "editLeads",
   "scanDocuments",
   "viewClinical",
+  "viewDocuments",
   "manageContacts",
   "manageEmails",
   "useEmailTemplates",
@@ -21,6 +22,7 @@ export const DEFAULT_TECHNICAL_PERMISSIONS: Permissions = {
   editLeads: true,
   scanDocuments: false,
   viewClinical: false,
+  viewDocuments: false,
   manageContacts: true,
   manageEmails: false,
   useEmailTemplates: false,
@@ -39,5 +41,12 @@ export function upgradeLegacyEmailPermissions(value: Record<string, unknown>) {
   const result = { ...value };
   if (!Object.hasOwn(result, "manageEmails")) result.manageEmails = value.manageContacts === true;
   if (!Object.hasOwn(result, "useEmailTemplates")) result.useEmailTemplates = value.manageContacts === true;
+  return result;
+}
+
+/** One-time stored-data upgrade only. Runtime checks never infer document access from clinical access. */
+export function upgradeLegacyDocumentPermissions(value: Record<string, unknown>) {
+  const result = { ...value };
+  if (!Object.hasOwn(result, "viewDocuments")) result.viewDocuments = value.viewClinical === true;
   return result;
 }

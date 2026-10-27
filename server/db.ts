@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { SUPER_ADMIN_EMAIL, SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
 import { inferSupportedStateCode } from "../shared/leadClassification";
 import { inferStoredDocumentType } from "../shared/referralDocuments";
-import { normalizePermissions, upgradeLegacyEmailPermissions } from "../shared/permissions";
+import { normalizePermissions, upgradeLegacyDocumentPermissions, upgradeLegacyEmailPermissions } from "../shared/permissions";
 import {
   authSessions,
   auditEvents,
@@ -735,8 +735,9 @@ export async function backfillLegacyEmailPermissions() {
         try { value = JSON.parse(row.permissions); } catch { continue; }
         if (!value || typeof value !== "object" || Array.isArray(value)) continue;
         const saved = value as Record<string, unknown>;
-        if (Object.hasOwn(saved, "manageEmails") && Object.hasOwn(saved, "useEmailTemplates")) continue;
-        const permissions = JSON.stringify(upgradeLegacyEmailPermissions(saved));
+        const upgraded = upgradeLegacyDocumentPermissions(upgradeLegacyEmailPermissions(saved));
+        if (JSON.stringify(upgraded) === JSON.stringify(saved)) continue;
+        const permissions = JSON.stringify(upgraded);
         await tx.update(table).set({ permissions }).where(and(eq(primaryKey, row.id), eq(table.permissions, row.permissions)));
         counts[key]++;
       }

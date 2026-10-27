@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TECHNICAL_PERMISSIONS, normalizePermissions, upgradeLegacyEmailPermissions } from "../shared/permissions";
+import { DEFAULT_TECHNICAL_PERMISSIONS, normalizePermissions, upgradeLegacyDocumentPermissions, upgradeLegacyEmailPermissions } from "../shared/permissions";
 
 describe("independent email permissions", () => {
   it("defaults new accounts to no email or template access", () => {
@@ -31,5 +31,19 @@ describe("independent email permissions", () => {
     expect(normalizePermissions({ manageEmails: "true", useEmailTemplates: 1 }).useEmailTemplates).toBe(false);
     expect(normalizePermissions(null).manageEmails).toBe(false);
     expect(normalizePermissions([]).useEmailTemplates).toBe(false);
+  });
+
+  it("backfills document access from legacy clinical access exactly once", () => {
+    const old = { viewClinical: true, custom: "retained" };
+    const upgraded = upgradeLegacyDocumentPermissions(old);
+    expect(upgraded).toEqual({ ...old, viewDocuments: true });
+    expect(old).not.toHaveProperty("viewDocuments");
+    expect(upgradeLegacyDocumentPermissions(upgraded)).toEqual(upgraded);
+  });
+
+  it("preserves explicit document denial during upgrades", () => {
+    expect(upgradeLegacyDocumentPermissions({ viewClinical: true, viewDocuments: false })).toEqual({ viewClinical: true, viewDocuments: false });
+    expect(upgradeLegacyDocumentPermissions({ viewClinical: false, viewDocuments: false })).toEqual({ viewClinical: false, viewDocuments: false });
+    expect(upgradeLegacyDocumentPermissions({ viewClinical: "true", viewDocuments: false }).viewDocuments).toBe(false);
   });
 });

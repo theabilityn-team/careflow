@@ -32,6 +32,7 @@ const permissions = {
   editLeads: true,
   scanDocuments: false,
   viewClinical: false,
+  viewDocuments: true,
   manageContacts: true,
   manageEmails: false,
   useEmailTemplates: false,

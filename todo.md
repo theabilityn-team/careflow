@@ -362,3 +362,12 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Responsive expanded fields, inline invalid-recipient feedback, guarded single-submit, safe draft cleanup, and fixed lead composer footer verified using real components with an entirely mocked transport.
 - [x] Shared notice clarifies message-level engagement aggregates To/CC/BCC rather than identifying the opener.
 - [x] 247 tests, TypeScript, production build, real database direct/linked storage + BCC privacy with mocked SMTP, and no-network MIME test passed. Temporary accounts/lead/emails/scripts/harness/captures removed; no real email sent.
+
+
+## Completed update: Lead template picker and Documents permission — 2026-10-27
+- [x] Product & Email template controls remain visible at the top of lead Send email; authorized users select plain/HTML templates, preview/edit, and send exact selected IDs.
+- [x] Disabled Use email templates shows explicit disabled controls and Staff & access guidance rather than silently hiding the picker. Loading, retry, no-active-template, and product-switch cleanup states are handled; no permission bypass or implicit grant.
+- [x] Independent Documents switch added to staff access, invitations, and direct-account defaults. New accounts default off; old stored records retain former document entitlement once from viewClinical, preserving explicit false.
+- [x] API and UI require Documents plus existing clinical access for raw clinical images; turning Documents off does not remove permitted clinical text. No implicit Leader/impersonation bypass.
+- [x] Denied lead payloads contain no document URLs, names, keys, or images. Stale UI Documents tab/media disappear on access change, returning to Overview.
+- [x] 259 regression tests, TypeScript, production build, stored backfill coverage, fake-transport picker/send and Staff save, and 320/360/390/1280px dialog containment verified. No real emails or lead mutations; temporary harness/captures removed.

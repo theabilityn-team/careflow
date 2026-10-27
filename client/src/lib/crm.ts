@@ -86,6 +86,7 @@ export const PERMISSION_LABELS = {
   editLeads: ["Edit lead details", "Correct and maintain profile information"],
   scanDocuments: ["Add leads from images", "Use single or bulk AI extraction on uploaded document images"],
   viewClinical: ["View clinical data", "Access diagnoses and medical notes"],
+  viewDocuments: ["Documents", "Open attached lead documents/images; View clinical data must also be active because source files contain clinical information"],
   manageContacts: ["Manage communications", "Log calls, SMS, meetings, and follow-ups; email access is separate"],
   manageEmails: ["Emails", "Open Mails, send from the assigned email, and view email history; SMTP setup is Super Admin-only"],
   useEmailTemplates: ["Use email templates", "Select approved product templates when Emails is enabled; editing remains Super Admin-only"],

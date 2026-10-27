@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { formatEasternDate } from "@shared/time";
-import { AlertTriangle, CheckCircle2, Code2, Eye, FileCode2, Library, Loader2, Mail, Send } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Code2, Eye, FileCode2, Library, Loader2, Mail, Send, RefreshCw, LockKeyhole } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -58,7 +58,7 @@ type LeadEmailHistoryData = {
 
 export function LeadEmailComposerDialog({ lead, canUseTemplates, onSent }: { lead: LeadRecipient; canUseTemplates: boolean; onSent: () => Promise<void> | void }) {
   const [open, setOpen] = useState(false);
-  const library = trpc.emailLibrary.library.useQuery(undefined, { enabled: open && canUseTemplates });
+  const library = trpc.emailLibrary.library.useQuery(undefined, { enabled: open && canUseTemplates, refetchOnMount: "always" });
   const sendEmail = trpc.mail.send.useMutation();
   const [productId, setProductId] = useState("");
   const [messageTemplateId, setMessageTemplateId] = useState("");
@@ -89,6 +89,9 @@ export function LeadEmailComposerDialog({ lead, canUseTemplates, onSent }: { lea
   function selectProduct(value: string) {
     setProductId(value);
     setMessageTemplateId("");
+    setContentMode("plain");
+    setBodyHtml("");
+    setBodyText(selectedTemplate?.bodyText || bodyText);
   }
 
   function applyTemplate(value: string) {
@@ -151,15 +154,18 @@ export function LeadEmailComposerDialog({ lead, canUseTemplates, onSent }: { lea
         <DialogDescription className="break-words text-sm leading-5 sm:leading-6">To <span className="break-all font-medium text-slate-700">{lead.email}</span>. {canUseTemplates ? "Choose an approved product template or write a plain-text message, then review the final draft." : "Write a plain-text message and review the final draft. Template access is not enabled for your account."}</DialogDescription>
       </DialogHeader>
       <div className="min-w-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-4 py-5 overscroll-contain sm:px-6">
-        <EmailCopyRecipients cc={cc} bcc={bcc} disabled={sendEmail.isPending} error={recipientError} onCcChange={value => { setCc(value); setRecipientError(null); }} onBccChange={value => { setBcc(value); setRecipientError(null); }} />
-        {canUseTemplates && <div className="min-w-0 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4">
-          <div className="mb-4 flex items-start gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-cyan-800 shadow-sm"><Library className="h-4 w-4" /></div><div><p className="font-semibold text-slate-900">Start from an approved template</p><p className="text-sm leading-6 text-slate-600">Choose a product and an active Super Admin template. The subject and message remain editable.</p></div></div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="min-w-0 space-y-2"><Label>Product</Label><Select value={productId} onValueChange={selectProduct}><SelectTrigger className="w-full min-w-0 bg-white"><SelectValue placeholder={library.isLoading ? "Loading products…" : "Select a product"} /></SelectTrigger><SelectContent align="start" className="max-w-[calc(100vw-2rem)]">{library.data?.map(product => <SelectItem key={product.id} value={String(product.id)} textValue={product.name}>{product.name}</SelectItem>)}</SelectContent></Select></div>
-            <div className="min-w-0 space-y-2"><Label>Email template</Label><Select value={messageTemplateId} onValueChange={applyTemplate} disabled={!productId || !selectedProduct?.templates.length}><SelectTrigger className="w-full min-w-0 bg-white"><SelectValue placeholder={!productId ? "Select a product first" : selectedProduct?.templates.length ? "Select a template" : "No active templates"} /></SelectTrigger><SelectContent align="start" className="max-w-[calc(100vw-2rem)]">{selectedProduct?.templates.map(template => <SelectItem key={template.id} value={String(template.id)} textValue={`${template.name} ${template.contentMode === "html" ? "HTML" : "Plain text"}`}>{template.name} · {template.contentMode === "html" ? "HTML" : "Plain text"}</SelectItem>)}</SelectContent></Select></div>
+        <section aria-label="Product and email template" className="min-w-0 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4">
+          <div className="mb-4 flex items-start gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-cyan-800 shadow-sm"><Library className="h-4 w-4" /></div><div className="min-w-0"><p className="font-semibold text-slate-900">Product & email template</p><p className="text-sm leading-6 text-slate-600">Select a product, then an approved template. The subject and message remain editable.</p></div></div>
+          {!canUseTemplates && <Alert className="mb-4 border-amber-200 bg-amber-50 text-amber-950"><LockKeyhole className="h-4 w-4" /><AlertTitle>Template permission is disabled</AlertTitle><AlertDescription>Ask Super Admin to enable <strong>Use email templates</strong> in Staff &amp; access. You can still write and send a plain-text email.</AlertDescription></Alert>}
+          {canUseTemplates && library.isError && <Alert className="mb-4" variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Templates could not be loaded</AlertTitle><AlertDescription>Try again, or ask Super Admin to check your template access.<Button type="button" variant="outline" className="mt-2 w-full sm:w-auto" disabled={library.isFetching} onClick={() => library.refetch()}><RefreshCw className="mr-2 h-4 w-4" />Retry</Button></AlertDescription></Alert>}
+          {canUseTemplates && library.isSuccess && !library.data?.length && <p role="status" className="mb-4 break-words rounded-xl bg-white p-3 text-sm leading-6 text-slate-600">No active product templates are available. Super Admin must activate a product and at least one template in Email templates.</p>}
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <div className="min-w-0 space-y-2"><Label htmlFor="lead-email-product">Product</Label><Select value={productId} onValueChange={selectProduct} disabled={!canUseTemplates || library.isLoading || library.isError || !library.data?.length || sendEmail.isPending}><SelectTrigger id="lead-email-product" className="w-full min-w-0 bg-white"><SelectValue placeholder={!canUseTemplates ? "Template access disabled" : library.isLoading ? "Loading products…" : "Select a product"} /></SelectTrigger><SelectContent align="start" className="max-w-[calc(100vw-2rem)]">{library.data?.map(product => <SelectItem key={product.id} value={String(product.id)} textValue={product.name}>{product.name}</SelectItem>)}</SelectContent></Select></div>
+            <div className="min-w-0 space-y-2"><Label htmlFor="lead-email-template">Email template</Label><Select value={messageTemplateId} onValueChange={applyTemplate} disabled={!canUseTemplates || !productId || !selectedProduct?.templates.length || sendEmail.isPending}><SelectTrigger id="lead-email-template" className="w-full min-w-0 bg-white"><SelectValue placeholder={!canUseTemplates ? "Template access disabled" : !productId ? "Select a product first" : selectedProduct?.templates.length ? "Select a template" : "No active templates"} /></SelectTrigger><SelectContent align="start" className="max-w-[calc(100vw-2rem)]">{selectedProduct?.templates.map(template => <SelectItem key={template.id} value={String(template.id)} textValue={`${template.name} ${template.contentMode === "html" ? "HTML" : "Plain text"}`}>{template.name} · {template.contentMode === "html" ? "HTML" : "Plain text"}</SelectItem>)}</SelectContent></Select></div>
           </div>
-          {selectedTemplate && <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="flex items-center gap-1.5 text-xs leading-5 text-cyan-900">{selectedTemplate.contentMode === "html" && <FileCode2 className="h-3.5 w-3.5" />}<span><strong>Applied:</strong> {selectedTemplate.name}{selectedTemplate.description ? ` · ${selectedTemplate.description}` : ""}</span></p><Button type="button" variant="ghost" size="sm" className="h-7 justify-start px-2 text-xs text-cyan-900 hover:bg-cyan-100" onClick={clearTemplate}>Clear template</Button></div>}
-        </div>}
+          {selectedTemplate && <div className="mt-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="flex min-w-0 items-start gap-1.5 break-words text-xs leading-5 text-cyan-900 [overflow-wrap:anywhere]">{selectedTemplate.contentMode === "html" && <FileCode2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}<span className="min-w-0"><strong>Applied:</strong> {selectedTemplate.name}{selectedTemplate.description ? ` · ${selectedTemplate.description}` : ""}</span></p><Button type="button" variant="ghost" size="sm" disabled={sendEmail.isPending} className="justify-start px-2 text-xs text-cyan-900 hover:bg-cyan-100" onClick={clearTemplate}>Clear template</Button></div>}
+        </section>
+        <EmailCopyRecipients cc={cc} bcc={bcc} disabled={sendEmail.isPending} error={recipientError} onCcChange={value => { setCc(value); setRecipientError(null); }} onBccChange={value => { setBcc(value); setRecipientError(null); }} />
         <div className="min-w-0 space-y-2"><Label>Subject</Label><Input value={subject} onChange={event => setSubject(event.target.value)} maxLength={240} className="w-full min-w-0" /></div>
         {canUseTemplates && contentMode === "html" ? <div className="space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><Label>HTML message</Label><p className="mt-1 text-xs text-slate-400">The source is sanitized again immediately before sending.</p></div><div className="grid grid-cols-2 gap-2 sm:flex"><Button type="button" variant={!previewHtml ? "default" : "outline"} size="sm" onClick={() => setPreviewHtml(false)}><Code2 className="mr-2 h-3.5 w-3.5" />Edit HTML</Button><Button type="button" variant={previewHtml ? "default" : "outline"} size="sm" onClick={() => setPreviewHtml(true)}><Eye className="mr-2 h-3.5 w-3.5" />Preview</Button></div></div>

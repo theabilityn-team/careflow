@@ -8,7 +8,7 @@ import { createLoginSession, hashPassword } from "../auth";
 import { isPasswordResetUsable, staffPasswordSchema } from "../passwordSecurity";
 import { SUPER_ADMIN_EMAIL } from "@shared/const";
 
-const permissionShape = Object.fromEntries(PERMISSION_KEYS.map(key => [key, key === "manageSales" ? z.boolean().default(false) : z.boolean()])) as Record<(typeof PERMISSION_KEYS)[number], z.ZodBoolean>;
+const permissionShape = Object.fromEntries(PERMISSION_KEYS.map(key => [key, key === "manageSales" || key === "viewDocuments" ? z.boolean().default(false) : z.boolean()])) as Record<(typeof PERMISSION_KEYS)[number], z.ZodBoolean>;
 const permissionsSchema = z.object(permissionShape);
 const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 const normalizedEmailSchema = z.string().trim().toLowerCase().email().max(320);

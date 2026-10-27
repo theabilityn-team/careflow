@@ -157,14 +157,15 @@ export const leadsRouter = router({
     const result = await db.getLead(input.id, { userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
     if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     const auditEvents = prepareAuditEvents(result.auditEvents, access.permissions.viewClinical);
+    const documents = access.permissions.viewDocuments && access.permissions.viewClinical ? result.documents : [];
     if (access.role !== "super_admin" && !access.permissions.manageEmails) {
       const safeAuditEvents = auditEvents.map(hideEmailAuditValues);
       const communications = result.communications.map(hideEmailCommunicationText);
       return access.permissions.viewClinical
-        ? { ...result, communications, auditEvents: safeAuditEvents }
-        : { ...result, lead: hideClinical(result.lead), documents: [], communications, auditEvents: safeAuditEvents };
+        ? { ...result, documents, communications, auditEvents: safeAuditEvents }
+        : { ...result, lead: hideClinical(result.lead), documents, communications, auditEvents: safeAuditEvents };
     }
-    return access.permissions.viewClinical ? { ...result, auditEvents } : { ...result, lead: hideClinical(result.lead), documents: [], auditEvents };
+    return access.permissions.viewClinical ? { ...result, documents, auditEvents } : { ...result, lead: hideClinical(result.lead), documents, auditEvents };
   }),
 
   assignees: protectedProcedure.query(async ({ ctx }) => {
