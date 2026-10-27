@@ -371,3 +371,14 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] API and UI require Documents plus existing clinical access for raw clinical images; turning Documents off does not remove permitted clinical text. No implicit Leader/impersonation bypass.
 - [x] Denied lead payloads contain no document URLs, names, keys, or images. Stale UI Documents tab/media disappear on access change, returning to Overview.
 - [x] 259 regression tests, TypeScript, production build, stored backfill coverage, fake-transport picker/send and Staff save, and 320/360/390/1280px dialog containment verified. No real emails or lead mutations; temporary harness/captures removed.
+
+
+## Completed correction: Applied staff access, read-only templates, and staff deletion — 2026-10-27
+- [x] Diagnosed unsaved switch state: all stored Documents flags were still true, two template flags false, and no new staff access save audit existed that day. No implicit permission grants or real staff modifications.
+- [x] Permission and Active account switches now autosave with a synchronous single-submit guard, verified canonical server response, Saving/Saved status, and rollback/error feedback. Job title retains an explicit Save job title action.
+- [x] Staff access refreshes on focus, a five-second poll and same-origin access events; changed permissions cancel/reset old protected queries including source documents and template drafts.
+- [x] Active staff with Emails + Use email templates now have a read-only approved Email templates navigation/route and sandboxed preview. Admin library editing/testing and SMTP setup remain protected.
+- [x] Super Admin-only Delete staff uses a tombstone to hide the account, revoke login/session/reset/impersonation/SMTP access, and release its email while preserving identity and all lead/customer/order/group/audit attribution.
+- [x] Reviewed/applied additive migration 0023. Live actual Admin switch saves persisted Documents off/Templates on; a separate real staff login confirmed hidden documents and working product/HTML template selection/library.
+- [x] Actual 320px Delete confirmation/cancel/pending/success passed on one fake account; complete lead/document/customer/order rows remained identical and unrelated credential fingerprints unchanged.
+- [x] 278 tests across 59 files, TypeScript, production build, diff and HTTP checks passed. All disposable accounts/records/sessions/audits/scripts/captures removed; no real email or business mutation.

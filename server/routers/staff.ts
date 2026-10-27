@@ -1,3 +1,4 @@
+import { deleteStaffAccount, StaffDeletionError } from "../staffDeletion";
 import { createHash, randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -47,8 +48,18 @@ export const staffRouter = router({
       if (input.userId === ctx.user.id && !input.isActive) throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot deactivate your own account." });
       const updated = await db.updateStaffAccess({ ...input, permissions: JSON.stringify(input.permissions), actorId: ctx.user.id });
       if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Technical staff account not found." });
-      return { success: true };
+      const applied = await db.getStaffPermissionRecord(input.userId);
+      if (!applied) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Saved staff access could not be verified. Refresh and try again." });
+      return { success: true, appliedAccess: { jobTitle: applied.jobTitle, isActive: applied.isActive, permissions: normalizePermissions(JSON.parse(applied.permissions || "{}")) } };
     }),
+
+  deleteAccount: adminProcedure.input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    try { return await deleteStaffAccount({ userId: input.userId, actorId: ctx.user.id }); }
+    catch (error) {
+      if (error instanceof StaffDeletionError) throw new TRPCError({ code: error.code === "NOT_FOUND" ? "NOT_FOUND" : error.code === "ALREADY_DELETED" ? "CONFLICT" : "BAD_REQUEST", message: error.message });
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The staff account could not be deleted. Please try again." });
+    }
+  }),
 
   createAccount: adminProcedure
     .input(z.object({

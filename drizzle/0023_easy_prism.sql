@@ -1,0 +1,1 @@
+ALTER TABLE `staff_permissions` ADD `deletedAt` bigint;

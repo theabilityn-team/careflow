@@ -84,6 +84,7 @@ export const staffPermissions = mysqlTable("staff_permissions", {
   userId: int("userId").primaryKey(),
   jobTitle: varchar("jobTitle", { length: 120 }).default("Technical Staff").notNull(),
   isActive: boolean("isActive").default(true).notNull(),
+  deletedAt: bigint("deletedAt", { mode: "number" }),
   preferredLanguage: mysqlEnum("preferredLanguage", ["en", "es"]).default("en").notNull(),
   permissions: text("permissions").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

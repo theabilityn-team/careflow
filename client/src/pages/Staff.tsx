@@ -1,3 +1,6 @@
+import StaffDeleteDialog from "@/components/crm/StaffDeleteDialog";
+import { notifyStaffAccessUpdated } from "@/lib/accessRefresh";
+import { confirmStaffAccessSave, createStaffAccessSaveGuard, staffAccessSnapshot, staffPermissionChange, type StaffAccessValues } from "@/lib/staffAccessAutosave";
 import { ImpersonateButton, ImpersonationDirectory } from "@/components/crm/Impersonation";
 import { EmptyState, PageHeader, PageLoading } from "@/components/crm/CrmUi";
 import { CreateStaffAccountDialog, EditStaffAccountDialog, StaffPasswordDialog } from "@/components/crm/StaffAccountDialogs";
@@ -14,7 +17,7 @@ import { PERMISSION_LABELS, PermissionKey, formatDate, initials } from "@/lib/cr
 import { DEFAULT_STAFF_ACCOUNT_PERMISSIONS as defaultPermissions } from "@/lib/staffAccountForms";
 import { trpc } from "@/lib/trpc";
 import { Check, Clipboard, KeyRound, Link2, Loader2, MailPlus, ShieldCheck, UserPlus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export default function Staff() {
@@ -30,7 +33,7 @@ function AdminStaff() {
   const staff = trpc.staff.list.useQuery();
   const invites = trpc.staff.invites.useQuery();
   const resets = trpc.staff.passwordResetRequests.useQuery();
-  const update = trpc.staff.update.useMutation({ onSuccess: () => utils.staff.list.invalidate() });
+  const update = trpc.staff.update.useMutation({ onSuccess: () => { notifyStaffAccessUpdated(); return utils.staff.list.invalidate(); } });
 
   if (staff.isLoading || invites.isLoading || resets.isLoading) return <PageLoading />;
   if (staff.error || invites.error || resets.error) {
@@ -51,12 +54,8 @@ function AdminStaff() {
       <TabsContent value="staff" className="mt-0">
         <div className="space-y-4">
           {!staff.data?.length ? <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-6"><EmptyState title="No technical staff" description="Use Create account to set up a staff login directly, or invite a technical staff member." /></CardContent></Card> : staff.data.map(member => <StaffCard key={member.id} member={member} onSave={async values => {
-            try {
-              await update.mutateAsync(values);
-              toast.success("Staff access updated.");
-            } catch (error) {
-              toast.error(error instanceof Error ? error.message : "Unable to update access.");
-            }
+            const result = await update.mutateAsync(values);
+            return confirmStaffAccessSave(values, result);
           }} />)}
         </div>
       </TabsContent>
@@ -70,20 +69,47 @@ function AdminStaff() {
   </div>;
 }
 
-function StaffCard({ member, onSave }: { member: any; onSave: (values: any) => Promise<void> }) {
-  const [jobTitle, setJobTitle] = useState(member.jobTitle);
-  const [active, setActive] = useState(member.isActive);
-  const [permissions, setPermissions] = useState<Record<PermissionKey, boolean>>(member.permissions);
+function StaffCard({ member, onSave }: { member: any; onSave: (values: StaffAccessValues) => Promise<StaffAccessValues> }) {
+  const initial = staffAccessSnapshot(member);
+  const confirmed = useRef(initial);
+  const saveGuard = useRef(createStaffAccessSaveGuard());
+  const [jobTitle, setJobTitle] = useState(initial.jobTitle);
+  const [active, setActive] = useState(initial.isActive);
+  const [permissions, setPermissions] = useState(initial.permissions);
   const [saving, setSaving] = useState(false);
-  useEffect(() => { setJobTitle(member.jobTitle); setActive(member.isActive); setPermissions(member.permissions); }, [member]);
+  const [lastSaved, setLastSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  useEffect(() => {
+    const latest = staffAccessSnapshot(member);
+    const previousTitle = confirmed.current.jobTitle;
+    confirmed.current = latest;
+    setActive(latest.isActive); setPermissions(latest.permissions);
+    setJobTitle(current => current === previousTitle ? latest.jobTitle : current);
+  }, [member]);
+  async function saveAccess(next: StaffAccessValues, saveTitle = false) {
+    await saveGuard.current(async () => {
+      const previous = confirmed.current;
+      setSaving(true); setSaveError(null); setActive(next.isActive); setPermissions(next.permissions);
+      try {
+        const applied = await onSave(next);
+        confirmed.current = applied; setActive(applied.isActive); setPermissions(applied.permissions);
+        if (saveTitle) setJobTitle(applied.jobTitle);
+        setLastSaved(true);
+      } catch (error) {
+        setActive(previous.isActive); setPermissions(previous.permissions);
+        const message = error instanceof Error ? error.message : "Access could not be saved. The switch was restored.";
+        setSaveError(message); toast.error(message);
+      } finally { setSaving(false); }
+    });
+  }
 
   return <Card className="min-w-0 rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.04)]"><CardContent className="p-4 sm:p-6"><div className="flex min-w-0 flex-col gap-5 xl:flex-row xl:items-start">
-    <div className="flex min-w-0 items-start gap-4 xl:w-64 xl:shrink-0"><Avatar className="h-12 w-12 shrink-0"><AvatarFallback className="bg-slate-100 text-sm font-semibold">{initials(member.name?.split(" ")[0], member.name?.split(" ").slice(1).join(" "))}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><p className="break-words font-semibold text-slate-900 [overflow-wrap:anywhere]">{member.name || "Unnamed staff member"}</p><p className="break-all text-sm text-slate-500">{member.email || member.loginIdentifier || "No login identifier"}</p><div className="mt-2 flex flex-wrap gap-2">{member.isLeader && <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100">Leader</Badge>}<Badge variant="outline" className={member.smtpEnabled && member.smtpVerifiedAt ? "border-emerald-200 bg-emerald-50 text-emerald-700" : member.smtpEnabled ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-500"}>{member.smtpEnabled && member.smtpVerifiedAt ? "SMTP ready" : member.smtpEnabled ? "SMTP not verified" : "SMTP not configured"}</Badge></div><p className="mt-2 break-words text-xs text-slate-400">Last sign-in {formatDate(member.lastSignedIn, true)}</p>{member.smtpLastTestError && <p className="mt-1 break-words text-xs text-rose-500 [overflow-wrap:anywhere]">SMTP: {member.smtpLastTestError}</p>}<div className="mt-3 grid gap-2"><EditStaffAccountDialog member={member} /><StaffPasswordDialog member={member} />{member.isActive && <ImpersonateButton member={member} />}</div></div></div>
+    <div className="flex min-w-0 items-start gap-4 xl:w-64 xl:shrink-0"><Avatar className="h-12 w-12 shrink-0"><AvatarFallback className="bg-slate-100 text-sm font-semibold">{initials(member.name?.split(" ")[0], member.name?.split(" ").slice(1).join(" "))}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><p className="break-words font-semibold text-slate-900 [overflow-wrap:anywhere]">{member.name || "Unnamed staff member"}</p><p className="break-all text-sm text-slate-500">{member.email || member.loginIdentifier || "No login identifier"}</p><div className="mt-2 flex flex-wrap gap-2">{member.isLeader && <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100">Leader</Badge>}<Badge variant="outline" className={member.smtpEnabled && member.smtpVerifiedAt ? "border-emerald-200 bg-emerald-50 text-emerald-700" : member.smtpEnabled ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-500"}>{member.smtpEnabled && member.smtpVerifiedAt ? "SMTP ready" : member.smtpEnabled ? "SMTP not verified" : "SMTP not configured"}</Badge></div><p className="mt-2 break-words text-xs text-slate-400">Last sign-in {formatDate(member.lastSignedIn, true)}</p>{member.smtpLastTestError && <p className="mt-1 break-words text-xs text-rose-500 [overflow-wrap:anywhere]">SMTP: {member.smtpLastTestError}</p>}<div className="mt-3 grid gap-2"><EditStaffAccountDialog member={member} /><StaffPasswordDialog member={member} />{member.isActive && <ImpersonateButton member={member} />}{member.role !== "admin" && <StaffDeleteDialog member={member} disabled={saving} />}</div></div></div>
     <div className="grid flex-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
-      <div className="space-y-2 sm:col-span-2"><Label>Job title</Label><Input value={jobTitle} onChange={event => setJobTitle(event.target.value)} /></div>
-      <div className="flex min-w-0 items-center justify-between gap-4 rounded-xl bg-slate-50 p-4 sm:col-span-2"><div className="min-w-0"><p className="text-sm font-medium">Active account</p><p className="break-words text-xs text-slate-500">Allow this staff member to use assigned features</p></div><Switch className="shrink-0" checked={active} onCheckedChange={setActive} /></div>
-      {(Object.entries(PERMISSION_LABELS) as Array<[PermissionKey, readonly [string, string]]>).map(([key, [label, description]]) => <div key={key} className="flex min-h-24 min-w-0 items-start justify-between gap-3 rounded-xl border border-slate-100 p-4"><div className="min-w-0"><p className="break-words text-sm font-medium text-slate-800">{label}</p><p className="mt-1 break-words text-xs leading-5 text-slate-400">{description}</p></div><Switch aria-label={label} className="shrink-0" checked={Boolean(permissions[key])} onCheckedChange={checked => setPermissions(current => ({ ...current, [key]: checked }))} /></div>)}
-      <div className="flex justify-end sm:col-span-2 2xl:col-span-4"><Button className="w-full sm:w-auto" disabled={saving} onClick={async () => { setSaving(true); try { await onSave({ userId: member.id, jobTitle, isActive: active, permissions }); } finally { setSaving(false); } }}><Check className="mr-2 h-4 w-4" />Save access</Button></div>
+      <div className="space-y-2 sm:col-span-2"><Label>Job title</Label><Input disabled={saving} value={jobTitle} onChange={event => setJobTitle(event.target.value)} /></div>
+      <div className="flex min-w-0 items-center justify-between gap-4 rounded-xl bg-slate-50 p-4 sm:col-span-2"><div className="min-w-0"><p className="text-sm font-medium">Active account</p><p className="break-words text-xs text-slate-500">Allow this staff member to use assigned features</p></div><Switch className="shrink-0" checked={active} disabled={saving} onCheckedChange={checked => saveAccess({ ...confirmed.current, isActive: checked })} /></div>
+      {(Object.entries(PERMISSION_LABELS) as Array<[PermissionKey, readonly [string, string]]>).map(([key, [label, description]]) => <div key={key} className="flex min-h-24 min-w-0 items-start justify-between gap-3 rounded-xl border border-slate-100 p-4"><div className="min-w-0"><p className="break-words text-sm font-medium text-slate-800">{label}</p><p className="mt-1 break-words text-xs leading-5 text-slate-400">{description}</p></div><Switch aria-label={label} className="shrink-0" checked={Boolean(permissions[key])} disabled={saving} onCheckedChange={checked => saveAccess(staffPermissionChange(confirmed.current, key, checked))} /></div>)}
+      <div className="space-y-3 sm:col-span-2 2xl:col-span-4"><div role="status" aria-live="polite" className={`flex min-w-0 items-start gap-2 rounded-xl p-3 text-sm ${saveError ? "bg-rose-50 text-rose-800" : "bg-teal-50 text-teal-900"}`}>{saving ? <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" /> : <Check className="mt-0.5 h-4 w-4 shrink-0" />}<span className="min-w-0 break-words">{saving ? "Saving access…" : saveError ? saveError : lastSaved ? "Access saved. Permission changes apply to staff automatically." : "Permission and Active account switches save automatically. No Save access click is needed."}</span></div><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-slate-500">{jobTitle.trim() !== confirmed.current.jobTitle ? "Job title has unsaved changes." : "Job title is saved."}</p><Button className="w-full sm:w-auto" disabled={saving || jobTitle.trim().length < 2 || jobTitle.trim() === confirmed.current.jobTitle} onClick={() => saveAccess({ ...confirmed.current, jobTitle: jobTitle.trim() }, true)}><Check className="mr-2 h-4 w-4" />Save job title</Button></div></div>
     </div>
   </div></CardContent></Card>;
 }

@@ -1,6 +1,7 @@
 import { EmptyState, PageHeader, PageLoading } from "@/components/crm/CrmUi";
 import { EmailLibraryDeleteDialog, type EmailLibraryDeleteTarget } from "@/components/crm/EmailLibraryDeleteDialog";
 import { EmailTemplateEditorDialog } from "@/components/crm/EmailTemplateEditorDialog";
+import StaffEmailTemplates from "@/components/crm/StaffEmailTemplates";
 import { TemplateTestEmailDialog, type TestEmailTemplate } from "@/components/crm/TemplateTestEmailDialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -35,20 +36,19 @@ const emptyTemplate = {
 
 type ProductForm = typeof emptyProduct;
 type TemplateForm = typeof emptyTemplate;
-export default function EmailTemplates() {
+function AdminEmailTemplates() {
   const utils = trpc.useUtils();
   const deleteProduct = trpc.emailLibrary.deleteProduct.useMutation();
   const deleteTemplate = trpc.emailLibrary.deleteTemplate.useMutation();
   const [deleteTarget, setDeleteTarget] = useState<EmailLibraryDeleteTarget | null>(null);
   const deleteSubmitting = useRef(false);
-  const { data: access, isLoading: accessLoading } = trpc.dashboard.access.useQuery();
-  const library = trpc.emailLibrary.adminList.useQuery(undefined, { enabled: access?.role === "super_admin" });
+  const library = trpc.emailLibrary.adminList.useQuery();
   const createProduct = trpc.emailLibrary.createProduct.useMutation();
   const updateProduct = trpc.emailLibrary.updateProduct.useMutation();
   const copyProduct = trpc.emailLibrary.copyProduct.useMutation();
   const createTemplate = trpc.emailLibrary.createTemplate.useMutation();
   const updateTemplate = trpc.emailLibrary.updateTemplate.useMutation();
-  const smtpAccounts = trpc.emailSettings.managedAccounts.useQuery(undefined, { enabled: access?.role === "super_admin" });
+  const smtpAccounts = trpc.emailSettings.managedAccounts.useQuery();
   const sendTestEmail = trpc.emailSettings.sendTestEmail.useMutation();
   const htmlFileInput = useRef<HTMLInputElement>(null);
   const [productDialog, setProductDialog] = useState(false);
@@ -64,9 +64,6 @@ export default function EmailTemplates() {
   const [testTemplate, setTestTemplate] = useState<TestEmailTemplate>();
   const [testSenderUserId, setTestSenderUserId] = useState("");
   const [testRecipientEmail, setTestRecipientEmail] = useState("");
-
-  if (accessLoading) return <PageLoading />;
-  if (access?.role !== "super_admin") return <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-8"><h1 className="text-xl font-semibold">Email templates unavailable</h1><p className="mt-2 text-sm leading-6 text-slate-500">Only Super Admin can manage products and reusable email templates.</p></CardContent></Card>;
 
   const products = library.data ?? [];
   const savingProduct = createProduct.isPending || updateProduct.isPending || copyProduct.isPending;
@@ -314,4 +311,12 @@ export default function EmailTemplates() {
       bodyValid={templateBodyValid}
     />
   </div>;
+}
+
+export default function EmailTemplates() {
+  const { data: access, isLoading: accessLoading } = trpc.dashboard.access.useQuery();
+
+  if (accessLoading) return <PageLoading />;
+  if (access?.role === "super_admin") return <AdminEmailTemplates />;
+  return <StaffEmailTemplates access={access} />;
 }

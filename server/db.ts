@@ -322,7 +322,7 @@ export async function listStaff() {
     .innerJoin(localCredentials, eq(users.id, localCredentials.userId))
     .leftJoin(staffPermissions, eq(users.id, staffPermissions.userId))
     .leftJoin(staffSmtpSettings, eq(users.id, staffSmtpSettings.userId))
-    .where(eq(users.role, "user"))
+    .where(and(eq(users.role, "user"), isNull(staffPermissions.deletedAt)))
     .orderBy(desc(users.lastSignedIn));
 }
 
@@ -377,7 +377,7 @@ export async function listStaffSmtpReadiness() {
     .innerJoin(localCredentials, eq(users.id, localCredentials.userId))
     .leftJoin(staffPermissions, eq(users.id, staffPermissions.userId))
     .leftJoin(staffSmtpSettings, eq(users.id, staffSmtpSettings.userId))
-    .where(eq(users.role, "user"));
+    .where(and(eq(users.role, "user"), isNull(staffPermissions.deletedAt)));
 }
 
 export async function getEmailTemplate(userId: number) {
@@ -749,8 +749,10 @@ export async function backfillLegacyEmailPermissions() {
 async function getLockedLocalStaffAccount(tx: any, userId: number) {
   const user = (await tx.select().from(users).where(eq(users.id, userId)).limit(1).for("update"))[0];
   const credential = (await tx.select().from(localCredentials).where(eq(localCredentials.userId, userId)).limit(1).for("update"))[0];
+  const permission = (await tx.select().from(staffPermissions).where(eq(staffPermissions.userId, userId)).limit(1).for("update"))[0];
   if (!user || user.role !== "user" || !credential || user.loginMethod !== "local") return null;
-  return { user, credential };
+  if (permission?.deletedAt != null) return null;
+  return { user, credential, permission };
 }
 
 export async function createDirectStaffAccount(input: {
@@ -1313,7 +1315,10 @@ export async function listAssignableStaff() {
     .from(users)
     .innerJoin(localCredentials, eq(users.id, localCredentials.userId))
     .leftJoin(staffPermissions, eq(users.id, staffPermissions.userId))
-    .where(or(eq(users.role, "admin"), eq(staffPermissions.isActive, true)))
+    .where(or(
+      eq(users.role, "admin"),
+      and(eq(staffPermissions.isActive, true), isNull(staffPermissions.deletedAt)),
+    ))
     .orderBy(asc(users.name));
 }
 

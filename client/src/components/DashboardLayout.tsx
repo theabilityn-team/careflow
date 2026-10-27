@@ -1,3 +1,5 @@
+import { accessFingerprint, refreshPermissionQueries, STAFF_ACCESS_UPDATED_EVENT } from "@/lib/accessRefresh";
+import { useQueryClient } from "@tanstack/react-query";
 import { ImpersonationBanner } from "@/components/crm/Impersonation";
 import { ACCOUNT_SWITCH_EVENT, impersonationInfo } from "@/lib/impersonation";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -43,7 +45,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNode; setSidebarWidth: (width: number) => void }) {
   const { user, logout } = useAuth();
   const impersonating = impersonationInfo(user);
-  const { data: access } = trpc.dashboard.access.useQuery(undefined, { refetchInterval: 30_000 });
+  const accessQuery = trpc.dashboard.access.useQuery(undefined, { refetchInterval: 5_000, refetchOnWindowFocus: "always" });
+  const access = accessQuery.data;
+  const queryClient = useQueryClient();
+  const previousAccess = useRef<string | null>(null);
+  const fingerprint = accessFingerprint(access);
+  useEffect(() => {
+    if (!fingerprint) return;
+    const changed = previousAccess.current !== null && previousAccess.current !== fingerprint;
+    previousAccess.current = fingerprint;
+    if (changed) void refreshPermissionQueries(queryClient);
+  }, [fingerprint, queryClient]);
+  useEffect(() => {
+    const refresh = () => { void accessQuery.refetch(); };
+    const storage = (event: StorageEvent) => { if (event.key === STAFF_ACCESS_UPDATED_EVENT) refresh(); };
+    window.addEventListener(STAFF_ACCESS_UPDATED_EVENT, refresh);
+    window.addEventListener("storage", storage);
+    return () => { window.removeEventListener(STAFF_ACCESS_UPDATED_EVENT, refresh); window.removeEventListener("storage", storage); };
+  }, [accessQuery.refetch]);
   const { data: notifications = [] } = trpc.dashboard.notifications.useQuery(undefined, { enabled: Boolean(access?.permissions.viewLeads) });
   const unreadDue = notifications.filter(item => !item.readAt && item.remindAt <= Date.now()).length;
   const [location, setLocation] = useLocation();
@@ -63,7 +82,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
     { icon: Send, label: "Mails", path: "/mails", show: access?.permissions.manageEmails ?? false },
     { icon: UserCheck, label: "Customers", path: "/customers", show: Boolean(access?.isActive) },
     { icon: ShoppingBag, label: "Orders", path: "/orders", show: Boolean(access?.isActive) },
-    { icon: Library, label: "Email templates", path: "/email-templates", show: access?.role === "super_admin" },
+    { icon: Library, label: "Email templates", path: "/email-templates", show: access?.role === "super_admin" || Boolean(access?.isActive && access.permissions.manageEmails && access.permissions.useEmailTemplates) },
     { icon: Mail, label: "Email settings", path: "/email-settings", show: canManageEmailSettings(access?.role) },
     { icon: BookOpenCheck, label: "System guide", path: "/guide", show: true },
     { icon: UsersRound, label: access?.role === "super_admin" ? "Staff & access" : "Staff accounts", path: "/staff", show: !impersonating && Boolean(access?.isActive && access?.isLeader) },
