@@ -89,7 +89,7 @@ export const PERMISSION_LABELS = {
   viewDocuments: ["Documents", "Open attached lead documents/images; View clinical data must also be active because source files contain clinical information"],
   manageContacts: ["Manage communications", "Log calls, SMS, meetings, and follow-ups; email access is separate"],
   manageEmails: ["Emails", "Open Mails, send from the assigned email, and view email history; SMTP setup is Super Admin-only"],
-  useEmailTemplates: ["Use email templates", "Select approved product templates when Emails is enabled; editing remains Super Admin-only"],
+  useEmailTemplates: ["Use email templates", "Use default templates and create, copy, edit or delete only your own personal templates when Emails is enabled"],
   changeStatus: ["Change status", "Move leads through the lifecycle"],
   exportData: ["Export data", "Download customer information"],
   manageSales: ["Leader", "View all staff leads, mark customers, manage orders, and assign sales credit to staff; no admin setup access"],

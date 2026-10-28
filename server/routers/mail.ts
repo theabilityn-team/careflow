@@ -149,7 +149,7 @@ export const mailRouter = router({
     const access = await assertPermission(ctx.user, "manageEmails");
     const ownerId = senderId(ctx.user);
     const hasLead = input.leadId !== undefined && input.leadId !== null;
-    const viewer = { userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) };
+    const viewer = { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" };
     const recipient = hasLead ? await db.getEmailRecipient(input.leadId!, viewer) : undefined;
     if (hasLead && !recipient) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     if (hasLead && !recipient!.email?.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "This lead does not have an email address." });
@@ -168,7 +168,9 @@ export const mailRouter = router({
     if (input.messageTemplateId !== undefined && input.messageTemplateId !== null || input.contentMode === "html") {
       await assertPermission(ctx.user, "useEmailTemplates");
     }
-    const selectedTemplate = input.messageTemplateId ? await db.getSelectableEmailMessageTemplate(input.messageTemplateId) : undefined;
+    const selectedTemplate = input.messageTemplateId
+      ? await db.getSelectableEmailMessageTemplate(input.messageTemplateId, viewer)
+      : undefined;
     if (input.messageTemplateId && !selectedTemplate) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "The selected email template is inactive or no longer available." });
     }

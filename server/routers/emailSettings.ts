@@ -214,7 +214,8 @@ export const emailSettingsRouter = router({
   testEmailTemplates: protectedProcedure.input(ownerInput).query(async ({ ctx, input }) => {
     assertSuperAdmin(ctx.user);
     const owner = await resolveSmtpOwner(ctx.user, input?.userId);
-    const [products, templates] = await Promise.all([db.listEmailProducts(false), db.listEmailMessageTemplates(false)]);
+    const viewer = { userId: ctx.user.id, isSuperAdmin: true };
+    const [products, templates] = await Promise.all([db.listEmailProducts(false), db.listEmailMessageTemplates(false, viewer)]);
     return products.map(product => ({
       id: product.id,
       name: product.name,
@@ -232,7 +233,7 @@ export const emailSettingsRouter = router({
     const owner = await resolveSmtpOwner(ctx.user, input.userId);
     const settings = await db.getStaffSmtpSettings(owner.ownerId);
     if (!settings) throw new TRPCError({ code: "BAD_REQUEST", message: "Super Admin must save SMTP settings before sending a test email." });
-    const selectedTemplate = await db.getSelectableEmailMessageTemplate(input.messageTemplateId);
+    const selectedTemplate = await db.getSelectableEmailMessageTemplate(input.messageTemplateId, { userId: ctx.user.id, isSuperAdmin: true });
     if (!selectedTemplate) throw new TRPCError({ code: "BAD_REQUEST", message: "Select an active email template." });
     const testedAt = Date.now();
     const frame = await db.getEmailTemplate(SYSTEM_ADMIN_ACTOR_ID);

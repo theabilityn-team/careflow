@@ -169,6 +169,13 @@
       "when": 1793125348654,
       "tag": "0023_easy_prism",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1793222541799,
+      "tag": "0024_lumpy_old_lace",
+      "breakpoints": true
     }
   ]
 }

@@ -419,7 +419,11 @@ export async function createEmailProductWithTemplates(
     const productResult = await tx.insert(emailProducts).values(input);
     const productId = Number(productResult[0].insertId);
     if (templateInputs.length > 0) {
-      await tx.insert(emailMessageTemplates).values(templateInputs.map(template => ({ ...template, productId })));
+      await tx.insert(emailMessageTemplates).values(templateInputs.map(template => ({
+        ...template,
+        ownerUserId: SYSTEM_ADMIN_ACTOR_ID,
+        productId,
+      })));
     }
     return (await tx.select().from(emailProducts).where(eq(emailProducts.id, productId)).limit(1))[0];
   });
@@ -467,10 +471,27 @@ export async function deleteEmailProduct(id: number, actorId: number) {
   });
 }
 
-export async function listEmailMessageTemplates(includeInactive = false) {
-  const db = await requireDb();
-  return db.select({
+export type EmailTemplateViewer = { userId: number; isSuperAdmin: boolean };
+
+type EmailTemplateListOptions = { activeProductsOnly?: boolean };
+
+function templateOwnerVisibility(viewer?: EmailTemplateViewer) {
+  if (!viewer || viewer.isSuperAdmin) return undefined;
+  return or(eq(emailMessageTemplates.ownerUserId, SYSTEM_ADMIN_ACTOR_ID), eq(emailMessageTemplates.ownerUserId, viewer.userId));
+}
+
+function templateActivityVisibility(includeInactive: boolean, viewer?: EmailTemplateViewer) {
+  if (!includeInactive) return eq(emailMessageTemplates.isActive, true);
+  if (!viewer || viewer.isSuperAdmin) return undefined;
+  // Personal library includes archived own templates, but defaults remain active-only.
+  return or(eq(emailMessageTemplates.ownerUserId, viewer.userId), eq(emailMessageTemplates.isActive, true));
+}
+
+function templateProjection() {
+  return {
     id: emailMessageTemplates.id,
+    ownerUserId: emailMessageTemplates.ownerUserId,
+    ownerName: sql<string>`coalesce(nullif(trim(${users.name}), ''), case when ${emailMessageTemplates.ownerUserId} = ${SYSTEM_ADMIN_ACTOR_ID} then 'Super Administrator' else 'CareFlow user' end)`,
     productId: emailMessageTemplates.productId,
     productName: emailProducts.name,
     productIsActive: emailProducts.isActive,
@@ -487,35 +508,25 @@ export async function listEmailMessageTemplates(includeInactive = false) {
     updatedBy: emailMessageTemplates.updatedBy,
     createdAt: emailMessageTemplates.createdAt,
     updatedAt: emailMessageTemplates.updatedAt,
-  }).from(emailMessageTemplates)
+  };
+}
+
+export async function listEmailMessageTemplates(includeInactive = false, viewer?: EmailTemplateViewer, options: EmailTemplateListOptions = {}) {
+  const db = await requireDb();
+  const productVisibility = options.activeProductsOnly || !includeInactive ? eq(emailProducts.isActive, true) : undefined;
+  return db.select(templateProjection()).from(emailMessageTemplates)
     .innerJoin(emailProducts, eq(emailMessageTemplates.productId, emailProducts.id))
-    .where(includeInactive ? undefined : and(eq(emailMessageTemplates.isActive, true), eq(emailProducts.isActive, true)))
+    .leftJoin(users, eq(users.id, emailMessageTemplates.ownerUserId))
+    .where(and(templateOwnerVisibility(viewer), templateActivityVisibility(includeInactive, viewer), productVisibility))
     .orderBy(asc(emailProducts.sortOrder), asc(emailProducts.name), asc(emailMessageTemplates.sortOrder), asc(emailMessageTemplates.name));
 }
 
-export async function getEmailMessageTemplate(id: number) {
+export async function getEmailMessageTemplate(id: number, viewer?: EmailTemplateViewer) {
   const db = await requireDb();
-  return (await db.select({
-    id: emailMessageTemplates.id,
-    productId: emailMessageTemplates.productId,
-    productName: emailProducts.name,
-    productIsActive: emailProducts.isActive,
-    name: emailMessageTemplates.name,
-    description: emailMessageTemplates.description,
-    subject: emailMessageTemplates.subject,
-    contentMode: emailMessageTemplates.contentMode,
-    bodyText: emailMessageTemplates.bodyText,
-    bodyHtml: emailMessageTemplates.bodyHtml,
-    sourceFileName: emailMessageTemplates.sourceFileName,
-    isActive: emailMessageTemplates.isActive,
-    sortOrder: emailMessageTemplates.sortOrder,
-    createdBy: emailMessageTemplates.createdBy,
-    updatedBy: emailMessageTemplates.updatedBy,
-    createdAt: emailMessageTemplates.createdAt,
-    updatedAt: emailMessageTemplates.updatedAt,
-  }).from(emailMessageTemplates)
+  return (await db.select(templateProjection()).from(emailMessageTemplates)
     .innerJoin(emailProducts, eq(emailMessageTemplates.productId, emailProducts.id))
-    .where(eq(emailMessageTemplates.id, id))
+    .leftJoin(users, eq(users.id, emailMessageTemplates.ownerUserId))
+    .where(and(eq(emailMessageTemplates.id, id), templateOwnerVisibility(viewer)))
     .limit(1))[0];
 }
 
@@ -524,16 +535,16 @@ export async function createEmailMessageTemplate(input: typeof emailMessageTempl
   const templateId = await db.transaction(async tx => {
     const product = (await tx.select({ id: emailProducts.id }).from(emailProducts).where(eq(emailProducts.id, input.productId)).limit(1).for("update"))[0];
     if (!product) throw new Error("Email product not found while creating email template.");
-    const result = await tx.insert(emailMessageTemplates).values(input);
+    const result = await tx.insert(emailMessageTemplates).values({ ...input, ownerUserId: SYSTEM_ADMIN_ACTOR_ID });
     return Number(result[0].insertId);
   });
   return getEmailMessageTemplate(templateId);
 }
 
-export async function updateEmailMessageTemplate(id: number, input: Partial<Omit<typeof emailMessageTemplates.$inferInsert, "id" | "createdBy">>) {
+export async function updateEmailMessageTemplate(id: number, input: Partial<Omit<typeof emailMessageTemplates.$inferInsert, "id" | "createdBy" | "ownerUserId">>) {
   const db = await requireDb();
   await db.transaction(async tx => {
-    const existing = (await tx.select({ productId: emailMessageTemplates.productId }).from(emailMessageTemplates).where(eq(emailMessageTemplates.id, id)).limit(1))[0];
+    const existing = (await tx.select({ productId: emailMessageTemplates.productId }).from(emailMessageTemplates).where(eq(emailMessageTemplates.id, id)).limit(1).for("update"))[0];
     if (!existing) throw new Error("Email template not found while updating email template.");
 
     const currentProduct = (await tx.select({ id: emailProducts.id }).from(emailProducts).where(eq(emailProducts.id, existing.productId)).limit(1).for("update"))[0];
@@ -580,8 +591,76 @@ export async function deleteEmailMessageTemplate(id: number, actorId: number) {
   });
 }
 
-export async function getSelectableEmailMessageTemplate(id: number) {
-  const template = await getEmailMessageTemplate(id);
+export async function createPersonalEmailMessageTemplate(ownerUserId: number, input: Omit<typeof emailMessageTemplates.$inferInsert, "id" | "ownerUserId" | "createdAt" | "updatedAt">) {
+  const db = await requireDb();
+  const templateId = await db.transaction(async tx => {
+    const product = (await tx.select({ id: emailProducts.id }).from(emailProducts).where(and(eq(emailProducts.id, input.productId), eq(emailProducts.isActive, true))).limit(1).for("update"))[0];
+    if (!product) return null;
+    const result = await tx.insert(emailMessageTemplates).values({ ...input, ownerUserId });
+    return Number(result[0].insertId);
+  });
+  if (templateId === null) return null;
+  return getEmailMessageTemplate(templateId, { userId: ownerUserId, isSuperAdmin: false });
+}
+
+export async function updatePersonalEmailMessageTemplate(ownerUserId: number, id: number, input: Partial<Omit<typeof emailMessageTemplates.$inferInsert, "id" | "createdBy" | "ownerUserId">>) {
+  const db = await requireDb();
+  const updated = await db.transaction(async tx => {
+    const template = (await tx.select({ id: emailMessageTemplates.id, productId: emailMessageTemplates.productId })
+      .from(emailMessageTemplates)
+      .where(and(eq(emailMessageTemplates.id, id), eq(emailMessageTemplates.ownerUserId, ownerUserId)))
+      .limit(1)
+      .for("update"))[0];
+    if (!template) return false;
+
+    const destinationProductId = input.productId ?? template.productId;
+    const destinationProduct = (await tx.select({ id: emailProducts.id })
+      .from(emailProducts)
+      .where(and(eq(emailProducts.id, destinationProductId), eq(emailProducts.isActive, true)))
+      .limit(1)
+      .for("update"))[0];
+    if (!destinationProduct) return null;
+
+    await tx.update(emailMessageTemplates).set(input).where(and(
+      eq(emailMessageTemplates.id, id),
+      eq(emailMessageTemplates.ownerUserId, ownerUserId),
+    ));
+    return true;
+  });
+  if (updated !== true) return null;
+  return getEmailMessageTemplate(id, { userId: ownerUserId, isSuperAdmin: false });
+}
+
+export async function deletePersonalEmailMessageTemplate(ownerUserId: number, id: number, actorId: number) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const template = (await tx.select().from(emailMessageTemplates)
+      .where(and(eq(emailMessageTemplates.id, id), eq(emailMessageTemplates.ownerUserId, ownerUserId)))
+      .limit(1)
+      .for("update"))[0];
+    if (!template) return null;
+
+    await tx.delete(emailMessageTemplates).where(and(
+      eq(emailMessageTemplates.id, id),
+      eq(emailMessageTemplates.ownerUserId, ownerUserId),
+    ));
+    await tx.insert(auditEvents).values(enrichAuditValues({
+      leadId: null,
+      actorId,
+      action: "email.personal_template_deleted",
+      source: "email_library",
+      detail: `Deleted personal email template "${template.name}" (ID ${template.id}).`,
+      changes: null,
+      snapshotBefore: JSON.stringify({ templateId: template.id, templateName: template.name, productId: template.productId, ownerUserId }),
+      snapshotAfter: null,
+      occurredAt: Date.now(),
+    }));
+    return { success: true } as const;
+  });
+}
+
+export async function getSelectableEmailMessageTemplate(id: number, viewer?: EmailTemplateViewer) {
+  const template = await getEmailMessageTemplate(id, viewer);
   return template?.isActive && template.productIsActive ? template : undefined;
 }
 

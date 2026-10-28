@@ -1,3 +1,4 @@
+import { TrackingLinkNotice } from "@/components/crm/TrackingLinkNotice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -33,6 +34,7 @@ type EmailTemplateEditorDialogProps = {
   onOpenChange: (open: boolean) => void;
   editing: boolean;
   copying?: boolean;
+  personal?: boolean;
   products: ProductOption[];
   form: EmailTemplateFormState;
   setForm: Dispatch<SetStateAction<EmailTemplateFormState>>;
@@ -60,6 +62,7 @@ export function EmailTemplateEditorDialog({
   onOpenChange,
   editing,
   copying = false,
+  personal = false,
   products,
   form,
   setForm,
@@ -79,15 +82,16 @@ export function EmailTemplateEditorDialog({
     <DialogContent className="bottom-0 left-0 top-auto flex h-[96dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-b-none rounded-t-[26px] border-x-0 border-b-0 p-0 sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:h-[min(94dvh,1000px)] sm:w-[calc(100vw-2rem)] sm:max-w-none sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[28px] sm:border xl:w-[min(94vw,1480px)]">
       <div className="shrink-0 border-b border-slate-200 bg-white px-4 pb-4 pt-5 sm:px-7 sm:py-5">
         <DialogHeader className="pr-10 text-left">
-          <DialogTitle className="text-xl leading-tight sm:text-2xl">{copying ? "Copy email template" : editing ? "Edit email template" : "Add email template"}</DialogTitle>
+          <DialogTitle className="text-xl leading-tight sm:text-2xl">{copying ? personal ? "Copy to my templates" : "Copy email template" : editing ? personal ? "Edit my template" : "Edit email template" : personal ? "Add my template" : "Add email template"}</DialogTitle>
           <DialogDescription className="max-w-3xl text-sm leading-6 sm:text-base">
-            {copying ? "Create a separate copy with the same content. Choose its name and destination product, then review before saving. The original template is not changed." : "Set the template details, then write plain text or build and preview a complete HTML email."}
+            {copying ? personal ? "Create a separate personal copy. Choose its name and product. Defaults remain unchanged and other staff cannot see your copy." : "Create a new Super Admin default with this content. This copy is available to permitted staff; the original template is not changed." : personal ? "This template belongs only to your staff account. Default templates and other staff templates are not changed." : "Set the template details, then write plain text or build and preview a complete HTML email."}
           </DialogDescription>
         </DialogHeader>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain bg-slate-50/70">
         <div className="mx-auto w-full max-w-[1360px] p-4 sm:p-6 lg:p-8">
+          <TrackingLinkNotice className="mb-5" />
           <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.5fr)] xl:items-start xl:gap-6">
             <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
               <SectionHeading eyebrow="Template details" title="Name and availability" description="These details help staff identify the right message before sending." />
@@ -123,7 +127,7 @@ export function EmailTemplateEditorDialog({
                     <Input id="email-template-sort-order" type="number" value={form.sortOrder} onChange={event => setForm(current => ({ ...current, sortOrder: Number(event.target.value) || 0 }))} className="bg-white" />
                   </div>
                   <div className="flex min-h-[82px] items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <div className="min-w-0"><Label htmlFor="email-template-active">Active</Label><p className="mt-1 text-xs leading-5 text-slate-500">Available in staff Compose</p></div>
+                    <div className="min-w-0"><Label htmlFor="email-template-active">Active</Label><p className="mt-1 text-xs leading-5 text-slate-500">{personal ? "Available only in your Compose" : "Available in staff Compose"}</p></div>
                     <Switch id="email-template-active" checked={form.isActive} onCheckedChange={isActive => setForm(current => ({ ...current, isActive }))} />
                   </div>
                 </div>

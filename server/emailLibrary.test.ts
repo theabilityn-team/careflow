@@ -46,7 +46,7 @@ describe("product email template library", () => {
     const result = await appRouter.createCaller(context(staff)).emailLibrary.library();
 
     expect(listProducts).toHaveBeenCalledWith(false);
-    expect(listTemplates).toHaveBeenCalledWith(false);
+    expect(listTemplates).toHaveBeenCalledWith(false, { userId: staff.id, isSuperAdmin: false });
     expect(result[0]).toMatchObject({ name: "Recovery Mat", templates: [expect.objectContaining({ name: "Initial introduction" })] });
   });
 
@@ -170,5 +170,65 @@ describe("product email template library", () => {
       sourceFileName: "welcome.html",
     }));
     expect(String(create.mock.calls[0]?.[0].bodyHtml)).not.toContain("onclick");
+  });
+
+  it("uses the effective staff owner for personal library reads and includes archived own templates", async () => {
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue(permissions);
+    const products = [{ id: 3, name: "Recovery Mat", description: null, isActive: true, sortOrder: 0, createdBy: 1, updatedBy: 1, createdAt: now, updatedAt: now }];
+    const templates = [
+      { id: 8, ownerUserId: 30_001, ownerName: "Super Administrator", productId: 3, productName: "Recovery Mat", productIsActive: true, name: "Default", description: null, subject: "Default", contentMode: "plain" as const, bodyText: "Default body", bodyHtml: null, sourceFileName: null, isActive: true, sortOrder: 0, createdBy: 30_001, updatedBy: 30_001, createdAt: now, updatedAt: now },
+      { id: 9, ownerUserId: staff.id, ownerName: staff.name, productId: 3, productName: "Recovery Mat", productIsActive: true, name: "Mine", description: null, subject: "Mine", contentMode: "plain" as const, bodyText: "Mine body", bodyHtml: null, sourceFileName: null, isActive: false, sortOrder: 1, createdBy: staff.id, updatedBy: staff.id, createdAt: now, updatedAt: now },
+    ];
+    const listTemplates = vi.spyOn(db, "listEmailMessageTemplates").mockResolvedValue(templates);
+    vi.spyOn(db, "listEmailProducts").mockResolvedValue(products);
+
+    const result = await appRouter.createCaller(context(staff)).emailLibrary.personalLibrary();
+
+    expect(listTemplates).toHaveBeenCalledWith(true, { userId: staff.id, isSuperAdmin: false }, { activeProductsOnly: true });
+    expect(result[0]?.templates.map(template => template.name)).toEqual(["Default", "Mine"]);
+    expect(result[0]?.templates[1]).toMatchObject({ ownerUserId: staff.id, ownerName: staff.name, isActive: false });
+  });
+
+  it("creates personal templates with the effective owner and never accepts a client owner", async () => {
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue(permissions);
+    const created = { id: 21, ownerUserId: staff.id, ownerName: staff.name, productId: 3, productName: "Recovery Mat", productIsActive: true, name: "Mine", description: null, subject: "Hello", contentMode: "plain" as const, bodyText: "Body", bodyHtml: null, sourceFileName: null, isActive: true, sortOrder: 0, createdBy: staff.id, updatedBy: staff.id, createdAt: now, updatedAt: now };
+    const create = vi.spyOn(db, "createPersonalEmailMessageTemplate").mockResolvedValue(created);
+
+    await appRouter.createCaller(context(staff)).emailLibrary.createPersonalTemplate({
+      productId: 3,
+      name: "Mine",
+      description: null,
+      subject: "Hello",
+      bodyText: "Body",
+      isActive: true,
+      sortOrder: 0,
+    });
+
+    expect(create).toHaveBeenCalledWith(staff.id, expect.objectContaining({ productId: 3, createdBy: staff.id, updatedBy: staff.id }));
+    expect(create.mock.calls[0]?.[1]).not.toHaveProperty("ownerUserId");
+  });
+
+  it("returns NOT_FOUND for foreign/private personal IDs and does not leak SQL failures", async () => {
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue(permissions);
+    const get = vi.spyOn(db, "getEmailMessageTemplate").mockResolvedValue(undefined);
+    const update = vi.spyOn(db, "updatePersonalEmailMessageTemplate");
+    await expect(appRouter.createCaller(context(staff)).emailLibrary.updatePersonalTemplate({
+      id: 99,
+      template: { productId: 3, name: "Mine", description: null, subject: "Hello", bodyText: "Body", isActive: true, sortOrder: 0 },
+    })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(get).toHaveBeenCalledWith(99, { userId: staff.id, isSuperAdmin: false });
+    expect(update).not.toHaveBeenCalled();
+
+    const create = vi.spyOn(db, "createPersonalEmailMessageTemplate").mockRejectedValue(new Error("private SQL body/html details"));
+    await expect(appRouter.createCaller(context(staff)).emailLibrary.createPersonalTemplate({
+      productId: 3,
+      name: "Mine",
+      description: null,
+      subject: "Hello",
+      bodyText: "Body",
+      isActive: true,
+      sortOrder: 0,
+    })).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR", message: "Unable to save the personal email template. Please try again." });
+    expect(create).toHaveBeenCalled();
   });
 });

@@ -382,3 +382,15 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Reviewed/applied additive migration 0023. Live actual Admin switch saves persisted Documents off/Templates on; a separate real staff login confirmed hidden documents and working product/HTML template selection/library.
 - [x] Actual 320px Delete confirmation/cancel/pending/success passed on one fake account; complete lead/document/customer/order rows remained identical and unrelated credential fingerprints unchanged.
 - [x] 278 tests across 59 files, TypeScript, production build, diff and HTTP checks passed. All disposable accounts/records/sessions/audits/scripts/captures removed; no real email or business mutation.
+
+
+## Completed update: Default and private personal email templates — 2026-10-28
+- [x] Reviewed/applied migration 0024: existing templates remain Super Admin defaults; per-product/owner/name uniqueness permits different staff to use the same name.
+- [x] Staff with existing Emails + Use email templates create unlimited personal templates per active product; defaults are read-only and no permissions are silently granted.
+- [x] Default templates / My templates workspace supports personal plain text/HTML upload, preview, Copy to my templates, own edit/archive/activate and Delete my template with confirmation.
+- [x] Staff and Leaders see only defaults plus their own templates in library, Mails, and lead Send email. Foreign/private IDs and default edit/delete attempts are rejected server-side; impersonation uses effective staff ownership.
+- [x] Super Admin retains catalog/default management and oversight, preserves ownership on updates, and product copies exclude personal staff templates. Sent snapshots/history are not deleted or changed.
+- [x] Visible tracking/referral URL notice in both libraries, template editor, Mails and lead composer; no automatic removal/rewrite of original URL parameters.
+- [x] Actual two-account staff/Leader UI, single-submit Copy, own Edit, cancelled/confirmed Delete, scoped Mails picker, 320/360/390px and settled desktop modal/footer verified.
+- [x] Live foreign-ID/forged-send/owner-name/HTML-referral tests passed; all temporary users/templates/catalog/session/audit records removed and real credential/SMTP fingerprints unchanged. No real email sent.
+- [x] 283 tests across 59 files, TypeScript, production build and diff checks passed; no temporary QA source added to the project.

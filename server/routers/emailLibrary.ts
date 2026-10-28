@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
 import { htmlToPlainText, sanitizeTemplateHtml } from "../mailContent";
 import { assertPermission } from "../permissions";
@@ -66,11 +67,38 @@ function nestLibrary(products: Awaited<ReturnType<typeof db.listEmailProducts>>,
   }));
 }
 
+async function assertTemplatePermissions(user: Parameters<typeof assertPermission>[0]) {
+  const access = await assertPermission(user, "manageEmails");
+  await assertPermission(user, "useEmailTemplates");
+  return access;
+}
+
+function safePersonalFailure(error: unknown): never {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && typeof current === "object" && current; depth++) {
+    if ("code" in current && String((current as { code?: unknown }).code).includes("DUP")) {
+      throw new TRPCError({ code: "CONFLICT", message: "A product or template with this name already exists in the same location." });
+    }
+    current = "cause" in current ? (current as { cause?: unknown }).cause : undefined;
+  }
+  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Unable to save the personal email template. Please try again." });
+}
+
 export const emailLibraryRouter = router({
   library: protectedProcedure.query(async ({ ctx }) => {
-    await assertPermission(ctx.user, "manageEmails");
-    await assertPermission(ctx.user, "useEmailTemplates");
-    const [products, templates] = await Promise.all([db.listEmailProducts(false), db.listEmailMessageTemplates(false)]);
+    const access = await assertTemplatePermissions(ctx.user);
+    const viewer = { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" };
+    const [products, templates] = await Promise.all([db.listEmailProducts(false), db.listEmailMessageTemplates(false, viewer)]);
+    return nestLibrary(products, templates);
+  }),
+
+  personalLibrary: protectedProcedure.query(async ({ ctx }) => {
+    const access = await assertTemplatePermissions(ctx.user);
+    const viewer = { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" };
+    const [products, templates] = await Promise.all([
+      db.listEmailProducts(false),
+      db.listEmailMessageTemplates(true, viewer, { activeProductsOnly: true }),
+    ]);
     return nestLibrary(products, templates);
   }),
 
@@ -92,7 +120,7 @@ export const emailLibraryRouter = router({
     if (!source) throw new TRPCError({ code: "NOT_FOUND", message: "Email product not found." });
     const sourceTemplates = await db.listEmailMessageTemplates(true);
     const copiedTemplates = sourceTemplates
-      .filter(template => template.productId === source.id)
+      .filter(template => template.productId === source.id && (template.ownerUserId ?? SYSTEM_ADMIN_ACTOR_ID) === SYSTEM_ADMIN_ACTOR_ID)
       .map(template => {
         const normalized = normalizeMessageTemplate({
           productId: 0,
@@ -162,5 +190,54 @@ export const emailLibraryRouter = router({
     const result = await db.deleteEmailMessageTemplate(input.id, ctx.user.id);
     if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Email template not found." });
     return result;
+  }),
+
+  createPersonalTemplate: protectedProcedure.input(messageTemplateFields).mutation(async ({ ctx, input }) => {
+    await assertTemplatePermissions(ctx.user);
+    try {
+      const result = await db.createPersonalEmailMessageTemplate(ctx.user.id, {
+        ...normalizeMessageTemplate(input),
+        createdBy: ctx.user.id,
+        updatedBy: ctx.user.id,
+      });
+      if (!result) throw new TRPCError({ code: "BAD_REQUEST", message: "Select an active email product." });
+      return result;
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      safePersonalFailure(error);
+    }
+  }),
+
+  updatePersonalTemplate: protectedProcedure.input(z.object({ id: z.number().int().positive(), template: messageTemplateFields })).mutation(async ({ ctx, input }) => {
+    await assertTemplatePermissions(ctx.user);
+    try {
+      const viewer = { userId: ctx.user.id, isSuperAdmin: false };
+      if (!await db.getEmailMessageTemplate(input.id, viewer)) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Email template not found." });
+      }
+      const product = await db.getEmailProduct(input.template.productId);
+      if (!product?.isActive) throw new TRPCError({ code: "BAD_REQUEST", message: "Select an active email product." });
+      const result = await db.updatePersonalEmailMessageTemplate(ctx.user.id, input.id, {
+        ...normalizeMessageTemplate(input.template),
+        updatedBy: ctx.user.id,
+      });
+      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Email template not found." });
+      return result;
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      safePersonalFailure(error);
+    }
+  }),
+
+  deletePersonalTemplate: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    await assertTemplatePermissions(ctx.user);
+    try {
+      const result = await db.deletePersonalEmailMessageTemplate(ctx.user.id, input.id, ctx.user.id);
+      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Email template not found." });
+      return result;
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      safePersonalFailure(error);
+    }
   }),
 });

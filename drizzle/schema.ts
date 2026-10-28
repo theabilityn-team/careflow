@@ -1,3 +1,4 @@
+import { SYSTEM_ADMIN_ACTOR_ID } from "../shared/const";
 import {
   bigint,
   boolean,
@@ -135,6 +136,7 @@ export const emailProducts = mysqlTable("email_products", {
 
 export const emailMessageTemplates = mysqlTable("email_message_templates", {
   id: int("id").autoincrement().primaryKey(),
+  ownerUserId: int("ownerUserId").default(SYSTEM_ADMIN_ACTOR_ID).notNull(),
   productId: int("productId").notNull(),
   name: varchar("name", { length: 160 }).notNull(),
   description: text("description"),
@@ -150,7 +152,7 @@ export const emailMessageTemplates = mysqlTable("email_message_templates", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, table => ({
-  uniqueProductName: uniqueIndex("email_message_templates_productId_name_unique").on(table.productId, table.name),
+  uniqueOwnerProductName: uniqueIndex("email_message_templates_product_owner_name_unique").on(table.productId, table.ownerUserId, table.name),
   productActiveSort: index("email_message_templates_product_active_sort_idx").on(table.productId, table.isActive, table.sortOrder),
 }));
 
