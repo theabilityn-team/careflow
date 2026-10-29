@@ -56,7 +56,8 @@ vi.mock("./systemSyncImport", () => ({
   commitSyncExtraction: vi.fn(),
 }));
 
-vi.mock("./storage", () => ({
+vi.mock("./storage", async () => ({
+  ...await vi.importActual<typeof import("./storage")>("./storage"),
   storagePut: vi.fn(),
 }));
 
@@ -215,6 +216,25 @@ describe("system sync lifecycle", () => {
     expect(mockedSync.updateSyncItem).toHaveBeenCalledWith(31, expect.objectContaining({ status: "failed", lastError: expect.stringContaining("HTTP 413") }));
     await service.recordSyncFileFailure(44, 31, "download");
     expect(mockedSync.updateSyncItem).toHaveBeenLastCalledWith(31, expect.objectContaining({ lastError: expect.stringContaining("native binary download/cwd") }));
+  });
+
+  it("returns safe storage-stage diagnostics without changing pause/busy responses", async () => {
+    const { StorageOperationError } = await import("./storage");
+    const token = "test-callback-token-12345678901234567890";
+    mockedSync.getSyncJob.mockResolvedValue({ id: 44, status: "running", callbackTokenHash: callbackHash(token), expiresAt: Date.now() + 60_000 } as never);
+    const process = vi.spyOn(service, "processSyncImage");
+    const origin = await startRoutes();
+    const send = () => fetch(`${origin}/api/system-sync/jobs/44/image/31`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "image/jpeg" }, body: Buffer.from([255, 216, 1]) });
+    process.mockRejectedValueOnce(new StorageOperationError("storage_upload", "http", 403));
+    const response = await send();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Storage image upload failed (http, HTTP 403).", stage: "storage_upload", code: "http", httpStatus: 403 });
+    expect(mockedSync.addSyncEvent).toHaveBeenCalledWith({ jobId: 44, itemId: 31, type: "storage_upload", message: "Storage image upload failed (http, HTTP 403)." });
+    process.mockRejectedValueOnce(new Error("Image processing is busy"));
+    expect((await send()).status).toBe(429);
+    process.mockRejectedValueOnce(new Error("Transfer is paused"));
+    expect((await send()).status).toBe(409);
+    expect(mockedSync.addSyncEvent).toHaveBeenCalledTimes(1);
   });
 
   it("blocks staff and Leader contexts at the root admin procedure", async () => {

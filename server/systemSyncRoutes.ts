@@ -9,6 +9,7 @@ import { authorizeSyncCallback, getSyncManifest, processSyncImage, recordSyncFil
 import { completeSyncAndAdvance, handleSyncTaskStop } from "./systemSyncEvents";
 import { getManusWebhookKey, SYNC_BACKGROUND_PROTOCOL, SYNC_PROTOCOL, verifyManusWebhook } from "./systemSyncManus";
 import { sdk } from "./_core/sdk";
+import { StorageOperationError } from "./storage";
 
 const idSchema=z.coerce.number().int().positive();
 const driveId=z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/);
@@ -37,7 +38,15 @@ export function registerSystemSyncRoutes(app:Express) {
   app.post("/api/system-sync/jobs/:jobId/image/:itemId",callbackAuth,express.raw({type:["image/jpeg","image/png","image/webp"],limit:"25mb"}),async(req,res)=>{
     const id=idSchema.safeParse(req.params.itemId);if(!id.success||!Buffer.isBuffer(req.body))return res.status(400).json({error:"Supported raw image required."});
     try{return res.json(await processSyncImage(res.locals.syncJobId,id.data,req.body,req.get("content-type")?.split(";")[0]??""));}
-    catch(error){ if(error instanceof Error && /paused|expired/.test(error.message)) return res.status(409).json({error:"Transfer paused or expired."}); if(error instanceof Error && /busy/.test(error.message)) return res.status(429).set("Retry-After","30").json({error:"Image processing in progress; retry after 30 seconds."}); return failure(res); }
+    catch(error){
+      if(error instanceof StorageOperationError) {
+        try { await sync.addSyncEvent({jobId:res.locals.syncJobId,itemId:id.data,type:error.stage,message:error.message}); } catch {}
+        return res.status(503).json({error:error.message,stage:error.stage,code:error.code,...(error.httpStatus ? {httpStatus:error.httpStatus} : {})});
+      }
+      if(error instanceof Error && /paused|expired/.test(error.message)) return res.status(409).json({error:"Transfer paused or expired."});
+      if(error instanceof Error && /busy/.test(error.message)) return res.status(429).set("Retry-After","30").json({error:"Image processing in progress; retry after 30 seconds."});
+      return failure(res);
+    }
   });
   app.post("/api/system-sync/jobs/:jobId/file-error",callbackAuth,express.json({limit:"8kb"}),async(req,res)=>{
     const input=z.object({itemId:z.number().int().positive(),error:z.string().max(500).optional(),stage:z.enum(["download","upload","unknown"]).optional(),httpStatus:z.number().int().min(100).max(599).optional()}).safeParse(req.body);if(!input.success)return res.status(400).json({error:"Invalid file failure."});

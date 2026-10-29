@@ -2,7 +2,31 @@
 // Uploads via Forge Server presigned URL to S3 (PUT direct).
 // Downloads return /manus-storage/{key} paths served via 307 redirect.
 
+import { randomUUID } from "node:crypto";
 import { ENV } from "./_core/env";
+
+export class StorageOperationError extends Error {
+  constructor(
+    public readonly stage: "storage_presign" | "storage_upload",
+    public readonly code: "timeout" | "network" | "http" | "invalid_response",
+    public readonly httpStatus?: number,
+  ) {
+    super(`Storage ${stage === "storage_presign" ? "URL request" : "image upload"} failed (${code}${httpStatus ? `, HTTP ${httpStatus}` : ""}).`);
+    this.name = "StorageOperationError";
+  }
+}
+
+async function storageRequest(stage: "storage_presign" | "storage_upload", url: URL | string, init: RequestInit) {
+  const signal = AbortSignal.timeout(stage === "storage_presign" ? 15_000 : 60_000);
+  try {
+    const response = await fetch(url, { ...init, signal });
+    if (!response.ok) throw new StorageOperationError(stage, "http", response.status);
+    return response;
+  } catch (error) {
+    if (error instanceof StorageOperationError) throw error;
+    throw new StorageOperationError(stage, signal.aborted ? "timeout" : "network");
+  }
+}
 
 function getForgeConfig() {
   const forgeUrl = ENV.forgeApiUrl;
@@ -22,7 +46,7 @@ function normalizeKey(relKey: string): string {
 }
 
 function appendHashSuffix(relKey: string): string {
-  const hash = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  const hash = randomUUID().replace(/-/g, "").slice(0, 8);
   const lastDot = relKey.lastIndexOf(".");
   if (lastDot === -1) return `${relKey}_${hash}`;
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
@@ -40,17 +64,19 @@ export async function storagePut(
   const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
   presignUrl.searchParams.set("path", key);
 
-  const presignResp = await fetch(presignUrl, {
+  const presignResp = await storageRequest("storage_presign", presignUrl, {
     headers: { Authorization: `Bearer ${forgeKey}` },
   });
 
-  if (!presignResp.ok) {
-    const msg = await presignResp.text().catch(() => presignResp.statusText);
-    throw new Error(`Storage presign failed (${presignResp.status}): ${msg}`);
+  let s3Url: string;
+  try {
+    const result = await presignResp.json();
+    if (typeof result.url !== "string" || new URL(result.url).protocol !== "https:") throw new Error();
+    s3Url = result.url;
+  } catch (error) {
+    const timedOut = error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name);
+    throw new StorageOperationError("storage_presign", timedOut ? "timeout" : "invalid_response");
   }
-
-  const { url: s3Url } = (await presignResp.json()) as { url: string };
-  if (!s3Url) throw new Error("Forge returned empty presign URL");
 
   // 2. PUT file directly to S3
   const blob =
@@ -58,15 +84,11 @@ export async function storagePut(
       ? new Blob([data], { type: contentType })
       : new Blob([data as any], { type: contentType });
 
-  const uploadResp = await fetch(s3Url, {
+  await storageRequest("storage_upload", s3Url, {
     method: "PUT",
     headers: { "Content-Type": contentType },
     body: blob,
   });
-
-  if (!uploadResp.ok) {
-    throw new Error(`Storage upload to S3 failed (${uploadResp.status})`);
-  }
 
   return { key, url: `/manus-storage/${key}` };
 }
