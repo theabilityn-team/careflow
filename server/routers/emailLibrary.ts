@@ -2,9 +2,10 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
-import { htmlToPlainText, sanitizeTemplateHtml } from "../mailContent";
+import { composeEmailHtml, composeRichEmailHtml, DEFAULT_EMAIL_FOOTER_HTML, DEFAULT_EMAIL_HEADER_HTML, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "../mailContent";
 import { assertPermission } from "../permissions";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
+import { isSmtpConfigured, sendStaffSmtpEmail } from "../smtp";
 
 const productFields = z.object({
   name: z.string().trim().min(1).max(160),
@@ -25,6 +26,15 @@ const messageTemplateFields = z.object({
   isActive: z.boolean().default(true),
   sortOrder: z.number().int().min(-10_000).max(10_000).default(0),
 });
+
+const sendTestEmailInput = z.object({
+  recipientEmail: z.string().max(320)
+    .refine(value => !/[\r\n]/.test(value), "Enter a valid recipient email address.")
+    .trim()
+    .email()
+    .max(320),
+  messageTemplateId: z.number().int().positive(),
+}).strict();
 
 function cleanNullable(value?: string | null) {
   return value?.trim() || null;
@@ -84,6 +94,11 @@ function safePersonalFailure(error: unknown): never {
   throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Unable to save the personal email template. Please try again." });
 }
 
+function safeTestEmailFailure(error: unknown): never {
+  if (error instanceof TRPCError) throw error;
+  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Unable to send the test email. Please try again." });
+}
+
 export const emailLibraryRouter = router({
   library: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertTemplatePermissions(ctx.user);
@@ -100,6 +115,60 @@ export const emailLibraryRouter = router({
       db.listEmailMessageTemplates(true, viewer, { activeProductsOnly: true }),
     ]);
     return nestLibrary(products, templates);
+  }),
+
+  sendTestEmail: protectedProcedure.input(sendTestEmailInput).mutation(async ({ ctx, input }) => {
+    const access = await assertTemplatePermissions(ctx.user);
+    const viewer = { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" };
+
+    try {
+      const settings = await db.getStaffSmtpSettings(ctx.user.id);
+      if (!settings || !isSmtpConfigured(settings) || !settings.verifiedAt) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: access.role === "super_admin"
+            ? "Configure, enable, and verify the Super Admin SMTP account before sending."
+            : "Your SMTP account is not active and verified. Ask Super Admin to review it.",
+        });
+      }
+
+      const selectedTemplate = await db.getSelectableEmailMessageTemplate(input.messageTemplateId, viewer);
+      if (!selectedTemplate) throw new TRPCError({ code: "BAD_REQUEST", message: "Select an active email template." });
+
+      const frame = await db.getEmailTemplate(SYSTEM_ADMIN_ACTOR_ID);
+      const variables = {
+        leadFirstName: "Test",
+        leadFullName: "Test Recipient",
+        senderName: settings.fromName || ctx.user.name || "CareFlow",
+        senderEmail: settings.fromEmail,
+      };
+      const subject = renderTextTokens(selectedTemplate.subject, variables).replace(/[\r\n]+/g, " ").trim();
+      const safeTemplateHtml = selectedTemplate.contentMode === "html" ? sanitizeTemplateHtml(selectedTemplate.bodyHtml ?? "") : null;
+      if (selectedTemplate.contentMode === "html" && (!safeTemplateHtml || !htmlToPlainText(safeTemplateHtml))) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "The selected HTML template does not contain visible content." });
+      }
+      const html = selectedTemplate.contentMode === "html"
+        ? composeRichEmailHtml(frame?.headerHtml ?? DEFAULT_EMAIL_HEADER_HTML, safeTemplateHtml!, frame?.footerHtml ?? DEFAULT_EMAIL_FOOTER_HTML, variables)
+        : composeEmailHtml(frame?.headerHtml ?? DEFAULT_EMAIL_HEADER_HTML, selectedTemplate.bodyText, frame?.footerHtml ?? DEFAULT_EMAIL_FOOTER_HTML, variables);
+      const result = await sendStaffSmtpEmail(settings, {
+        to: input.recipientEmail,
+        subject,
+        text: htmlToPlainText(html),
+        html,
+      });
+      if (!result.sent) throw new TRPCError({ code: "BAD_REQUEST", message: "The test email could not be sent. Ask Super Admin to review the sender SMTP account." });
+
+      return {
+        success: true,
+        status: "sent" as const,
+        recipientEmail: input.recipientEmail,
+        templateName: selectedTemplate.name,
+        fromEmail: settings.fromEmail,
+        fromName: settings.fromName || ctx.user.name || "CareFlow",
+      } as const;
+    } catch (error) {
+      safeTestEmailFailure(error);
+    }
   }),
 
   adminList: adminProcedure.query(async () => {

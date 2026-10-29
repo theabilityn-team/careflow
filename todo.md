@@ -394,3 +394,14 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Actual two-account staff/Leader UI, single-submit Copy, own Edit, cancelled/confirmed Delete, scoped Mails picker, 320/360/390px and settled desktop modal/footer verified.
 - [x] Live foreign-ID/forged-send/owner-name/HTML-referral tests passed; all temporary users/templates/catalog/session/audit records removed and real credential/SMTP fingerprints unchanged. No real email sent.
 - [x] 283 tests across 59 files, TypeScript, production build and diff checks passed; no temporary QA source added to the project.
+
+
+## Completed update: Staff and Admin template test recipients — 2026-10-29
+- [x] Staff Email templates now offers Send test for both active defaults and own personal templates; archived templates cannot be tested.
+- [x] Shared responsive test dialog has an explicit Recipient email textbox, one-address validation, Enter-to-send, selected template context, blank-on-open/reset-on-close behavior, and locked pending controls.
+- [x] Staff use only the effective account's enabled/configured/verified SMTP sender without setup access or sender switching. Admin keeps sender selection and can test active default/personal templates.
+- [x] New strictly validated emailLibrary.sendTestEmail checks both existing email permissions, active account, owner/default scope, active product/template and SMTP readiness; blocks foreign IDs/Leader bypass, CRLF and forged sender fields.
+- [x] Saved sanitized plain/HTML content, sample Test Recipient tokens and global frame are used without creating/changing leads or verification state. Failure messages stay secret-free.
+- [x] Synchronous submit guards prevent duplicate sends; Admin sender refresh failure no longer misreports successful delivery as a send failure.
+- [x] 300 tests across 61 files, TypeScript and production build passed; fake-transport actual UI checks covered staff defaults/personal, Admin recipient/sender, validation, error/retry, double-submit, and 320/360/390/1280px popup containment.
+- [x] No real emails, credentials or business data were changed during QA; temporary UI harness and captures removed before checkpoint.
