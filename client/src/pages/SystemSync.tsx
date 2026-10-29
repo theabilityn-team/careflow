@@ -25,6 +25,12 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { formatDate } from "@/lib/crm";
+import {
+  APPROVED_SYNC_ROOT,
+  runCheckFoldersWithSetup,
+  syncSetupIsSaved,
+  toSyncSetupInput,
+} from "@/lib/systemSyncSetup";
 import { trpc } from "@/lib/trpc";
 import {
   AlertCircle,
@@ -45,10 +51,10 @@ import {
   ShieldCheck,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-const ROOT_FOLDER_ID = "1UjUahdFTNTJxzWaTTeGJfQKvhm8URhLo";
+const ROOT_FOLDER_ID = APPROVED_SYNC_ROOT;
 const DEFAULT_PAGE_SIZE = 10;
 
 type SyncCounts = {
@@ -76,6 +82,7 @@ type SyncSettings = {
 };
 
 type SyncReady = {
+  configured: boolean;
   apiKeyPresent: boolean;
   driveConnected: boolean;
   callbackReady: boolean;
@@ -672,6 +679,7 @@ export default function SystemSync() {
   const [maxParallel, setMaxParallel] = useState("3");
   const [batchSize, setBatchSize] = useState("50");
   const [busyFolderId, setBusyFolderId] = useState<number | null>(null);
+  const checkingRef = useRef(false);
 
   useEffect(() => {
     if (!folders.length) {
@@ -697,6 +705,15 @@ export default function SystemSync() {
     folders.find(folder => folder.id === selectedFolderId) ?? null;
   const ready = status?.ready;
   const settings = status?.settings;
+  const settingsSaved = Boolean(
+    ready &&
+      syncSetupIsSaved({
+        configured: ready.configured,
+        settings,
+        form: { publicBaseUrl, maxParallel, batchSize },
+      })
+  );
+  const checkFoldersBusy = configure.isPending || checkFolders.isPending;
   const activeJobs = folders.filter(
     folder => folder.desiredState === "running"
   ).length;
@@ -716,12 +733,9 @@ export default function SystemSync() {
 
   async function saveSettings() {
     try {
-      await configure.mutateAsync({
-        rootFolderId: ROOT_FOLDER_ID,
-        publicBaseUrl: publicBaseUrl.trim() || undefined,
-        maxParallel: Math.max(1, Math.min(3, Number(maxParallel) || 3)),
-        batchSize: Math.max(1, Math.min(50, Number(batchSize) || 50)),
-      });
+      await configure.mutateAsync(
+        toSyncSetupInput({ publicBaseUrl, maxParallel, batchSize })
+      );
       toast.success("System sync settings saved.");
       await statusQuery.refetch();
     } catch (error) {
@@ -753,7 +767,11 @@ export default function SystemSync() {
     try {
       await mutations[action].mutateAsync({ folderId });
       toast.success(labels[action]);
-      await statusQuery.refetch();
+      try {
+        await statusQuery.refetch();
+      } catch {
+        // The action succeeded; the next polling interval will refresh status.
+      }
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -766,18 +784,34 @@ export default function SystemSync() {
   }
 
   async function runCheckFolders() {
+    if (checkFoldersBusy || checkingRef.current) return;
+    checkingRef.current = true;
     try {
-      await checkFolders.mutateAsync();
+      await runCheckFoldersWithSetup({
+        configured: Boolean(ready?.configured),
+        settings,
+        form: { publicBaseUrl, maxParallel, batchSize },
+        save: input => configure.mutateAsync(input),
+        check: () => checkFolders.mutateAsync(),
+      });
       toast.success(
         "Folder check started. Counts will update as discovery completes."
       );
-      await statusQuery.refetch();
+      // The task has already started successfully; a transient status refresh
+      // must not turn that success into a misleading error toast.
+      try {
+        await statusQuery.refetch();
+      } catch {
+        // The next polling interval will refresh the status.
+      }
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
           : "Folder check could not be started."
       );
+    } finally {
+      checkingRef.current = false;
     }
   }
 
@@ -817,10 +851,14 @@ export default function SystemSync() {
             variant="outline"
             className="min-h-11 w-full bg-white sm:w-auto"
             onClick={runCheckFolders}
-            disabled={checkFolders.isPending}
+            disabled={checkFoldersBusy}
           >
             <FolderSync className="mr-2 h-4 w-4" />
-            {checkFolders.isPending ? "Checking…" : "Check folders"}
+            {checkFoldersBusy
+              ? configure.isPending
+                ? "Saving…"
+                : "Checking…"
+              : "Check folders"}
           </Button>
         }
       />
@@ -921,6 +959,17 @@ export default function SystemSync() {
             {ready ? (
               <>
                 <ReadinessRow
+                  label="Sync settings"
+                  ready={settingsSaved}
+                  detail={
+                    ready.configured
+                      ? settingsSaved
+                        ? "Approved root, callback, and limits are saved."
+                        : "Local settings changed; save them before checking folders."
+                      : "Save the approved root, callback, and limits before checking folders."
+                  }
+                />
+                <ReadinessRow
                   label="Manus API key"
                   ready={ready.apiKeyPresent}
                   detail="Configured server-side; never returned to the browser."
@@ -938,7 +987,7 @@ export default function SystemSync() {
                 <ReadinessRow
                   label="Worker schedule"
                   ready={ready.workerScheduled}
-                  detail="Verified heartbeat or schedule is in place."
+                  detail="Required for folder Sync/Resume; not required for Check folders."
                 />
               </>
             ) : (

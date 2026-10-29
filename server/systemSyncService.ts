@@ -27,7 +27,7 @@ export async function getSyncStatus() {
   const effective = settings ?? { id:1,rootFolderId:DEFAULT_SYNC_ROOT,connectorId:DRIVE_CONNECTOR_ID,publicBaseUrl:"https://carecrm-ajn4jvsk.manus.space",enabled:false,maxParallel:3,batchSize:50,scheduleTaskUid:null,lastCheckedAt:null };
   let driveConnected = false;
   if (process.env.MANUS_SYNC_API_KEY) { try { driveConnected = await checkDriveConnector(); } catch {} }
-  return { settings:effective, ready:{apiKeyPresent:Boolean(process.env.MANUS_SYNC_API_KEY),driveConnected,callbackReady:await callbackReady(effective.publicBaseUrl),workerScheduled:Boolean(effective.scheduleTaskUid)},folders:await sync.listSyncFolders(),events:await sync.listSyncEvents(),jobs:await listSyncJobs() };
+  return { settings:effective, ready:{configured:Boolean(settings?.enabled && settings.publicBaseUrl),apiKeyPresent:Boolean(process.env.MANUS_SYNC_API_KEY),driveConnected,callbackReady:await callbackReady(effective.publicBaseUrl),workerScheduled:Boolean(effective.scheduleTaskUid)},folders:await sync.listSyncFolders(),events:await sync.listSyncEvents(),jobs:await listSyncJobs() };
 }
 export async function configureSync(input: {rootFolderId?:string;publicBaseUrl?:string;maxParallel?:number;batchSize?:number}) {
   if(input.rootFolderId && input.rootFolderId!==DEFAULT_SYNC_ROOT) throw new Error("System sync is restricted to the approved Drive root.");
@@ -39,8 +39,11 @@ export async function configureSync(input: {rootFolderId?:string;publicBaseUrl?:
 }
 async function requireReady() {
   const settings = await sync.getSyncSettings();
-  if (!settings?.enabled || !settings.publicBaseUrl || !process.env.MANUS_SYNC_API_KEY) throw new Error("Configure the server key and the published callback origin first.");
-  if (!await checkDriveConnector() || !await callbackReady(settings.publicBaseUrl)) throw new Error("Publish the new CareFlow version and connect Google Drive before starting sync.");
+  if (!process.env.MANUS_SYNC_API_KEY) throw new Error("The Manus API server key is missing. Add MANUS_SYNC_API_KEY to the published project secrets.");
+  if (!settings?.enabled) throw new Error("Save and enable Sync settings before checking folders.");
+  if (!settings.publicBaseUrl) throw new Error("Save the published CareFlow callback URL in Sync settings.");
+  if (!await checkDriveConnector()) throw new Error("Reconnect the approved Google Drive connector before starting sync.");
+  if (!await callbackReady(settings.publicBaseUrl)) throw new Error("The published sync callback is unavailable. Publish the latest CareFlow version and check the callback URL.");
   return settings;
 }
 async function dispatch(job: NonNullable<Awaited<ReturnType<typeof sync.getSyncJob>>>, token:string, base:string, root:string) {
