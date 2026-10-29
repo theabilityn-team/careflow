@@ -27,6 +27,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { formatDate } from "@/lib/crm";
 import {
   APPROVED_SYNC_ROOT,
+  deriveSyncActionBlockers,
   runCheckFoldersWithSetup,
   syncSetupIsSaved,
   toSyncSetupInput,
@@ -86,6 +87,7 @@ type SyncReady = {
   apiKeyPresent: boolean;
   driveConnected: boolean;
   callbackReady: boolean;
+  backgroundReady: boolean;
   workerScheduled: boolean;
 };
 
@@ -262,6 +264,8 @@ function FolderCard({
   onAction,
   busy,
   onInspect,
+  transferBlockerReason,
+  backgroundReady,
 }: {
   folder: SyncFolder;
   onAction: (
@@ -270,6 +274,8 @@ function FolderCard({
   ) => void;
   busy: boolean;
   onInspect: () => void;
+  transferBlockerReason: "inventory" | "task_status_needs_review" | "import" | null;
+  backgroundReady: boolean;
 }) {
   const counts = folder.counts ?? ({} as SyncCounts);
   const total = safeCount(counts.total);
@@ -287,6 +293,18 @@ function FolderCard({
     folder.desiredState === "running" ||
     ["running", "processing", "dispatching", "waiting"].includes(folder.status);
   const paused = folder.desiredState === "paused" || folder.status === "paused";
+  const transferBlocked =
+    transferBlockerReason !== null || !backgroundReady;
+  const transferLabel =
+    transferBlockerReason === "inventory"
+      ? "Checking folders…"
+      : transferBlockerReason === "task_status_needs_review"
+        ? "Task status needs review"
+        : transferBlockerReason === "import"
+          ? "Import in progress"
+          : !backgroundReady
+            ? "Waiting for background setup"
+            : null;
 
   return (
     <Card className="min-w-0 overflow-hidden rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)]">
@@ -321,15 +339,15 @@ function FolderCard({
             {!running && !paused && (
               <Button
                 className="min-h-11 bg-teal-700 hover:bg-teal-800"
-                disabled={busy}
+                disabled={busy || transferBlocked}
                 onClick={() => onAction("sync", folder.id)}
               >
-                {busy ? (
+                {busy || transferBlocked ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Play className="mr-2 h-4 w-4" />
                 )}
-                Sync
+                {transferLabel || "Sync"}
               </Button>
             )}
             {running && (
@@ -346,22 +364,30 @@ function FolderCard({
             {paused && (
               <Button
                 className="min-h-11 bg-teal-700 hover:bg-teal-800"
-                disabled={busy}
+                disabled={busy || transferBlocked}
                 onClick={() => onAction("resume", folder.id)}
               >
-                <Play className="mr-2 h-4 w-4" />
-                Resume
+                {busy || transferBlocked ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="mr-2 h-4 w-4" />
+                )}
+                {transferLabel || "Resume"}
               </Button>
             )}
             {safeCount(counts.failed) > 0 && (
               <Button
                 variant="outline"
                 className="min-h-11 bg-white"
-                disabled={busy}
+                disabled={busy || transferBlocked}
                 onClick={() => onAction("retry", folder.id)}
               >
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Retry
+                {busy || transferBlocked ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                )}
+                {transferLabel || "Retry"}
               </Button>
             )}
           </div>
@@ -717,6 +743,16 @@ export default function SystemSync() {
   const activeJobs = folders.filter(
     folder => folder.desiredState === "running"
   ).length;
+  const actionBlockers = deriveSyncActionBlockers({
+    jobs: status?.jobs,
+    folders,
+  });
+  const discoveredImageCount = folders.reduce(
+    (sum, folder) => sum + safeCount(folder.counts?.total),
+    0
+  );
+  const checkFoldersBlocked =
+    checkFoldersBusy || actionBlockers.checkFoldersBlocked;
   const reviewCount = folders.reduce(
     (sum, folder) => sum + safeCount(folder.counts?.needs_review),
     0
@@ -851,7 +887,7 @@ export default function SystemSync() {
             variant="outline"
             className="min-h-11 w-full bg-white sm:w-auto"
             onClick={runCheckFolders}
-            disabled={checkFoldersBusy}
+            disabled={checkFoldersBlocked}
           >
             <FolderSync className="mr-2 h-4 w-4" />
             {checkFoldersBusy
@@ -862,6 +898,48 @@ export default function SystemSync() {
           </Button>
         }
       />
+
+      {actionBlockers.inventoryActive && (
+        <Alert className="mb-6 min-w-0 rounded-2xl border-amber-300 bg-amber-50 text-amber-950">
+          <Loader2 className="h-4 w-4 animate-spin text-amber-700" />
+          <AlertTitle>Checking Drive folders</AlertTitle>
+          <AlertDescription className="break-words leading-6 text-amber-900">
+            Checking Drive folders — {discoveredImageCount} images discovered.
+            Sync becomes available when inventory completes.
+          </AlertDescription>
+        </Alert>
+      )}
+      {actionBlockers.taskStatusNeedsReview && (
+        <Alert className="mb-6 min-w-0 rounded-2xl border-rose-300 bg-rose-50 text-rose-950">
+          <AlertCircle className="h-4 w-4 text-rose-700" />
+          <AlertTitle>Task status needs review</AlertTitle>
+          <AlertDescription className="break-words leading-6 text-rose-900">
+            A Manus task dispatch outcome is unknown. Open the task above and
+            check its status before starting or resuming folder transfers.
+          </AlertDescription>
+        </Alert>
+      )}
+      {actionBlockers.importActive && !actionBlockers.inventoryActive && (
+        <Alert className="mb-6 min-w-0 rounded-2xl border-sky-300 bg-sky-50 text-sky-950">
+          <Loader2 className="h-4 w-4 animate-spin text-sky-700" />
+          <AlertTitle>Import in progress</AlertTitle>
+          <AlertDescription className="break-words leading-6 text-sky-900">
+            An image transfer is already active. Sync, Resume, and Retry become
+            available when the active import lane completes.
+          </AlertDescription>
+        </Alert>
+      )}
+      {!actionBlockers.inventoryActive &&
+        !actionBlockers.importActive &&
+        actionBlockers.runningFolder && (
+          <Alert className="mb-6 min-w-0 rounded-2xl border-slate-300 bg-slate-50 text-slate-900">
+            <Info className="h-4 w-4 text-slate-600" />
+            <AlertDescription className="break-words leading-6 text-slate-700">
+              Check folders is unavailable while a folder is marked to run.
+              Pause that folder before checking the Drive inventory again.
+            </AlertDescription>
+          </Alert>
+        )}
 
       <Alert className="mb-6 min-w-0 rounded-2xl border-sky-200 bg-sky-50 text-sky-950">
         <Info className="h-4 w-4 text-sky-700" />
@@ -985,9 +1063,18 @@ export default function SystemSync() {
                   detail="Authenticated callbacks are reachable by workers."
                 />
                 <ReadinessRow
-                  label="Worker schedule"
+                  label="Background processing"
+                  ready={ready.backgroundReady}
+                  detail={
+                    ready.backgroundReady
+                      ? "Completion callbacks and the verified Manus webhook advance queued batches without this page open."
+                      : "Background completion callbacks and the verified Manus webhook are still being set up; folder transfers are blocked until this is ready."
+                  }
+                />
+                <ReadinessRow
+                  label="Worker schedule registration"
                   ready={ready.workerScheduled}
-                  detail="Required for folder Sync/Resume; not required for Check folders."
+                  detail="Registration information only; it is not proof that background processing is functioning."
                 />
               </>
             ) : (
@@ -1099,6 +1186,8 @@ export default function SystemSync() {
                 folder={folder}
                 onAction={runFolderAction}
                 busy={busyFolderId === folder.id}
+                transferBlockerReason={actionBlockers.transferBlockerReason}
+                backgroundReady={Boolean(ready?.backgroundReady)}
                 onInspect={() => {
                   setSelectedFolderId(folder.id);
                   setStatusFilter("all");

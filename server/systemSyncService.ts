@@ -3,9 +3,10 @@ import { and, eq, inArray, lte, or, desc } from "drizzle-orm";
 import { getDb } from "./db";
 import { systemSyncFolders, systemSyncItems, systemSyncJobs } from "../drizzle/schema";
 import * as sync from "./systemSyncDb";
-import { checkDriveConnector, createCallbackSecret, createManusSyncTask, DEFAULT_SYNC_ROOT, discoveryPrompt, DRIVE_CONNECTOR_ID, getManusTask, importPrompt, manusRequest, stopManusTask, SYNC_PROTOCOL, SyncProviderError, validateSyncBaseUrl, verifyCallbackToken } from "./systemSyncManus";
+import { checkDriveConnector, checkSyncBackground, createCallbackSecret, createManusSyncTask, DEFAULT_SYNC_ROOT, discoveryPrompt, DRIVE_CONNECTOR_ID, getManusTask, importPrompt, manusRequest, stopManusTask, SYNC_PROTOCOL, SyncProviderError, validateSyncBaseUrl, verifyCallbackToken } from "./systemSyncManus";
 import { extractSyncImage, commitSyncExtraction } from "./systemSyncImport";
 import { storagePut } from "./storage";
+import { syncTransferBatchSize } from "./systemSyncLimits";
 
 const ACTIVE_JOB_STATES = ["created", "dispatching", "running", "waiting", "dispatch_unknown"];
 const END_STATES = ["completed", "failed", "stopped"];
@@ -27,7 +28,9 @@ export async function getSyncStatus() {
   const effective = settings ?? { id:1,rootFolderId:DEFAULT_SYNC_ROOT,connectorId:DRIVE_CONNECTOR_ID,publicBaseUrl:"https://carecrm-ajn4jvsk.manus.space",enabled:false,maxParallel:3,batchSize:50,scheduleTaskUid:null,lastCheckedAt:null };
   let driveConnected = false;
   if (process.env.MANUS_SYNC_API_KEY) { try { driveConnected = await checkDriveConnector(); } catch {} }
-  return { settings:effective, ready:{configured:Boolean(settings?.enabled && settings.publicBaseUrl),apiKeyPresent:Boolean(process.env.MANUS_SYNC_API_KEY),driveConnected,callbackReady:await callbackReady(effective.publicBaseUrl),workerScheduled:Boolean(effective.scheduleTaskUid)},folders:await sync.listSyncFolders(),events:await sync.listSyncEvents(),jobs:await listSyncJobs() };
+  let backgroundReady = false;
+  if (process.env.MANUS_SYNC_API_KEY) { try { backgroundReady = await checkSyncBackground(effective.publicBaseUrl); } catch {} }
+  return { settings:effective, ready:{configured:Boolean(settings?.enabled && settings.publicBaseUrl),apiKeyPresent:Boolean(process.env.MANUS_SYNC_API_KEY),driveConnected,callbackReady:await callbackReady(effective.publicBaseUrl),backgroundReady,workerScheduled:Boolean(effective.scheduleTaskUid)},folders:await sync.listSyncFolders(),events:await sync.listSyncEvents(),jobs:await listSyncJobs() };
 }
 export async function configureSync(input: {rootFolderId?:string;publicBaseUrl?:string;maxParallel?:number;batchSize?:number}) {
   if(input.rootFolderId && input.rootFolderId!==DEFAULT_SYNC_ROOT) throw new Error("System sync is restricted to the approved Drive root.");
@@ -71,7 +74,7 @@ export async function checkSyncFolders() {
 }
 export async function startSyncFolder(folderId:number) {
   const settings = await requireReady();
-  if (!settings.scheduleTaskUid) throw new Error("Activate the published background worker before folder sync.");
+  if (!await checkSyncBackground(settings.publicBaseUrl)) throw new Error("Register the verified Manus completion webhook before folder sync.");
   const folder=await sync.getSyncFolder(folderId); if(!folder?.active) throw new Error("Check folders before starting this folder.");
   if ((await listActiveSyncJobs()).some(job=>job.kind==="discovery"||job.status==="dispatch_unknown")) throw new Error("Finish inventory or resolve unknown task dispatch before syncing.");
   await sync.updateSyncFolder(folderId,{desiredState:"running",status:"queued",lastStartedAt:Date.now(),lastError:null});
@@ -151,9 +154,11 @@ export async function processSyncImage(jobId:number,itemId:number,bytes:Buffer,m
     await (await db()).update(systemSyncItems).set({leaseUntil:job.expiresAt}).where(and(eq(systemSyncItems.id,itemId),eq(systemSyncItems.jobId,jobId),eq(systemSyncItems.status,"processing"),eq(systemSyncItems.leaseUntil,claimUntil)));
   }
 }
-export async function recordSyncFileFailure(jobId:number,itemId:number) {
+export async function recordSyncFileFailure(jobId:number,itemId:number,stage?:"download"|"upload"|"unknown",httpStatus?:number) {
   const item=await sync.getSyncItem(itemId); if(!item||item.jobId!==jobId) throw new Error("File is outside this job.");
-  if(item.status==="processing") await sync.updateSyncItem(itemId,{status:"failed",lastError:"Source download or transfer failed. Retry this file after checking Drive access."});
+  const safeStatus = Number.isInteger(httpStatus) && httpStatus! >= 100 && httpStatus! <= 599 ? ` (HTTP ${httpStatus})` : "";
+  const message = stage === "download" ? "Drive image download failed. Check native binary download/cwd and Drive access." : stage === "upload" ? `Image transfer to CareFlow failed${safeStatus}. Check the callback response before retrying.` : "Source download or transfer failed. Retry this file after checking Drive access.";
+  if(item.status==="processing") await sync.updateSyncItem(itemId,{status:"failed",lastError:message});
   return {success:true};
 }
 export async function completeSyncJob(jobId:number,success:boolean) {
@@ -164,6 +169,10 @@ export async function completeSyncJob(jobId:number,success:boolean) {
   } else {
     await (await db()).update(systemSyncItems).set({status:"failed",lastError:"Transfer task ended without returning this assigned image."}).where(and(eq(systemSyncItems.jobId,jobId),eq(systemSyncItems.status,"processing")));
     await sync.updateSyncJob(jobId,{status:success?"completed":"failed",lastError:success?null:"Transfer batch interrupted; completed files are preserved."});
+    const outcomes = await (await db()).select({ status: systemSyncItems.status }).from(systemSyncItems).where(eq(systemSyncItems.jobId, jobId));
+    if (job.folderId && outcomes.length > 0 && outcomes.every(item => item.status === "failed" || item.status === "skipped")) {
+      await sync.updateSyncFolder(job.folderId, { desiredState: "paused", status: "blocked", lastError: "No image in this transfer batch succeeded. Folder paused to avoid further paid failures; check the task and retry only failed files." });
+    }
   }
   return {success:true};
 }
@@ -172,7 +181,7 @@ export async function inspectSyncJob(jobId:number) {
   const detail=await getManusTask(job.manusTaskId); const task=detail.task??detail;
   await sync.updateSyncJob(jobId,{...(typeof task.credit_usage==="number"?{creditsUsed:task.credit_usage}:{}),...(task.status==="waiting"?{status:"waiting",lastError:"Manus needs input. Open the task; do not start another paid batch."}:{})});
   if(task.status==="error") await completeSyncJob(jobId,false);
-  if(task.status==="stopped"&&task.has_running_background_jobs!==true&&!END_STATES.includes(job.status)) {
+  if(task.status==="stopped"&&task.has_running_background_jobs===false&&!END_STATES.includes(job.status)) {
     // Completion callbacks, not prose, are authoritative; an unreturned task is failed.
     if(Date.now()-job.lastActivityAt>60_000) await completeSyncJob(jobId,false);
   }
@@ -195,11 +204,13 @@ export async function tickSyncWorker() {
   }
   if((await listActiveSyncJobs()).some(job=>job.kind==="discovery")) return {skipped:"inventory"};
   if(!settings.publicBaseUrl||!await checkDriveConnector()) return {skipped:"not_ready"};
+  const folders = await sync.listSyncFolders();
+  const batchSize = syncTransferBatchSize(settings.batchSize, folders);
   let started=0;
-  for(const folder of await sync.listSyncFolders()) {
+  for(const folder of folders) {
     if(Date.now()>deadline-25_000) break;
     if(!folder.active||folder.desiredState!=="running") continue;
-    const items=await sync.listImportCandidates(folder.id,settings.batchSize);
+    const items=await sync.listImportCandidates(folder.id,batchSize);
     if(!items.length) {
       if(folder.counts.processing===0) await sync.updateSyncFolder(folder.id,{status:folder.counts.failed||folder.counts.needs_review?"completed_with_issues":"completed",desiredState:"idle",lastCompletedAt:Date.now()});
       continue;

@@ -3,6 +3,7 @@ import { createHash, createVerify, randomBytes, timingSafeEqual } from "node:cry
 export const DRIVE_CONNECTOR_ID = "f8900a57-4bd7-46cc-83a3-5ebd2420a817";
 export const DEFAULT_SYNC_ROOT = "1UjUahdFTNTJxzWaTTeGJfQKvhm8URhLo";
 export const SYNC_PROTOCOL = "careflow-drive-sync-v1";
+export const SYNC_BACKGROUND_PROTOCOL = "careflow-native-events-v2";
 export class SyncProviderError extends Error {
   constructor(public code: string, public uncertain = false) { super(code === "unauthenticated" ? "Manus API authentication failed. Update the server secret." : code === "quota" ? "Manus quota or credits are unavailable. Pause and review the account." : uncertain ? "Task dispatch outcome is unknown. Inspect the linked Manus account before retrying; no automatic paid retry was started." : "Manus service could not complete this request. Retry the read-only check or inspect the task."); }
 }
@@ -55,7 +56,7 @@ export function discoveryPrompt(input: { jobId: number; rootFolderId: string; ca
 }
 
 export function importPrompt(input: { jobId: number; callbackBase: string; token: string }) {
-  return `${AGENT_RULES}\nProtocol ${SYNC_PROTOCOL}; import job ${input.jobId}.\nCallback base ${input.callbackBase}/api/system-sync/jobs/${input.jobId}. Bearer secret ${input.token}. GET /manifest to retrieve ONLY the assigned item IDs and Drive IDs; it returns eligible:false on pause/expiry. For each assigned item, download original bytes with Google Drive files.get alt=media (gws drive files get --params '{"fileId":"ID","alt":"media"}' with documented --output file flag or rclone connector integration; check exact CLI help). Do not transfer any other Drive file. POST /image/ITEM_ID raw image bytes with content-type as the manifest mimeType. The server handles OCR and identity-safe lead attachment. It returns imported/attached/needs_review/skipped; count all terminal results, do not try to alter the extraction. For a file download failure POST /file-error {itemId,error:"Drive download failed"}. If /manifest or any request returns 409/410 (paused/expired) stop immediately; no additional downloads or sends. When every assigned item has a terminal result or recorded error, POST /complete {success:true}. The app owns future batches; never start them yourself. If an unrecoverable error interrupts the entire batch POST /complete {success:false,error:"Transfer batch interrupted"}. Return aggregate counts only; do not create reports containing patient data or expose bearer secrets.`;
+  return `${AGENT_RULES}\nProtocol ${SYNC_PROTOCOL}; import job ${input.jobId}.\nCallback base ${input.callbackBase}/api/system-sync/jobs/${input.jobId}. Bearer secret ${input.token}. GET /manifest to retrieve ONLY the assigned item IDs and Drive IDs; it returns eligible:false on pause/expiry. For each assigned item, download original bytes with Google Drive files.get alt=media. IMPORTANT: gws rejects --output paths outside its process current directory. Create a private work directory UNDER the current working directory (not /tmp), invoke gws with subprocess cwd set to that directory, and pass a RELATIVE output basename. Exact native call: subprocess.run(['gws','drive','files','get','--params',json.dumps({'fileId':drive_id,'alt':'media'}),'--output',str(item_id)+'.bin'],cwd=work_directory,capture_output=True,timeout=300). Do not use Python tempfile's default /tmp directory. Verify return code, nonzero local file size and manifest byteSize before upload. Never swallow stderr: record only a safe failure stage/code without URLs, bearer tokens, patient data or full command lines. If the native binary call fails despite correct cwd, inspect the safe error and use only the documented connector rclone binary fallback for that SAME assigned file, never browser or copied access tokens. Do not transfer any other Drive file. POST /image/ITEM_ID raw image bytes with content-type as the manifest mimeType. The server handles OCR and identity-safe lead attachment. It returns imported/attached/needs_review/skipped; count all terminal results, do not try to alter the extraction. For a file download failure POST /file-error {itemId,error:"Drive download failed",stage:"download"}; for upload failure include stage:"upload" and an optional numeric httpStatus. If /manifest or any request returns 409/410 (paused/expired) stop immediately; no additional downloads or sends. When every assigned item has a terminal result or recorded error, POST /complete {success:true}. The app owns future batches; never start them yourself. If an unrecoverable error interrupts the entire batch POST /complete {success:false,error:"Transfer batch interrupted"}. Return aggregate counts only; do not create reports containing patient data or expose bearer secrets. Delete temporary media and token-bearing transfer scripts at completion.`;
 }
 
 export async function createManusSyncTask(kind: "discovery" | "import", jobId: number, prompt: string) {
@@ -65,6 +66,26 @@ export async function createManusSyncTask(kind: "discovery" | "import", jobId: n
 }
 export async function getManusTask(taskId: string) { return manusRequest<any>(`task.detail?task_id=${encodeURIComponent(taskId)}`); }
 export async function stopManusTask(taskId: string) { return manusRequest("task.stop", { task_id: taskId }); }
+
+let backgroundCache: { expires: number; origin: string; ready: boolean } | undefined;
+export async function checkSyncBackground(base: string | null | undefined, force = false) {
+  if (!base || !process.env.MANUS_SYNC_API_KEY) return false;
+  const origin = validateSyncBaseUrl(base);
+  if (!force && backgroundCache?.origin === origin && backgroundCache.expires > Date.now()) return backgroundCache.ready;
+  const result = await manusRequest<{ data: Array<{ url: string }> }>("webhook.list");
+  const registered = result.data.some(webhook => webhook.url === `${origin}/api/system-sync/webhook`);
+  let deployed = false;
+  if (registered) {
+    try {
+      const response = await fetch(`${origin}/api/system-sync/health`, { signal: AbortSignal.timeout(5000), redirect: "error" });
+      const health = await response.json();
+      deployed = response.ok && health.protocol === SYNC_PROTOCOL && health.backgroundProtocol === SYNC_BACKGROUND_PROTOCOL;
+    } catch {}
+  }
+  const ready = registered && deployed;
+  backgroundCache = { origin, ready, expires: Date.now() + (ready ? 60_000 : 15_000) };
+  return ready;
+}
 
 let publicKeyCache: { expires: number; key: string } | undefined;
 export async function getManusWebhookKey() {

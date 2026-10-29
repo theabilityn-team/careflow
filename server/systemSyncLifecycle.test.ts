@@ -192,7 +192,7 @@ describe("system sync lifecycle", () => {
     mockedSync.updateSyncJob.mockResolvedValue(undefined);
     const where = vi.fn(async () => undefined);
     const set = vi.fn(() => ({ where }));
-    mockedDb.getDb.mockResolvedValue({ update: vi.fn(() => ({ set })) } as never);
+    mockedDb.getDb.mockResolvedValue({ update: vi.fn(() => ({ set })), select: vi.fn(() => queryResult([{ status: "imported" }, { status: "failed" }])) } as never);
 
     await expect(service.completeSyncJob(44, true)).resolves.toEqual({ success: true });
     expect(set).toHaveBeenCalledWith({ status: "failed", lastError: "Transfer task ended without returning this assigned image." });
@@ -201,8 +201,28 @@ describe("system sync lifecycle", () => {
     expect(mockedSync.updateSyncJob).toHaveBeenCalledWith(44, { status: "completed", lastError: null });
   });
 
+  it("pauses all-failed batches before another paid handoff", async () => {
+    mockedSync.getSyncJob.mockResolvedValue({ id: 44, kind: "import", status: "running", folderId: 21 } as never);
+    const where = vi.fn(async () => undefined);
+    mockedDb.getDb.mockResolvedValue({ update: vi.fn(() => ({ set: vi.fn(() => ({ where })) })), select: vi.fn(() => queryResult([{ status: "failed" }, { status: "failed" }])) } as never);
+    await service.completeSyncJob(44, true);
+    expect(mockedSync.updateSyncFolder).toHaveBeenCalledWith(21, expect.objectContaining({ desiredState: "paused", status: "blocked" }));
+  });
+
+  it("retains safe stage/HTTP diagnosis without storing supplied raw secret text", async () => {
+    mockedSync.getSyncItem.mockResolvedValue({ id: 31, jobId: 44, status: "processing" } as never);
+    await service.recordSyncFileFailure(44, 31, "upload", 413);
+    expect(mockedSync.updateSyncItem).toHaveBeenCalledWith(31, expect.objectContaining({ status: "failed", lastError: expect.stringContaining("HTTP 413") }));
+    await service.recordSyncFileFailure(44, 31, "download");
+    expect(mockedSync.updateSyncItem).toHaveBeenLastCalledWith(31, expect.objectContaining({ lastError: expect.stringContaining("native binary download/cwd") }));
+  });
+
   it("blocks staff and Leader contexts at the root admin procedure", async () => {
     mockedSync.getSyncSettings.mockResolvedValue(undefined);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
+      ok: true,
+      json: async () => ({ protocol: "careflow-drive-sync-v1", challenge: new URL(url).searchParams.get("challenge") }),
+    })));
     const caller = systemSyncRouter.createCaller(callerContext(admin));
     await expect(systemSyncRouter.createCaller(callerContext(staff)).status()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(systemSyncRouter.createCaller(callerContext(leader)).status()).rejects.toMatchObject({ code: "FORBIDDEN" });

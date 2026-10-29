@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  deriveSyncActionBlockers,
   runCheckFoldersWithSetup,
   syncSetupIsSaved,
   toSyncSetupInput,
@@ -109,5 +110,63 @@ describe("system sync setup UI flow", () => {
 
     expect(save).not.toHaveBeenCalled();
     expect(check).toHaveBeenCalledOnce();
+  });
+
+  it("blocks transfer actions while discovery is active and counts only active jobs", () => {
+    expect(
+      deriveSyncActionBlockers({
+        jobs: [
+          { kind: "discovery", status: "created" },
+          { kind: "discovery", status: "dispatching" },
+          { kind: "discovery", status: "running" },
+          { kind: "discovery", status: "waiting" },
+          { kind: "import", status: "completed" },
+          { kind: "discovery", status: "stopped" },
+        ],
+      })
+    ).toMatchObject({
+      activeJobCount: 4,
+      inventoryActive: true,
+      importActive: false,
+      transferBlocked: true,
+      transferBlockerReason: "inventory",
+      checkFoldersBlocked: true,
+    });
+  });
+
+  it("uses the task review blocker for an unknown dispatch", () => {
+    expect(
+      deriveSyncActionBlockers({
+        jobs: [{ kind: "import", status: "dispatch_unknown" }],
+      })
+    ).toMatchObject({
+      activeJobCount: 1,
+      taskStatusNeedsReview: true,
+      transferBlocked: true,
+      transferBlockerReason: "task_status_needs_review",
+      checkFoldersBlocked: true,
+    });
+  });
+
+  it("blocks folder checks for an active import or running desired folder", () => {
+    expect(
+      deriveSyncActionBlockers({
+        jobs: [{ kind: "import", status: "running" }],
+      })
+    ).toMatchObject({
+      importActive: true,
+      transferBlocked: false,
+      transferBlockerReason: null,
+      checkFoldersBlocked: true,
+    });
+    expect(
+      deriveSyncActionBlockers({
+        folders: [{ desiredState: "running" }],
+      })
+    ).toMatchObject({
+      runningFolder: true,
+      transferBlocked: false,
+      checkFoldersBlocked: true,
+    });
   });
 });

@@ -5,8 +5,9 @@ import { eq } from "drizzle-orm";
 import { getDb } from "./db";
 import { systemSyncJobs, systemSyncSettings } from "../drizzle/schema";
 import * as sync from "./systemSyncDb";
-import { authorizeSyncCallback, completeSyncJob, getSyncManifest, inspectSyncJob, processSyncImage, recordSyncFileFailure, recordSyncMetadata, tickSyncWorker } from "./systemSyncService";
-import { getManusWebhookKey, SYNC_PROTOCOL, verifyManusWebhook } from "./systemSyncManus";
+import { authorizeSyncCallback, getSyncManifest, processSyncImage, recordSyncFileFailure, recordSyncMetadata, tickSyncWorker } from "./systemSyncService";
+import { completeSyncAndAdvance, handleSyncTaskStop } from "./systemSyncEvents";
+import { getManusWebhookKey, SYNC_BACKGROUND_PROTOCOL, SYNC_PROTOCOL, verifyManusWebhook } from "./systemSyncManus";
 import { sdk } from "./_core/sdk";
 
 const idSchema=z.coerce.number().int().positive();
@@ -25,7 +26,7 @@ const failure=(res:Response)=>res.status(503).json({error:"This sync step could 
 
 /** Register BEFORE the global JSON parser to preserve raw images and signed body bytes. */
 export function registerSystemSyncRoutes(app:Express) {
-  app.get("/api/system-sync/health",(req,res)=>res.json({protocol:SYNC_PROTOCOL,challenge:String(req.query.challenge??"").slice(0,100)}));
+  app.get("/api/system-sync/health",(req,res)=>res.json({protocol:SYNC_PROTOCOL,backgroundProtocol:SYNC_BACKGROUND_PROTOCOL,challenge:String(req.query.challenge??"").slice(0,100)}));
   app.get("/api/system-sync/jobs/:jobId/manifest",callbackAuth,async(req,res)=>{
     try {const result=await getSyncManifest(res.locals.syncJobId);return res.status(result.eligible?200:409).json(result);}catch{return failure(res);}
   });
@@ -39,12 +40,12 @@ export function registerSystemSyncRoutes(app:Express) {
     catch(error){ if(error instanceof Error && /paused|expired/.test(error.message)) return res.status(409).json({error:"Transfer paused or expired."}); if(error instanceof Error && /busy/.test(error.message)) return res.status(429).set("Retry-After","30").json({error:"Image processing in progress; retry after 30 seconds."}); return failure(res); }
   });
   app.post("/api/system-sync/jobs/:jobId/file-error",callbackAuth,express.json({limit:"8kb"}),async(req,res)=>{
-    const input=z.object({itemId:z.number().int().positive(),error:z.string().max(500).optional()}).safeParse(req.body);if(!input.success)return res.status(400).json({error:"Invalid file failure."});
-    try{return res.json(await recordSyncFileFailure(res.locals.syncJobId,input.data.itemId));}catch{return failure(res);}
+    const input=z.object({itemId:z.number().int().positive(),error:z.string().max(500).optional(),stage:z.enum(["download","upload","unknown"]).optional(),httpStatus:z.number().int().min(100).max(599).optional()}).safeParse(req.body);if(!input.success)return res.status(400).json({error:"Invalid file failure."});
+    try{return res.json(await recordSyncFileFailure(res.locals.syncJobId,input.data.itemId,input.data.stage,input.data.httpStatus));}catch{return failure(res);}
   });
   app.post("/api/system-sync/jobs/:jobId/complete",callbackAuth,express.json({limit:"8kb"}),async(req,res)=>{
-    const input=z.object({success:z.boolean(),error:z.string().max(500).optional()}).safeParse(req.body);if(!input.success)return res.status(400).json({error:"Completion state required."});
-    try{return res.json(await completeSyncJob(res.locals.syncJobId,input.data.success));}catch{return failure(res);}
+    const input=z.object({success:z.boolean(),error:z.string().max(500).optional(),pauseFolderAfterCompletion:z.boolean().optional()}).safeParse(req.body);if(!input.success)return res.status(400).json({error:"Completion state required."});
+    try{return res.json(await completeSyncAndAdvance(res.locals.syncJobId,input.data.success,input.data.pauseFolderAfterCompletion));}catch{return failure(res);}
   });
   app.post("/api/system-sync/webhook",express.raw({type:"application/json",limit:"1mb"}),async(req,res)=>{
     try {
@@ -54,8 +55,7 @@ export function registerSystemSyncRoutes(app:Express) {
       const body=JSON.parse(req.body.toString("utf8")); const taskId=body.task_detail?.task_id;
       if(body.event_type==="task_stopped"&&typeof taskId==="string") {
         const database=await getDb();const job=database?(await database.select().from(systemSyncJobs).where(eq(systemSyncJobs.manusTaskId,taskId)).limit(1))[0]:undefined;
-        if(job && !["completed","failed","stopped"].includes(job.status) && body.task_detail?.stop_reason==="ask") await sync.updateSyncJob(job.id,{status:"waiting",lastError:"Manus task requires input; open its task link. No automatic confirmation is allowed."});
-        // Heartbeat independently verifies provider status before any recovery/next dispatch.
+        if(job) await handleSyncTaskStop(job, body.task_detail?.stop_reason);
       }
       return res.json({ok:true});
     }catch{return res.status(503).json({error:"Webhook verification unavailable."});}

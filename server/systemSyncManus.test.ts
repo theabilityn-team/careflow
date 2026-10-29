@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash, generateKeyPairSync, createSign } from "node:crypto";
-import { callbackHash, createCallbackSecret, discoveryPrompt, importPrompt, manusRequest, validateSyncBaseUrl, verifyCallbackToken, verifyManusWebhook } from "./systemSyncManus";
-afterEach(() => vi.unstubAllGlobals());
+import { callbackHash, checkSyncBackground, createCallbackSecret, discoveryPrompt, importPrompt, manusRequest, validateSyncBaseUrl, verifyCallbackToken, verifyManusWebhook } from "./systemSyncManus";
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("System sync provider safeguards", () => {
   it("hashes scoped bearer tokens and rejects replayed wrong values", () => {
     const secret = createCallbackSecret();
@@ -40,5 +40,23 @@ describe("System sync provider safeguards", () => {
     expect(verifyManusWebhook({...input,body:Buffer.from("changed")})).toBe(false);
     expect(verifyManusWebhook({...input,url:url+"?spoof=1"})).toBe(false);
     expect(verifyManusWebhook({...input,now:Date.now()+301_000})).toBe(false);
+  });
+  it("requires a registered exact-origin completion webhook, not just a schedule ID", async () => {
+    vi.stubEnv("MANUS_SYNC_API_KEY", "dummy-key");
+    const origin = "https://carecrm-ajn4jvsk.manus.space";
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("webhook.list") ? ({ ok: true, data: [{ url: origin + "/api/system-sync/webhook" }] }) : ({ protocol: "careflow-drive-sync-v1", backgroundProtocol: "careflow-native-events-v2" }) })));
+    expect(await checkSyncBackground(origin, true)).toBe(true);
+    expect(await checkSyncBackground("https://other.manus.space", true)).toBe(false);
+  });
+  it("does not assert background readiness without a key or origin", async () => {
+    vi.stubEnv("MANUS_SYNC_API_KEY", "");
+    expect(await checkSyncBackground("https://carecrm-ajn4jvsk.manus.space", true)).toBe(false);
+    expect(await checkSyncBackground(null, true)).toBe(false);
+  });
+  it("does not call old published callbacks ready just because a webhook is registered", async () => {
+    vi.stubEnv("MANUS_SYNC_API_KEY", "dummy-key");
+    const origin = "https://carecrm-ajn4jvsk.manus.space";
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("webhook.list") ? ({ ok: true, data: [{ url: origin + "/api/system-sync/webhook" }] }) : ({ protocol: "careflow-drive-sync-v1" }) })));
+    expect(await checkSyncBackground(origin, true)).toBe(false);
   });
 });
