@@ -11,6 +11,8 @@ import { getManusWebhookKey, SYNC_BACKGROUND_PROTOCOL, SYNC_PROTOCOL, verifyManu
 import { sdk } from "./_core/sdk";
 import { StorageOperationError } from "./storage";
 import { createSyncUploadGrant, finishSyncUpload, SYNC_TRANSFER_PROTOCOL } from "./systemSyncTransfer";
+import { SYSTEM_SYNC_WORKER } from "./systemSyncWorker";
+import { SYNC_WORKER_PROTOCOL } from "./systemSyncManus";
 
 const idSchema=z.coerce.number().int().positive();
 const driveId=z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/);
@@ -38,7 +40,8 @@ async function transferFailure(error:unknown,res:Response,itemId:number) {
 
 /** Register BEFORE the global JSON parser to preserve raw images and signed body bytes. */
 export function registerSystemSyncRoutes(app:Express) {
-  app.get("/api/system-sync/health",(req,res)=>res.json({protocol:SYNC_PROTOCOL,backgroundProtocol:SYNC_BACKGROUND_PROTOCOL,transferProtocol:SYNC_TRANSFER_PROTOCOL,challenge:String(req.query.challenge??"").slice(0,100)}));
+  app.get("/api/system-sync/health",(req,res)=>res.json({protocol:SYNC_PROTOCOL,backgroundProtocol:SYNC_BACKGROUND_PROTOCOL,transferProtocol:SYNC_TRANSFER_PROTOCOL,workerProtocol:SYNC_WORKER_PROTOCOL,challenge:String(req.query.challenge??"").slice(0,100)}));
+  app.get("/api/system-sync/worker.py",(_req,res)=>res.set("Cache-Control","no-store").type("text/plain").send(SYSTEM_SYNC_WORKER));
   app.get("/api/system-sync/jobs/:jobId/manifest",callbackAuth,async(req,res)=>{
     try {const result=await getSyncManifest(res.locals.syncJobId);return res.status(result.eligible?200:409).json(result);}catch{return failure(res);}
   });

@@ -20,11 +20,15 @@ describe("System sync provider safeguards", () => {
     expect(discoveryPrompt(input)).toContain("NEVER download pixels in discovery");
     expect(discoveryPrompt(input)).toContain("DO NOT send success=true");
     expect(importPrompt(input)).toContain("ONLY the assigned item IDs");
-    expect(importPrompt(input)).toContain("no compression before OCR");
+    expect(importPrompt(input)).toContain("No compression before OCR");
     expect(importPrompt(input)).not.toContain(process.env.MANUS_SYNC_API_KEY || "unavailable-api-secret");
     expect(importPrompt(input)).toContain("DO NOT POST image bytes or base64");
     expect(importPrompt(input)).toContain("NEVER forward the callback bearer");
-    expect(importPrompt(input)).toContain("POST /uploaded/ITEM_ID with {}");
+    expect(importPrompt(input)).toContain("DO NOT write or improvise another transfer implementation");
+    expect(importPrompt(input)).toContain("CareFlow-Sync/1.0");
+    expect(importPrompt(input)).toContain('"CAREFLOW_SYNC_BASE":"https://a.manus.space/api/system-sync/jobs/12"');
+    expect(importPrompt(input)).toContain('"CAREFLOW_SYNC_TOKEN":"scoped-dummy-token"');
+    expect(importPrompt(input)).toContain("/api/system-sync/worker.py");
   });
   it("does not retry ambiguous paid task creation or expose upstream body", async () => {
     vi.stubEnv("MANUS_SYNC_API_KEY", "dummy-key");
@@ -47,7 +51,7 @@ describe("System sync provider safeguards", () => {
   it("requires a registered exact-origin completion webhook, not just a schedule ID", async () => {
     vi.stubEnv("MANUS_SYNC_API_KEY", "dummy-key");
     const origin = "https://carecrm-ajn4jvsk.manus.space";
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("webhook.list") ? ({ ok: true, data: [{ url: origin + "/api/system-sync/webhook" }] }) : ({ protocol: "careflow-drive-sync-v1", backgroundProtocol: "careflow-native-events-v2", transferProtocol: "careflow-direct-storage-v3" }) })));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("webhook.list") ? ({ ok: true, data: [{ url: origin + "/api/system-sync/webhook" }] }) : ({ protocol: "careflow-drive-sync-v1", backgroundProtocol: "careflow-native-events-v2", transferProtocol: "careflow-direct-storage-v3", workerProtocol: "careflow-fixed-worker-v4" }) })));
     expect(await checkSyncBackground(origin, true)).toBe(true);
     expect(await checkSyncBackground("https://other.manus.space", true)).toBe(false);
   });
@@ -67,5 +71,11 @@ describe("System sync provider safeguards", () => {
     const origin = "https://carecrm-ajn4jvsk.manus.space";
     vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("webhook.list") ? ({ ok: true, data: [{ url: origin + "/api/system-sync/webhook" }] }) : ({ protocol: "careflow-drive-sync-v1", backgroundProtocol: "careflow-native-events-v2" }) })));
     expect(await checkSyncBackground(origin, true)).toBe(false);
+  });
+  it("does not dispatch paid work to v3 without the fixed tested worker",async()=>{
+    vi.stubEnv("MANUS_SYNC_API_KEY","dummy-key");
+    const origin="https://carecrm-ajn4jvsk.manus.space";
+    vi.stubGlobal("fetch",vi.fn(async(url:string)=>({ok:true,json:async()=>url.includes("webhook.list")?({ok:true,data:[{url:origin+"/api/system-sync/webhook"}]}):({protocol:"careflow-drive-sync-v1",backgroundProtocol:"careflow-native-events-v2",transferProtocol:"careflow-direct-storage-v3"})})));
+    expect(await checkSyncBackground(origin,true)).toBe(false);
   });
 });

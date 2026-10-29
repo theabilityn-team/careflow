@@ -131,6 +131,17 @@ afterEach(async () => {
 });
 
 describe("system sync lifecycle", () => {
+  it("serves the fixed credential-free worker with an explicit readiness marker",async()=>{
+    const origin=await startRoutes();
+    const health=await fetch(`${origin}/api/system-sync/health`);
+    expect(await health.json()).toMatchObject({workerProtocol:"careflow-fixed-worker-v4"});
+    const script=await fetch(`${origin}/api/system-sync/worker.py`);
+    expect(script.status).toBe(200);expect(script.headers.get("cache-control")).toBe("no-store");
+    const text=await script.text();expect(text).toContain("CareFlow-Sync/1.0");
+    expect(text).toContain("item.get('id')");expect(text).toContain("item.get('driveFileId')");
+    expect(text).toContain("os.environ['CAREFLOW_SYNC_TOKEN']");expect(text).not.toContain("PRIVATE_CALLBACK");
+  });
+
   it("accepts numbered Images metadata roots and rejects non-numbered roots", async () => {
     const discoveryJob = { id: 10, kind: "discovery", status: "running", expiresAt: Date.now() + 60_000 };
     mockedSync.getSyncJob.mockResolvedValue(discoveryJob as never);
