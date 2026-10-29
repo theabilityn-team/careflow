@@ -74,7 +74,7 @@ export async function checkSyncFolders() {
 }
 export async function startSyncFolder(folderId:number) {
   const settings = await requireReady();
-  if (!await checkSyncBackground(settings.publicBaseUrl)) throw new Error("Register the verified Manus completion webhook before folder sync.");
+  if (!await checkSyncBackground(settings.publicBaseUrl)) throw new Error("Publish the latest direct-upload version and verify the Manus completion webhook before folder sync.");
   const folder=await sync.getSyncFolder(folderId); if(!folder?.active) throw new Error("Check folders before starting this folder.");
   if ((await listActiveSyncJobs()).some(job=>job.kind==="discovery"||job.status==="dispatch_unknown")) throw new Error("Finish inventory or resolve unknown task dispatch before syncing.");
   await sync.updateSyncFolder(folderId,{desiredState:"running",status:"queued",lastStartedAt:Date.now(),lastError:null});
@@ -203,7 +203,7 @@ export async function tickSyncWorker() {
     } else if(job.manusTaskId) { try {await inspectSyncJob(job.id);} catch {} }
   }
   if((await listActiveSyncJobs()).some(job=>job.kind==="discovery")) return {skipped:"inventory"};
-  if(!settings.publicBaseUrl||!await checkDriveConnector()) return {skipped:"not_ready"};
+  if(!settings.publicBaseUrl||!await checkDriveConnector()||!await checkSyncBackground(settings.publicBaseUrl)) return {skipped:"not_ready"};
   const folders = await sync.listSyncFolders();
   const batchSize = syncTransferBatchSize(settings.batchSize, folders);
   let started=0;

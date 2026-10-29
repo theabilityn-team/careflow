@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer, type Server } from "node:http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { callbackHash, SYNC_PROTOCOL, SyncProviderError } from "./systemSyncManus";
+import { callbackHash, DEFAULT_SYNC_ROOT, SYNC_PROTOCOL, SyncProviderError } from "./systemSyncManus";
 import type { TrpcContext } from "./_core/context";
 import { systemSyncRouter } from "./routers/systemSync";
 import { registerSystemSyncRoutes } from "./systemSyncRoutes";
@@ -235,6 +235,29 @@ describe("system sync lifecycle", () => {
     process.mockRejectedValueOnce(new Error("Transfer is paused"));
     expect((await send()).status).toBe(409);
     expect(mockedSync.addSyncEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses small authenticated direct-upload callbacks and rejects client storage URLs", async () => {
+    const storage=await import("./storage");
+    const token="test-direct-callback-12345678901234567890";
+    mockedSync.getSyncJob.mockResolvedValue({id:44,kind:"import",folderId:21,itemIds:"[31]",status:"running",callbackTokenHash:callbackHash(token),expiresAt:Date.now()+60000} as never);
+    mockedSync.getSyncItem.mockResolvedValue({id:31,folderId:21,jobId:44,status:"processing",mimeType:"image/jpeg",byteSize:3,fingerprint:"opaque"} as never);
+    mockedSync.getSyncSettings.mockResolvedValue({enabled:true,rootFolderId:DEFAULT_SYNC_ROOT} as never);
+    mockedSync.getSyncFolder.mockResolvedValue({active:true,desiredState:"running"} as never);
+    const sign=vi.spyOn(storage,"storagePresignUpload").mockResolvedValue("https://storage.example.invalid/private");
+    const read=vi.spyOn(storage,"storageReadBytes").mockResolvedValue(Buffer.from([255,216,1]));
+    const process=vi.spyOn(service,"processSyncImage").mockResolvedValue({status:"imported",leadId:101,documentId:201} as never);
+    const origin=await startRoutes();
+    const post=(path:string,body:object={},auth=token)=>fetch(`${origin}/api/system-sync/jobs/44/${path}/31`,{method:"POST",headers:{authorization:`Bearer ${auth}`,"content-type":"application/json"},body:JSON.stringify(body)});
+    expect((await post("upload",{},"wrong-token")).status).toBe(401);
+    expect((await post("uploaded",{url:"http://127.0.0.1/private",key:"foreign"})).status).toBe(400);
+    expect(read).not.toHaveBeenCalled();
+    const grant=await post("upload");expect(grant.status).toBe(200);expect(grant.headers.get("cache-control")).toBe("no-store");
+    expect(await grant.json()).toMatchObject({protocol:"careflow-direct-storage-v3",method:"PUT",byteSize:3});
+    expect(sign).toHaveBeenCalledWith("system-sync-staging/44/31-opaque.jpg");
+    const done=await post("uploaded");expect(done.status).toBe(200);expect(await done.json()).toMatchObject({status:"imported"});
+    expect(read).toHaveBeenCalledWith("system-sync-staging/44/31-opaque.jpg",3);
+    expect(process).toHaveBeenCalledWith(44,31,Buffer.from([255,216,1]),"image/jpeg");
   });
 
   it("blocks staff and Leader contexts at the root admin procedure", async () => {

@@ -22,6 +22,9 @@ describe("System sync provider safeguards", () => {
     expect(importPrompt(input)).toContain("ONLY the assigned item IDs");
     expect(importPrompt(input)).toContain("no compression before OCR");
     expect(importPrompt(input)).not.toContain(process.env.MANUS_SYNC_API_KEY || "unavailable-api-secret");
+    expect(importPrompt(input)).toContain("DO NOT POST image bytes or base64");
+    expect(importPrompt(input)).toContain("NEVER forward the callback bearer");
+    expect(importPrompt(input)).toContain("POST /uploaded/ITEM_ID with {}");
   });
   it("does not retry ambiguous paid task creation or expose upstream body", async () => {
     vi.stubEnv("MANUS_SYNC_API_KEY", "dummy-key");
@@ -44,7 +47,7 @@ describe("System sync provider safeguards", () => {
   it("requires a registered exact-origin completion webhook, not just a schedule ID", async () => {
     vi.stubEnv("MANUS_SYNC_API_KEY", "dummy-key");
     const origin = "https://carecrm-ajn4jvsk.manus.space";
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("webhook.list") ? ({ ok: true, data: [{ url: origin + "/api/system-sync/webhook" }] }) : ({ protocol: "careflow-drive-sync-v1", backgroundProtocol: "careflow-native-events-v2" }) })));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("webhook.list") ? ({ ok: true, data: [{ url: origin + "/api/system-sync/webhook" }] }) : ({ protocol: "careflow-drive-sync-v1", backgroundProtocol: "careflow-native-events-v2", transferProtocol: "careflow-direct-storage-v3" }) })));
     expect(await checkSyncBackground(origin, true)).toBe(true);
     expect(await checkSyncBackground("https://other.manus.space", true)).toBe(false);
   });
@@ -57,6 +60,12 @@ describe("System sync provider safeguards", () => {
     vi.stubEnv("MANUS_SYNC_API_KEY", "dummy-key");
     const origin = "https://carecrm-ajn4jvsk.manus.space";
     vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("webhook.list") ? ({ ok: true, data: [{ url: origin + "/api/system-sync/webhook" }] }) : ({ protocol: "careflow-drive-sync-v1" }) })));
+    expect(await checkSyncBackground(origin, true)).toBe(false);
+  });
+  it("blocks the old native callback until direct-storage endpoints are deployed", async () => {
+    vi.stubEnv("MANUS_SYNC_API_KEY", "dummy-key");
+    const origin = "https://carecrm-ajn4jvsk.manus.space";
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("webhook.list") ? ({ ok: true, data: [{ url: origin + "/api/system-sync/webhook" }] }) : ({ protocol: "careflow-drive-sync-v1", backgroundProtocol: "careflow-native-events-v2" }) })));
     expect(await checkSyncBackground(origin, true)).toBe(false);
   });
 });
