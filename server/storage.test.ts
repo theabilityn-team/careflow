@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { storagePut, storagePresignUpload, storageReadBytes } from "./storage";
+import { storagePut } from "./storage";
 
 vi.mock("./_core/env", () => ({ ENV: { forgeApiUrl: "https://forge.example.invalid", forgeApiKey: "TEST_SECRET" } }));
 
@@ -12,8 +12,8 @@ describe("bounded server storage", () => {
     const request = vi.fn().mockResolvedValueOnce(presigned()).mockResolvedValueOnce(new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", request);
     const bytes = Buffer.from([255, 216, 1, 2, 3, 4]);
-    const result = await storagePut("/system-sync/example/original.jpg", bytes, "image/jpeg");
-    expect(result.key).toMatch(/^system-sync\/example\/original_[a-f0-9]{8}\.jpg$/);
+    const result = await storagePut("/documents/example/original.jpg", bytes, "image/jpeg");
+    expect(result.key).toMatch(/^documents\/example\/original_[a-f0-9]{8}\.jpg$/);
     expect(result.url).toBe(`/manus-storage/${result.key}`);
     expect(request).toHaveBeenCalledTimes(2);
     const upload = request.mock.calls[1][1];
@@ -62,21 +62,5 @@ describe("bounded server storage", () => {
     await vi.advanceTimersByTimeAsync(deadline);
     await promise;
     expect(request).toHaveBeenCalledTimes(stage === "storage_upload" ? 2 : 1);
-  });
-  it("signs only the caller's exact staging key without adding a final-document suffix", async () => {
-    const request=vi.fn().mockResolvedValue(presigned());vi.stubGlobal("fetch",request);
-    await storagePresignUpload("system-sync-staging/12/4.jpg");
-    expect(new URL(String(request.mock.calls[0][0])).searchParams.get("path")).toBe("system-sync-staging/12/4.jpg");
-  });
-  it("reads exact staged bytes with a bounded server-side GET", async () => {
-    const bytes=Buffer.from([255,216,1,2]);
-    const request=vi.fn().mockResolvedValueOnce(presigned()).mockResolvedValueOnce(new Response(bytes));vi.stubGlobal("fetch",request);
-    expect(await storageReadBytes("assigned.jpg",4)).toEqual(bytes);
-    expect(request.mock.calls[1][1].signal).toBeInstanceOf(AbortSignal);
-  });
-  it.each(["empty","header_limit","stream_limit"])("rejects a %s staged download before scanner processing",async scenario=>{
-    const response=scenario==="empty"?new Response(null):new Response(Buffer.from([1,2,3,4]),scenario==="header_limit"?{headers:{"content-length":"4"}}:{});
-    vi.stubGlobal("fetch",vi.fn().mockResolvedValueOnce(presigned()).mockResolvedValueOnce(response));
-    await expect(storageReadBytes("assigned.jpg",3)).rejects.toMatchObject({stage:"storage_download",code:"invalid_response"});
   });
 });

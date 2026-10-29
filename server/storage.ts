@@ -7,16 +7,16 @@ import { ENV } from "./_core/env";
 
 export class StorageOperationError extends Error {
   constructor(
-    public readonly stage: "storage_presign" | "storage_upload" | "storage_download",
+    public readonly stage: "storage_presign" | "storage_upload",
     public readonly code: "timeout" | "network" | "http" | "invalid_response",
     public readonly httpStatus?: number,
   ) {
-    super(`Storage ${stage === "storage_presign" ? "URL request" : stage === "storage_download" ? "image download" : "image upload"} failed (${code}${httpStatus ? `, HTTP ${httpStatus}` : ""}).`);
+    super(`Storage ${stage === "storage_presign" ? "URL request" : "image upload"} failed (${code}${httpStatus ? `, HTTP ${httpStatus}` : ""}).`);
     this.name = "StorageOperationError";
   }
 }
 
-async function storageRequest(stage: "storage_presign" | "storage_upload" | "storage_download", url: URL | string, init: RequestInit) {
+async function storageRequest(stage: "storage_presign" | "storage_upload", url: URL | string, init: RequestInit) {
   const signal = AbortSignal.timeout(stage === "storage_presign" ? 15_000 : 60_000);
   try {
     const response = await fetch(url, { ...init, signal });
@@ -98,26 +98,14 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
   return { key, url: `/manus-storage/${key}` };
 }
 
+
 export async function storageGetSignedUrl(relKey: string): Promise<string> {
-  return storagePresign(relKey, "get");
-}
-
-/** Exact server-chosen staging key, scoped by the caller; never a client URL. */
-export async function storagePresignUpload(relKey: string): Promise<string> {
-  return storagePresign(relKey, "put");
-}
-
-async function storagePresign(relKey: string, method: "get" | "put"): Promise<string> {
   const { forgeUrl, forgeKey } = getForgeConfig();
-  const key = normalizeKey(relKey);
-
-  const getUrl = new URL(`v1/storage/presign/${method}`, forgeUrl + "/");
-  getUrl.searchParams.set("path", key);
-
+  const getUrl = new URL("v1/storage/presign/get", forgeUrl + "/");
+  getUrl.searchParams.set("path", normalizeKey(relKey));
   const resp = await storageRequest("storage_presign", getUrl, {
     headers: { Authorization: `Bearer ${forgeKey}` },
   });
-
   try {
     const result = await resp.json();
     if (typeof result.url !== "string" || new URL(result.url).protocol !== "https:") throw new Error();
@@ -126,26 +114,4 @@ async function storagePresign(relKey: string, method: "get" | "put"): Promise<st
     const timedOut = error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name);
     throw new StorageOperationError("storage_presign", timedOut ? "timeout" : "invalid_response");
   }
-}
-
-export async function storageReadBytes(relKey: string, maxBytes: number): Promise<Buffer> {
-  const response = await storageRequest("storage_download", await storageGetSignedUrl(relKey), {});
-  const reader = response.body?.getReader();
-  if (!reader) throw new StorageOperationError("storage_download", "invalid_response");
-  const chunks: Buffer[] = []; let total = 0;
-  try {
-    if (Number(response.headers.get("content-length")) > maxBytes) throw new StorageOperationError("storage_download", "invalid_response");
-    while (true) {
-      const chunk = await reader.read(); if (chunk.done) break;
-      total += chunk.value.byteLength;
-      if (total > maxBytes) throw new StorageOperationError("storage_download", "invalid_response");
-      chunks.push(Buffer.from(chunk.value));
-    }
-    if (!total) throw new StorageOperationError("storage_download", "invalid_response");
-    return Buffer.concat(chunks, total);
-  } catch (error) {
-    await reader.cancel().catch(() => {});
-    if (error instanceof StorageOperationError) throw error;
-    throw new StorageOperationError("storage_download", error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "timeout" : "network");
-  } finally { reader.releaseLock(); }
 }

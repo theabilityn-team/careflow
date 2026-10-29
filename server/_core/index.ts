@@ -1,4 +1,3 @@
-import { registerSystemSyncRoutes } from "../systemSyncRoutes";
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
@@ -36,7 +35,6 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
-  registerSystemSyncRoutes(app);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -66,6 +64,7 @@ async function startServer() {
       createContext,
     })
   );
+  app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
