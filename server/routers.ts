@@ -1,3 +1,4 @@
+import { systemSyncRouter } from "./routers/systemSync";
 import { TRPCError } from "@trpc/server";
 import { SUPER_ADMIN_EMAIL } from "@shared/const";
 import { z } from "zod";
@@ -19,6 +20,7 @@ import { superAdminPasswordSchema } from "./passwordSecurity";
 
 export const appRouter = router({
   system: systemRouter,
+  systemSync: systemSyncRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     login: publicProcedure

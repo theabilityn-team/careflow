@@ -14,7 +14,7 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { canManageEmailSettings } from "@/lib/emailSettingsAccess";
 import { trpc } from "@/lib/trpc";
-import { BookOpenCheck, ClipboardCheck, ContactRound, Files, FolderKanban, KeyRound, LayoutDashboard, Library, LogOut, Mail, PanelLeft, ScanLine, Send, ShoppingBag, UsersRound, UserCheck } from "lucide-react";
+import { BookOpenCheck, ClipboardCheck, ContactRound, Files, FolderKanban, FolderSync, KeyRound, LayoutDashboard, Library, LogOut, Mail, PanelLeft, ScanLine, Send, ShoppingBag, UsersRound, UserCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -84,6 +84,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
     { icon: ShoppingBag, label: "Orders", path: "/orders", show: Boolean(access?.isActive) },
     { icon: Library, label: "Email templates", path: "/email-templates", show: access?.role === "super_admin" || Boolean(access?.isActive && access.permissions.manageEmails && access.permissions.useEmailTemplates) },
     { icon: Mail, label: "Email settings", path: "/email-settings", show: canManageEmailSettings(access?.role) },
+    { icon: FolderSync, label: "System sync", path: "/system-sync", show: access?.role === "super_admin" },
     { icon: BookOpenCheck, label: "System guide", path: "/guide", show: true },
     { icon: UsersRound, label: access?.role === "super_admin" ? "Staff & access" : "Staff accounts", path: "/staff", show: !impersonating && Boolean(access?.isActive && access?.isLeader) },
   ].filter(item => item.show);

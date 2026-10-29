@@ -1,3 +1,4 @@
+import SystemSync from "@/pages/SystemSync";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import BulkImageImport from "@/pages/BulkImageImport";
@@ -45,6 +46,7 @@ function Router() {
     <Route path="/email-templates"><DashboardPage><EmailTemplates /></DashboardPage></Route>
     <Route path="/email-settings"><DashboardPage><EmailSettings /></DashboardPage></Route>
     <Route path="/follow-ups"><DashboardPage><FollowUps /></DashboardPage></Route>
+    <Route path="/system-sync"><DashboardPage><SystemSync /></DashboardPage></Route>
     <Route path="/guide"><DashboardPage><SystemGuide /></DashboardPage></Route>
     <Route path="/staff"><DashboardPage><Staff /></DashboardPage></Route>
     <Route path="/404" component={NotFound} />

@@ -405,3 +405,15 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Synchronous submit guards prevent duplicate sends; Admin sender refresh failure no longer misreports successful delivery as a send failure.
 - [x] 300 tests across 61 files, TypeScript and production build passed; fake-transport actual UI checks covered staff defaults/personal, Admin recipient/sender, validation, error/retry, double-submit, and 320/360/390/1280px popup containment.
 - [x] No real emails, credentials or business data were changed during QA; temporary UI harness and captures removed before checkpoint.
+
+
+## Implemented: Durable Manus/Drive System sync — 2026-10-29
+- [x] Validated server-side Manus API credentials and existing Drive connector using read-only calls; no paid task created.
+- [x] Reviewed/applied additive migration 0025 for settings/folders/items/jobs/events; all new tables are empty after QA and existing business data unchanged.
+- [x] Super Admin-only System sync menu/page: Check folders, per-folder Sync/Pause/Resume/Retry, paginated item outcomes, automatic read-only progress polling, task inspection/links/credit report and deploy/worker readiness.
+- [x] Approved root only; numbered Images directories and supported <=25 MB JPEG/PNG/WebP, original bytes/checksum and file-ID fingerprint inventory. Other folders/shortcuts excluded; Drive source files never moved/deleted.
+- [x] SQL reservations/leases and bounded parallel Manus transfer batches survive page closure, protect replay/concurrent OCR, preserve completed items and block unknown paid dispatch from automatic retry.
+- [x] Raw authenticated job-scoped callbacks, expiry/pause guards, RSA webhook verifier, and owner-authenticated platform heartbeat handler; keys/tokens/raw OCR/storage URLs absent from Admin status projections.
+- [x] Full-quality shared OCR plus atomic identity keys create only complete/confident Verified leads attributed to Super Admin. Same full name/DOB attaches another document without overwriting existing lead fields; ambiguous/colliding/changed imported files go to Needs review.
+- [x] 324 tests passed (one opt-in credential test skipped in normal suite), TypeScript, production build, HTTP health, live disposable verified/attachment/replay/pause transaction and 320/360/390/1280px fake-transport UI passed. All QA records/artifacts removed.
+- [ ] Publish this checkpoint before activation; then verify the production callback health, register the heartbeat schedule/webhook, and prove one controlled real-image end-to-end transfer before enabling mass folder imports. These activation steps have not run. No actual Drive image or paid sync task has been imported/launched in this release.
