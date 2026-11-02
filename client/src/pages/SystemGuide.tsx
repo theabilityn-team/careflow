@@ -47,8 +47,8 @@ const flows = [
   },
   {
     number: "08", icon: FolderKanban, title: "Organize and share lead access", action: "Open Lead groups", path: "/groups",
-    steps: ["A staff member creates a private lead group.", "From an accessible lead, use Groups & sharing to add it to a group you manage.", "The group owner may share the entire group with another active staff member.", "The lead creator may also share one lead directly without sharing a group.", "Open Lead groups to review group membership and current access."],
-    result: "Ordinary staff see only their created, assigned, or shared leads. Active Leaders have team-wide lead visibility and manage Customers/Orders; Super Admin retains all administration rights.",
+    steps: ["A staff member creates a private lead group.", "From an accessible lead, use Groups & sharing to add it to a group you manage, or Remove from group to detach it without deleting the lead.", "Super Admin and active Leaders can manage staff sharing across groups and leads. Ordinary group owners and lead creators retain their own sharing controls; sharing recipients cannot change foreign access.", "Open a group and use Remove group access beside the staff member to revoke that entire group sharing link.", "Open a lead, choose Groups & sharing, and use Remove direct access to revoke only that direct lead share.", "Confirm the exact change. The lead, group, documents, follow-ups, and history remain intact.", "Removing one sharing path does not remove access granted by another group, direct sharing, ownership, assignment, or a Leader role. Review those paths separately when complete revocation is required."],
+    result: "Sharing removal is audited and checked by the server. Ordinary staff see only their created, assigned, or shared leads. Active Leaders retain team-wide lead visibility; whole-group editing/deletion remains owner/Super Admin-only.",
   },
   {
     number: "09", icon: BellRing, title: "Plan, complete, and archive follow-ups", action: "Open Follow-ups", path: "/follow-ups",

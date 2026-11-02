@@ -1,4 +1,5 @@
 import { EmptyState, PageHeader, PageLoading, StatusPill } from "@/components/crm/CrmUi";
+import { SharingRemovalButton } from "@/components/crm/SharingRemovalButton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { diagnosisCategoryLabel, formatDate, initials, stateLabel } from "@/lib/crm";
 import { trpc } from "@/lib/trpc";
 import { ArrowLeft, ArrowRight, FolderKanban, FolderPlus, Pencil, Share2, Trash2, UserPlus, UsersRound } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useLocation, useRoute } from "wouter";
 
@@ -37,7 +38,7 @@ export default function LeadGroups() {
 function GroupList() {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
-  const { data, isLoading, error } = trpc.groups.list.useQuery();
+  const { data, isLoading, error } = trpc.groups.list.useQuery(undefined, { refetchInterval: 15_000, retry: false });
   if (isLoading) return <PageLoading />;
 
   async function refreshGroups() {
@@ -45,7 +46,7 @@ function GroupList() {
   }
 
   return <div className="mx-auto max-w-[1400px]">
-    <PageHeader eyebrow="Scoped collaboration" title="Lead groups" description="Organize your leads into private groups. Only you, Super Admin, and staff you explicitly share with can open them." actions={<CreateGroupDialog onCreated={id => { void refreshGroups(); navigate(`/groups/${id}`); }} />} />
+    <PageHeader eyebrow="Scoped collaboration" title="Lead groups" description="Organize your leads into private groups. Super Admin and Leaders can manage sharing across groups. Other staff can open their own or explicitly shared groups." actions={<CreateGroupDialog onCreated={id => { void refreshGroups(); navigate(`/groups/${id}`); }} />} />
     {error ? <div className="break-words rounded-xl bg-rose-50 p-4 text-rose-700 [overflow-wrap:anywhere]">{error.message}</div> : !data?.length ? <Card className="rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-7"><EmptyState title="No lead groups yet" description="Create your first group, then attach any lead you own or can access." action={<CreateGroupDialog onCreated={id => navigate(`/groups/${id}`)} />} /></CardContent></Card> : <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{data.map(group => <Card key={group.id} className="h-full min-w-0 rounded-2xl border-0 bg-white shadow-[0_8px_30px_rgba(15,23,42,.045)] transition-transform hover:-translate-y-0.5"><CardContent className="min-w-0 p-5 sm:p-6">
       <button type="button" onClick={() => navigate(`/groups/${group.id}`)} className="block min-h-11 w-full min-w-0 text-left" aria-label={`Open ${group.name}`}>
         <div className="flex items-start justify-between gap-4"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-teal-50 text-teal-700"><FolderKanban className="h-5 w-5" /></div><ArrowRight className="h-4 w-4 shrink-0 text-slate-300" /></div>
@@ -59,34 +60,63 @@ function GroupList() {
   </div>;
 }
 
-function GroupDetail({ id }: { id: number }) {
+export function GroupDetail({ id }: { id: number }) {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
-  const { data, isLoading, error } = trpc.groups.get.useQuery({ id });
+  const { data, isLoading, error } = trpc.groups.get.useQuery({ id }, { refetchInterval: 15_000, retry: false });
   const { data: staff = [] } = trpc.leads.assignees.useQuery();
   const [staffId, setStaffId] = useState("");
-  const share = trpc.groups.shareGroup.useMutation({ onSuccess: () => utils.groups.get.invalidate({ id }) });
-  const unshare = trpc.groups.unshareGroup.useMutation({ onSuccess: () => utils.groups.get.invalidate({ id }) });
-  const removeLead = trpc.groups.removeLead.useMutation({ onSuccess: () => utils.groups.get.invalidate({ id }) });
+  const shareLock = useRef(false);
+  const share = trpc.groups.shareGroup.useMutation();
+  const unshare = trpc.groups.unshareGroup.useMutation();
+  const removeLead = trpc.groups.removeLead.useMutation();
   if (isLoading) return <PageLoading />;
   if (error || !data) return <div className="mx-auto max-w-3xl break-words rounded-2xl bg-rose-50 p-6 text-rose-700 [overflow-wrap:anywhere]">{error?.message || "Group not found."}</div>;
   const availableStaff = staff.filter(member => member.id !== data.group.ownerId && !data.shares.some(shareItem => shareItem.userId === member.id));
+  const busy = share.isPending || unshare.isPending || removeLead.isPending;
 
   async function refreshGroup() {
     await Promise.all([utils.groups.invalidate(), utils.leads.invalidate(), utils.dashboard.invalidate()]);
   }
 
   async function removeGroup() {
-    await Promise.all([utils.groups.invalidate(), utils.leads.invalidate(), utils.dashboard.invalidate()]);
+    await refreshGroup();
     navigate("/groups");
+  }
+
+  async function shareGroup() {
+    if (shareLock.current || busy || !staffId) return;
+    shareLock.current = true;
+    try {
+      await share.mutateAsync({ groupId: id, staffId: Number(staffId) });
+      setStaffId("");
+      toast.success("Group shared.");
+      try { await refreshGroup(); } catch { toast.info("Sharing was saved. Refresh this page to see updated access."); }
+    } catch (shareError) {
+      toast.error(shareError instanceof Error ? shareError.message : "Unable to share the group.");
+    } finally { shareLock.current = false; }
   }
 
   return <div className="mx-auto max-w-[1400px]">
     <button type="button" onClick={() => navigate("/groups")} className="mb-5 inline-flex min-h-11 items-center gap-2 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-900 md:min-h-8"><ArrowLeft className="h-4 w-4" />Back to groups</button>
     <PageHeader eyebrow="Lead group" title={data.group.name} description={`${data.group.description || "No description"} · Owner: ${data.ownerName || "Super Administrator"}`} actions={<div className="flex w-full flex-wrap gap-2 sm:w-auto"><Button className="w-full sm:w-auto" onClick={() => navigate(`/leads?group=${id}`)} variant="outline">Browse in lead list</Button>{data.canManage && <><EditGroupDialog group={data.group} onSaved={refreshGroup} /><RemoveGroupDialog groupId={id} groupName={data.group.name} onRemoved={removeGroup} /></>}</div>} />
-    <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
-      <Card className="min-w-0 rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-0">{!data.members.length ? <div className="p-7"><EmptyState title="This group is empty" description="Open a lead and use Add to group to attach it here." /></div> : <div className="divide-y divide-slate-100">{data.members.map(({ lead }) => <div key={lead.id} className="flex min-w-0 flex-col gap-3 p-4 sm:flex-row sm:items-center sm:p-5"><button type="button" onClick={() => navigate(`/leads/${lead.id}`)} className="flex min-h-11 min-w-0 flex-1 items-start gap-3 text-left sm:items-center sm:gap-4"><Avatar className="shrink-0"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{initials(lead.firstName, lead.lastName)}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><p className="break-words font-semibold text-slate-900 [overflow-wrap:anywhere]">{lead.firstName} {lead.lastName}</p><div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500"><span>{stateLabel(lead.stateCode)}</span><span>·</span><span className="break-words">{diagnosisCategoryLabel(lead.diagnosisCategory)}</span></div><div className="mt-2 sm:hidden"><StatusPill value={lead.status} /></div></div><div className="hidden shrink-0 sm:block"><StatusPill value={lead.status} /></div></button>{data.canManage && <Button className="w-full sm:w-auto" size="sm" variant="ghost" disabled={removeLead.isPending} onClick={async () => { try { await removeLead.mutateAsync({ groupId: id, leadId: lead.id }); toast.success("Lead removed from group."); } catch (removeError) { toast.error(removeError instanceof Error ? removeError.message : "Unable to remove the lead from this group."); } }}>{removeLead.isPending ? "Removing…" : <><Trash2 className="mr-2 h-4 w-4" />Remove</>}</Button>}</div>)}</div>}</CardContent></Card>
-      <Card className="h-fit min-w-0 rounded-2xl border-0 bg-slate-950 text-white shadow-sm"><CardContent className="min-w-0 p-5 sm:p-6"><div className="flex items-center gap-2"><Share2 className="h-5 w-5 shrink-0 text-teal-300" /><h2 className="font-semibold">Group access</h2></div><p className="mt-2 break-words text-sm leading-6 text-slate-400">Sharing this group gives the selected staff member access to every current lead in it.</p><div className="mt-5 space-y-3">{data.shares.map(item => <div key={item.id} className="flex min-w-0 items-center gap-3 rounded-xl bg-white/[.06] p-2 pl-3"><UsersRound className="h-4 w-4 shrink-0 text-teal-300" /><div className="min-w-0 flex-1"><p className="break-words text-sm font-medium [overflow-wrap:anywhere]">{item.name || item.email}</p><p className="break-all text-xs text-slate-400">{item.email}</p></div>{data.canManage && <button type="button" className="grid h-11 w-11 shrink-0 place-items-center rounded-lg hover:bg-white/10 md:h-8 md:w-8" disabled={unshare.isPending} onClick={async () => { try { await unshare.mutateAsync({ groupId: id, staffId: item.userId }); toast.success("Group access removed."); } catch (unshareError) { toast.error(unshareError instanceof Error ? unshareError.message : "Unable to remove group access."); } }} aria-label="Remove group access"><Trash2 className="h-4 w-4 text-slate-400" /></button>}</div>)}{!data.shares.length && <p className="rounded-xl bg-white/[.06] p-4 text-sm text-slate-400">Not shared with other staff.</p>}</div>{data.canManage && <div className="mt-5 min-w-0 space-y-3 border-t border-slate-800 pt-5"><Label className="text-slate-300">Share with staff</Label><Select value={staffId} onValueChange={setStaffId}><SelectTrigger className="w-full min-w-0 border-slate-700 bg-slate-900"><SelectValue placeholder="Select staff member" /></SelectTrigger><SelectContent>{availableStaff.map(member => <SelectItem key={member.id} value={String(member.id)}>{member.name || member.email}</SelectItem>)}</SelectContent></Select><Button disabled={!staffId || share.isPending} onClick={async () => { try { await share.mutateAsync({ groupId: id, staffId: Number(staffId) }); setStaffId(""); toast.success("Group shared."); } catch (shareError) { toast.error(shareError instanceof Error ? shareError.message : "Unable to share the group."); } }} className="w-full bg-teal-500 text-slate-950 hover:bg-teal-400"><UserPlus className="mr-2 h-4 w-4" />{share.isPending ? "Sharing…" : "Share group"}</Button></div>}</CardContent></Card>
+    <div className="grid gap-6 xl:grid-cols-[1fr_390px]">
+      <Card className="min-w-0 rounded-2xl border-0 bg-white shadow-sm"><CardContent className="p-0">
+        {!data.members.length ? <div className="p-7"><EmptyState title="This group is empty" description="Open a lead and use Groups & sharing to attach it here." /></div> : <div className="divide-y divide-slate-100">{data.members.map(({ lead }) => <div key={lead.id} className="flex min-w-0 flex-col gap-3 p-4 sm:flex-row sm:items-center sm:p-5">
+          <button type="button" onClick={() => navigate(`/leads/${lead.id}`)} className="flex min-h-11 min-w-0 flex-1 items-start gap-3 text-left sm:items-center sm:gap-4"><Avatar className="shrink-0"><AvatarFallback className="bg-teal-50 text-xs font-semibold text-teal-800">{initials(lead.firstName, lead.lastName)}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><p className="break-words font-semibold text-slate-900 [overflow-wrap:anywhere]">{lead.firstName} {lead.lastName}</p><div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500"><span>{stateLabel(lead.stateCode)}</span><span>·</span><span className="break-words">{diagnosisCategoryLabel(lead.diagnosisCategory)}</span></div><div className="mt-2 sm:hidden"><StatusPill value={lead.status} /></div></div><div className="hidden shrink-0 sm:block"><StatusPill value={lead.status} /></div></button>
+          {data.canManageMembership && <SharingRemovalButton label="Remove from group" title="Remove lead from group?" description={`Remove ${lead.firstName} ${lead.lastName} from “${data.group.name}”. The lead, documents, follow-ups, and history stay in the CRM. This only removes this group membership; other access paths remain.`} successMessage="Lead removed from group. Lead and records preserved." disabled={busy} onRemove={() => removeLead.mutateAsync({ groupId: id, leadId: lead.id })} onRemoved={refreshGroup} />}
+        </div>)}</div>}
+      </CardContent></Card>
+      <Card className="h-fit min-w-0 rounded-2xl border-0 bg-slate-950 text-white shadow-sm"><CardContent className="min-w-0 p-5 sm:p-6">
+        <div className="flex items-center gap-2"><Share2 className="h-5 w-5 shrink-0 text-teal-300" /><h2 className="font-semibold">Group access</h2></div>
+        <p className="mt-2 break-words text-sm leading-6 text-slate-400">Sharing gives staff access to leads through this group. Remove group access below to revoke that sharing link without deleting the group or its leads.</p>
+        <div className="mt-5 space-y-3">{data.shares.map(item => <div key={item.id} className="min-w-0 space-y-3 rounded-xl bg-white/[.06] p-3">
+          <div className="flex min-w-0 items-start gap-3"><UsersRound className="mt-1 h-4 w-4 shrink-0 text-teal-300" /><div className="min-w-0 flex-1"><p className="break-words text-sm font-medium [overflow-wrap:anywhere]">{item.name || item.email || `Staff #${item.userId}`}</p><p className="break-all text-xs text-slate-400">{item.email}</p></div></div>
+          {data.canManageSharing && <SharingRemovalButton label="Remove group access" title="Remove group sharing?" description={`Remove ${item.name || item.email || `Staff #${item.userId}`}'s sharing link to “${data.group.name}” and every lead accessed through this group. No lead or document is deleted. Direct shares, other groups, ownership, assignment, and Leader access are unchanged.`} successMessage="Group sharing removed. Other access paths are unchanged." disabled={busy} className="min-h-10 w-full border-rose-400/30 bg-rose-400/10 text-rose-100 hover:bg-rose-400/20 hover:text-white" onRemove={() => unshare.mutateAsync({ groupId: id, staffId: item.userId })} onRemoved={refreshGroup} />}
+        </div>)}{!data.shares.length && <p className="rounded-xl bg-white/[.06] p-4 text-sm text-slate-400">Not shared with other staff.</p>}</div>
+        <p className="mt-4 text-xs leading-5 text-slate-400">A removed recipient may still have access through a direct lead share, another group, ownership, assignment, or a Leader role. Those permissions must be changed separately.</p>
+        {data.canManageSharing && <div className="mt-5 min-w-0 space-y-3 border-t border-slate-800 pt-5"><Label className="text-slate-300">Share with staff</Label><Select value={staffId} onValueChange={setStaffId} disabled={busy || !availableStaff.length}><SelectTrigger className="w-full min-w-0 border-slate-700 bg-slate-900"><SelectValue placeholder={availableStaff.length ? "Select staff member" : "No other staff available"} /></SelectTrigger><SelectContent>{availableStaff.map(member => <SelectItem key={member.id} value={String(member.id)}>{member.name || member.email}</SelectItem>)}</SelectContent></Select><Button disabled={!staffId || busy} onClick={() => void shareGroup()} className="w-full bg-teal-500 text-slate-950 hover:bg-teal-400"><UserPlus className="mr-2 h-4 w-4" />{share.isPending ? "Sharing…" : "Share group"}</Button></div>}
+      </CardContent></Card>
     </div>
   </div>;
 }

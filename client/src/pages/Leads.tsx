@@ -70,7 +70,7 @@ export default function Leads() {
     page,
     pageSize,
   }), [deferredSearch, status, interest, assigned, followUp, contact, preferredLanguage, stateCode, diagnosisCategory, groupId, createdFrom, createdTo, sort, page, pageSize]);
-  const { data, isLoading, error, isFetching } = trpc.leads.list.useQuery(queryInput, { placeholderData: previous => previous });
+  const { data, isLoading, error, isFetching } = trpc.leads.list.useQuery(queryInput, { placeholderData: previous => previous, refetchInterval: 15_000, refetchOnWindowFocus: "always", retry: false });
 
   const advancedFilterCount = [assigned !== "all", followUp !== "all", contact !== "all", diagnosisCategory !== "all", groupId !== "all", Boolean(createdFrom), Boolean(createdTo)].filter(Boolean).length;
   const activeFilterCount = advancedFilterCount + Number(status !== "all") + Number(interest !== "all") + Number(stateCode !== "all") + Number(preferredLanguage !== "all");

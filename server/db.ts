@@ -1288,9 +1288,9 @@ export async function listEmailRecipients(viewer: { userId: number; isSuperAdmin
   }).from(leads).where(and(...filters)).orderBy(asc(leads.lastName), asc(leads.firstName)).limit(200);
 }
 
-export async function canManageLeadSharing(leadId: number, userId: number, isSuperAdmin: boolean) {
+export async function canManageLeadSharing(leadId: number, userId: number, isSuperAdmin: boolean, canManageAllSharing = false) {
   const db = await requireDb();
-  if (isSuperAdmin) return Boolean((await db.select({ id: leads.id }).from(leads).where(eq(leads.id, leadId)).limit(1))[0]);
+  if (isSuperAdmin || canManageAllSharing) return Boolean((await db.select({ id: leads.id }).from(leads).where(eq(leads.id, leadId)).limit(1))[0]);
   return Boolean((await db.select({ id: leads.id }).from(leads).where(and(eq(leads.id, leadId), eq(leads.createdBy, userId))).limit(1))[0]);
 }
 
@@ -1401,9 +1401,16 @@ export async function listAssignableStaff() {
     .orderBy(asc(users.name));
 }
 
-export async function listLeadGroups(viewer: { userId: number; isSuperAdmin: boolean }) {
+export type LeadGroupViewer = { userId: number; isSuperAdmin: boolean; canManageAllSharing?: boolean };
+
+function hasGlobalGroupSharing(viewer: LeadGroupViewer) {
+  return viewer.isSuperAdmin || Boolean(viewer.canManageAllSharing);
+}
+
+export async function listLeadGroups(viewer: LeadGroupViewer) {
   const db = await requireDb();
-  const visibility = viewer.isSuperAdmin ? undefined : or(
+  const canManageAllSharing = hasGlobalGroupSharing(viewer);
+  const visibility = canManageAllSharing ? undefined : or(
     eq(leadGroups.ownerId, viewer.userId),
     sql<boolean>`EXISTS (
       SELECT 1 FROM ${leadGroupShares}
@@ -1418,6 +1425,7 @@ export async function listLeadGroups(viewer: { userId: number; isSuperAdmin: boo
     ownerId: leadGroups.ownerId,
     ownerName: users.name,
     canManage: viewer.isSuperAdmin ? sql<boolean>`true` : sql<boolean>`${leadGroups.ownerId} = ${viewer.userId}`,
+    canManageSharing: canManageAllSharing ? sql<boolean>`true` : sql<boolean>`${leadGroups.ownerId} = ${viewer.userId}`,
     createdAt: leadGroups.createdAt,
     updatedAt: leadGroups.updatedAt,
     memberCount: sql<number>`(SELECT count(*) FROM ${leadGroupMembers} WHERE ${leadGroupMembers.groupId} = ${leadGroups.id})`,
@@ -1425,9 +1433,10 @@ export async function listLeadGroups(viewer: { userId: number; isSuperAdmin: boo
   }).from(leadGroups).leftJoin(users, eq(users.id, leadGroups.ownerId)).where(visibility).orderBy(desc(leadGroups.updatedAt));
 }
 
-export async function getLeadGroup(groupId: number, viewer: { userId: number; isSuperAdmin: boolean }) {
+export async function getLeadGroup(groupId: number, viewer: LeadGroupViewer) {
   const db = await requireDb();
-  const visibility = viewer.isSuperAdmin ? undefined : or(
+  const canManageAllSharing = hasGlobalGroupSharing(viewer);
+  const visibility = canManageAllSharing ? undefined : or(
     eq(leadGroups.ownerId, viewer.userId),
     sql<boolean>`EXISTS (SELECT 1 FROM ${leadGroupShares} WHERE ${leadGroupShares.groupId} = ${leadGroups.id} AND ${leadGroupShares.sharedWithUserId} = ${viewer.userId})`,
   );
@@ -1437,7 +1446,7 @@ export async function getLeadGroup(groupId: number, viewer: { userId: number; is
     db.select({ lead: leads, addedAt: leadGroupMembers.createdAt }).from(leadGroupMembers).innerJoin(leads, eq(leads.id, leadGroupMembers.leadId)).where(eq(leadGroupMembers.groupId, groupId)).orderBy(desc(leadGroupMembers.createdAt)),
     db.select({ id: leadGroupShares.id, userId: users.id, name: users.name, email: users.email }).from(leadGroupShares).innerJoin(users, eq(users.id, leadGroupShares.sharedWithUserId)).where(eq(leadGroupShares.groupId, groupId)).orderBy(asc(users.name)),
   ]);
-  return { ...group, members, shares };
+  return { ...group, canManageSharing: canManageAllSharing || group.group.ownerId === viewer.userId, members, shares };
 }
 
 export async function createLeadGroup(input: { name: string; description?: string | null; ownerId: number }) {
@@ -1457,14 +1466,52 @@ export async function canManageLeadGroup(groupId: number, userId: number, isSupe
   return Boolean((await db.select({ id: leadGroups.id }).from(leadGroups).where(condition).limit(1))[0]);
 }
 
-export async function addLeadToGroup(input: { groupId: number; leadId: number; addedBy: number }) {
+export async function canManageLeadGroupSharing(groupId: number, userId: number, canManageAllSharing: boolean) {
   const db = await requireDb();
-  await db.insert(leadGroupMembers).values(input).onDuplicateKeyUpdate({ set: { addedBy: input.addedBy } });
+  const condition = canManageAllSharing
+    ? eq(leadGroups.id, groupId)
+    : and(eq(leadGroups.id, groupId), eq(leadGroups.ownerId, userId));
+  return Boolean((await db.select({ id: leadGroups.id }).from(leadGroups).where(condition).limit(1))[0]);
 }
 
-export async function removeLeadFromGroup(groupId: number, leadId: number) {
+export async function canManageLeadGroupMembership(groupId: number, userId: number, canManageAllSharing: boolean) {
+  return canManageLeadGroupSharing(groupId, userId, canManageAllSharing);
+}
+
+export async function addLeadToGroup(input: { groupId: number; leadId: number; addedBy: number }) {
   const db = await requireDb();
-  await db.delete(leadGroupMembers).where(and(eq(leadGroupMembers.groupId, groupId), eq(leadGroupMembers.leadId, leadId)));
+  return db.transaction(async tx => {
+    const group = (await tx.select({ id: leadGroups.id }).from(leadGroups).where(eq(leadGroups.id, input.groupId)).limit(1).for("update"))[0];
+    const lead = (await tx.select({ id: leads.id }).from(leads).where(eq(leads.id, input.leadId)).limit(1).for("update"))[0];
+    if (!group || !lead) return false;
+    await tx.insert(leadGroupMembers).values(input).onDuplicateKeyUpdate({ set: { addedBy: input.addedBy } });
+    return true;
+  });
+}
+
+export async function removeLeadFromGroup(groupId: number, leadId: number, actorId?: number) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const group = (await tx.select({ id: leadGroups.id }).from(leadGroups).where(eq(leadGroups.id, groupId)).limit(1).for("update"))[0];
+    const lead = (await tx.select({ id: leads.id }).from(leads).where(eq(leads.id, leadId)).limit(1).for("update"))[0];
+    if (!group || !lead) return { targetExists: false, removed: false };
+    const result = await tx.delete(leadGroupMembers).where(and(eq(leadGroupMembers.groupId, groupId), eq(leadGroupMembers.leadId, leadId)));
+    const removed = Number(result[0]?.affectedRows ?? 0) > 0;
+    if (removed && actorId !== undefined) {
+      await tx.insert(auditEvents).values(enrichAuditValues({
+        leadId,
+        actorId,
+        action: "lead.group_removed",
+        source: "sharing",
+        detail: `Removed from lead group #${groupId}`,
+        changes: null,
+        snapshotBefore: null,
+        snapshotAfter: null,
+        occurredAt: Date.now(),
+      }));
+    }
+    return { targetExists: true, removed };
+  });
 }
 
 export async function removeLeadGroup(groupId: number, actorId: number) {
@@ -1513,24 +1560,98 @@ export async function removeLeadGroup(groupId: number, actorId: number) {
   });
 }
 
-export async function shareLead(input: { leadId: number; sharedWithUserId: number; sharedByUserId: number }) {
-  const db = await requireDb();
-  await db.insert(leadShares).values(input).onDuplicateKeyUpdate({ set: { sharedByUserId: input.sharedByUserId } });
+async function isActiveLocalStaff(tx: any, userId: number) {
+  return Boolean((await tx.select({ id: users.id })
+    .from(users)
+    .innerJoin(localCredentials, eq(localCredentials.userId, users.id))
+    .innerJoin(staffPermissions, eq(staffPermissions.userId, users.id))
+    .where(and(
+      eq(users.id, userId),
+      eq(users.role, "user"),
+      eq(users.loginMethod, "local"),
+      eq(staffPermissions.isActive, true),
+      isNull(staffPermissions.deletedAt),
+    ))
+    .limit(1))[0]);
 }
 
-export async function unshareLead(leadId: number, sharedWithUserId: number) {
+export async function shareLead(input: { leadId: number; sharedWithUserId: number; sharedByUserId: number }) {
   const db = await requireDb();
-  await db.delete(leadShares).where(and(eq(leadShares.leadId, leadId), eq(leadShares.sharedWithUserId, sharedWithUserId)));
+  return db.transaction(async tx => {
+    const lead = (await tx.select({ id: leads.id, createdBy: leads.createdBy }).from(leads).where(eq(leads.id, input.leadId)).limit(1).for("update"))[0];
+    if (!lead || lead.createdBy === input.sharedWithUserId || input.sharedWithUserId === input.sharedByUserId || !await isActiveLocalStaff(tx, input.sharedWithUserId)) return false;
+    await tx.insert(leadShares).values(input).onDuplicateKeyUpdate({ set: { sharedByUserId: input.sharedByUserId } });
+    await tx.insert(auditEvents).values(enrichAuditValues({
+      leadId: input.leadId,
+      actorId: input.sharedByUserId,
+      action: "lead.shared",
+      source: "sharing",
+      detail: `Shared lead with staff #${input.sharedWithUserId}.`,
+      changes: null,
+      snapshotBefore: null,
+      snapshotAfter: null,
+      occurredAt: Date.now(),
+    }));
+    return true;
+  });
+}
+
+export async function unshareLead(leadId: number, sharedWithUserId: number, actorId?: number) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const lead = (await tx.select({ id: leads.id }).from(leads).where(eq(leads.id, leadId)).limit(1).for("update"))[0];
+    if (!lead) return { targetExists: false, removed: false };
+    const result = await tx.delete(leadShares).where(and(eq(leadShares.leadId, leadId), eq(leadShares.sharedWithUserId, sharedWithUserId)));
+    const removed = Number(result[0]?.affectedRows ?? 0) > 0;
+    if (removed && actorId !== undefined) {
+      await tx.insert(auditEvents).values(enrichAuditValues({
+        leadId,
+        actorId,
+        action: "lead.unshared",
+        source: "sharing",
+        detail: `Removed direct sharing for staff #${sharedWithUserId}.`,
+        changes: null,
+        snapshotBefore: null,
+        snapshotAfter: null,
+        occurredAt: Date.now(),
+      }));
+    }
+    return { targetExists: true, removed };
+  });
 }
 
 export async function shareLeadGroup(input: { groupId: number; sharedWithUserId: number; sharedByUserId: number }) {
   const db = await requireDb();
-  await db.insert(leadGroupShares).values(input).onDuplicateKeyUpdate({ set: { sharedByUserId: input.sharedByUserId } });
+  return db.transaction(async tx => {
+    const group = (await tx.select({ id: leadGroups.id, ownerId: leadGroups.ownerId }).from(leadGroups).where(eq(leadGroups.id, input.groupId)).limit(1).for("update"))[0];
+    if (!group || group.ownerId === input.sharedWithUserId || input.sharedWithUserId === input.sharedByUserId || !await isActiveLocalStaff(tx, input.sharedWithUserId)) return false;
+    await tx.insert(leadGroupShares).values(input).onDuplicateKeyUpdate({ set: { sharedByUserId: input.sharedByUserId } });
+    return true;
+  });
 }
 
-export async function unshareLeadGroup(groupId: number, sharedWithUserId: number) {
+export async function unshareLeadGroup(groupId: number, sharedWithUserId: number, actorId?: number) {
   const db = await requireDb();
-  await db.delete(leadGroupShares).where(and(eq(leadGroupShares.groupId, groupId), eq(leadGroupShares.sharedWithUserId, sharedWithUserId)));
+  return db.transaction(async tx => {
+    const group = (await tx.select({ id: leadGroups.id }).from(leadGroups).where(eq(leadGroups.id, groupId)).limit(1).for("update"))[0];
+    if (!group) return { targetExists: false, removed: false };
+    const result = await tx.delete(leadGroupShares).where(and(eq(leadGroupShares.groupId, groupId), eq(leadGroupShares.sharedWithUserId, sharedWithUserId)));
+    const removed = Number(result[0]?.affectedRows ?? 0) > 0;
+    if (removed && actorId !== undefined) {
+      await tx.insert(auditEvents).values(enrichAuditValues({
+        leadId: null,
+        actorId,
+        action: "lead.group_unshared",
+        source: "sharing",
+        detail: `Removed group sharing #${groupId} for staff #${sharedWithUserId}.`,
+        changes: null,
+        snapshotBefore: null,
+        snapshotAfter: null,
+        occurredAt: Date.now(),
+      }));
+    }
+    return { targetExists: true, removed };
+  });
 }
 
 export async function listLeadSharing(leadId: number) {

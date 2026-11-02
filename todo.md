@@ -410,4 +410,15 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Disable/remove System sync menu, page, tRPC API, callbacks, workers, queue code and obsolete feature tests/guidance. Preserve manual scanner and bulk image import.
 - [x] Disable settings, pause all folders, revoke every job callback. No active tasks. Delete exact provider webhook and legacy project heartbeat; no new paid task.
 - [x] Clear all five dedicated sync state tables. Physical DROP was blocked and not retried without explicit confirmation; empty unmanaged legacy tables remain. Forward migration contains safe state cleanup only. Fingerprints match for all ten business tables: 371 leads, 712 documents and other CRM records unchanged. Drive untouched.
-- [ ] Run regression tests/types/build, save/push/publish removal and verify old endpoints are absent live.
+- [x] 313 tests/63 files, TypeScript/build/diff passed. Checkpoint79bd3b50 pushed and published; live health/worker/tRPC endpoints return404, home200. No replacement started; Drive untouched.
+
+## Completed update: Remove group and direct lead sharing — 2026-11-02
+- [x] Super Admin and active Leaders can add/remove group staff sharing and direct lead shares team-wide; ordinary owners/creators retain scoped controls and recipients cannot manage foreign sharing.
+- [x] Separate group sharing/membership capabilities from whole-group edit/delete, which remain owner/Super Admin-only. Group membership changes still require Edit leads.
+- [x] Explicit Remove direct access, Remove group access and Remove from group buttons with exact-target confirmation, Cancel focus, synchronous double-submit protection, pending/error/retry states and safe cache refresh.
+- [x] Remove only the requested sharing relation or membership. Preserve leads, documents, groups, ownership, assignments, history and other sharing paths; explain that alternate access and Leader visibility can remain.
+- [x] Atomic, idempotent removal/audit transactions, parent-row locking, effective actor/impersonator attribution, active local recipient validation for new shares, and secret-free revoke errors. Retain existing lead.shared creation audit.
+- [x] Refetch visible lead/group access every 15 seconds; denied lead detail hides old cached data. Fix narrow-screen long-name containment in lead identity card.
+- [x] 331 tests across 65 files, TypeScript, production build, diff and preview HTTP 200 pass. Actual fake-transport 320/360/390/1280px checks cover cancel/no mutation, exact pair, error/retry/double click, scoped Leader controls and cached revocation.
+- [x] Disposable live integration verified direct/group revokes, other access paths, ownership/assignment, stale recipients, inactive Leader denial, impersonation audit and membership preservation. Four QA users, two leads/two groups and all related fixtures removed; exact fingerprints of fifteen real CRM tables unchanged. No real email, lead edit or sharing change.
+- [ ] Publish this tested checkpoint before expecting the new controls on the live site.
