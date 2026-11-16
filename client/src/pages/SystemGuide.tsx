@@ -6,7 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { STATUS_DESCRIPTIONS, STATUS_OPTIONS } from "@/lib/crm";
 import { canManageEmailSettings } from "@/lib/emailSettingsAccess";
 import { trpc } from "@/lib/trpc";
-import { ArrowRight, BellRing, CheckCircle2, ClipboardCheck, Download, FileHeart, Files, FileSearch, FolderKanban, History, KeyRound, Library, Mail, MessageSquarePlus, ScanLine, ServerCog, ShieldCheck, ShoppingBag, UserCog } from "lucide-react";
+import { ArrowRight, BarChart3, BellRing, CheckCircle2, ClipboardCheck, Download, FileHeart, Files, FileSearch, FolderKanban, History, KeyRound, Library, Mail, MessageSquarePlus, ScanLine, ServerCog, ShieldCheck, ShoppingBag, UserCog } from "lucide-react";
 import { useLocation } from "wouter";
 
 const flows = [
@@ -89,6 +89,11 @@ const flows = [
     number: "16", icon: UserCog, title: "Impersonate a staff workspace", action: "Open Staff accounts", path: "/staff",
     steps: ["Super Admin opens Staff & access and selects Impersonate on an active staff account, including a Leader.", "An active Leader uses Staff accounts and may select only ordinary active staff, never another Leader or Super Admin.", "Confirm the account. CareFlow opens that staff member's exact workspace and permissions without revealing or changing a password.", "The visible Impersonating banner identifies the target and your original account. Changes keep both identities in the audit trail.", "Select Return to my account when finished. The session ends after one hour at most, and earlier if the original session or required access is revoked. Nested impersonation is not allowed."],
     result: "Support work runs as the selected staff, never with a union of staff and administrator rights. Account switches clear cached data and refresh other open workspaces; staff credentials and SMTP setup remain unchanged.",
+  },
+  {
+    number: "17", icon: BarChart3, title: "Read the Measure workspace", action: "Open Measure", path: "/measure",
+    steps: ["Active Leaders and Super Admins open Measure from the sidebar; it is hidden while impersonating.", "Select one staff member, an Eastern Time date range up to 366 calendar days, and Day, Week, or Month grouping.", "Use Refresh for a deliberate new snapshot. The report does not poll or refetch on focus/reconnect, and a partial or failed refresh never replaces the last complete snapshot.", "Read counts as CRM activity, not attendance. Estimated active and idle time starts only from tracking data; historical audit counts may be available without historical timing.", "Treat successful emails as outgoing messages accepted by the provider, not tests, reminders, or proof of delivery. Phone clicks/copies are not complete calls; manual phone contacts are counted separately."],
+    result: "Measure gives Leaders and Super Admins a permission-scoped operational view with an accessible data table, inactive-period list, and separate impersonation activity. It is not an attendance, salary, or payroll record.",
   },
 ];
 

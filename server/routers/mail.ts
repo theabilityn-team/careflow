@@ -222,6 +222,7 @@ export const mailRouter = router({
     try {
       await db.addOutboundEmail({
         senderUserId: ownerId,
+        impersonatedById: ctx.user.impersonation?.actor.id ?? null,
         leadId: hasLead ? recipient!.id : null,
         recipientEmail: normalizedRecipients.to,
         ccEmails: normalizedRecipients.cc.length ? JSON.stringify(normalizedRecipients.cc) : null,

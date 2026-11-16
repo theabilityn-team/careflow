@@ -13,6 +13,7 @@ import LeadDetail from "@/pages/LeadDetail";
 import LeadGroups from "@/pages/LeadGroups";
 import Leads from "@/pages/Leads";
 import Mails from "@/pages/Mails";
+import Measure from "@/pages/Measure";
 import NotFound from "@/pages/NotFound";
 import ResetPassword from "@/pages/ResetPassword";
 import Scanner from "@/pages/Scanner";
@@ -42,6 +43,7 @@ function Router() {
     <Route path="/customers"><DashboardPage><Customers /></DashboardPage></Route>
     <Route path="/customers/:id"><DashboardPage><CustomerDetail /></DashboardPage></Route>
     <Route path="/orders"><DashboardPage><Orders /></DashboardPage></Route>
+    <Route path="/measure"><DashboardPage><Measure /></DashboardPage></Route>
     <Route path="/email-templates"><DashboardPage><EmailTemplates /></DashboardPage></Route>
     <Route path="/email-settings"><DashboardPage><EmailSettings /></DashboardPage></Route>
     <Route path="/follow-ups"><DashboardPage><FollowUps /></DashboardPage></Route>

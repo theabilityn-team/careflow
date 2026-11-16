@@ -3,6 +3,7 @@ import { CopyContactButton } from "@/components/crm/CopyContactButton";
 import { LeadEmailComposerDialog, LeadEmailHistory } from "@/components/crm/LeadEmail";
 import { LeadCustomerActions } from "@/components/crm/LeadCustomerActions";
 import { LeadAccessDialog } from "@/components/crm/LeadAccessDialog";
+import { MeasureLeadOpen } from "@/components/crm/MeasureActivityTracker";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,7 @@ export default function LeadDetail() {
   ];
 
   return <div className="mx-auto max-w-[1380px]">
+    <MeasureLeadOpen leadId={lead.id} />
     <button onClick={() => navigate("/leads")} className="mb-5 flex min-h-11 items-center gap-2 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-900 md:min-h-8"><ArrowLeft className="h-4 w-4" />Back to leads</button>
     <PageHeader eyebrow={`Lead #${lead.id}`} title={`${lead.firstName} ${lead.lastName}`} description={`Created ${formatDate(lead.createdAt)} · Last updated ${formatDate(lead.updatedAt, true)}`} actions={<div className="grid w-full min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
       {access?.permissions.editLeads && <div className="min-w-0 [&>button]:w-full sm:[&>button]:w-auto"><EditLeadDialog lead={lead} assignees={assignees} canViewClinical={access.permissions.viewClinical} canChangeStatus={access.permissions.changeStatus} onSave={async values => { await update.mutateAsync({ id, lead: values as any }); toast.success("Profile details saved and audited."); }} /></div>}

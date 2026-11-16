@@ -190,6 +190,20 @@
       "when": 1793297747832,
       "tag": "0026_remove_system_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1794820842476,
+      "tag": "0027_funny_misty_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1794820924659,
+      "tag": "0028_talented_amphibian",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { accessFingerprint, refreshPermissionQueries, STAFF_ACCESS_UPDATED_EVENT } from "@/lib/accessRefresh";
 import { useQueryClient } from "@tanstack/react-query";
 import { ImpersonationBanner } from "@/components/crm/Impersonation";
+import { MeasureTrackingProvider } from "@/components/crm/MeasureActivityTracker";
 import { ACCOUNT_SWITCH_EVENT, impersonationInfo } from "@/lib/impersonation";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -14,7 +15,7 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { canManageEmailSettings } from "@/lib/emailSettingsAccess";
 import { trpc } from "@/lib/trpc";
-import { BookOpenCheck, ClipboardCheck, ContactRound, Files, FolderKanban, KeyRound, LayoutDashboard, Library, LogOut, Mail, PanelLeft, ScanLine, Send, ShoppingBag, UsersRound, UserCheck } from "lucide-react";
+import { BarChart3, BookOpenCheck, ClipboardCheck, ContactRound, Files, FolderKanban, KeyRound, LayoutDashboard, Library, LogOut, Mail, PanelLeft, ScanLine, Send, ShoppingBag, UsersRound, UserCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -82,6 +83,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
     { icon: Send, label: "Mails", path: "/mails", show: access?.permissions.manageEmails ?? false },
     { icon: UserCheck, label: "Customers", path: "/customers", show: Boolean(access?.isActive) },
     { icon: ShoppingBag, label: "Orders", path: "/orders", show: Boolean(access?.isActive) },
+    { icon: BarChart3, label: "Measure", path: "/measure", show: !impersonating && Boolean(access?.isActive && (access.role === "super_admin" || access?.isLeader)) },
     { icon: Library, label: "Email templates", path: "/email-templates", show: access?.role === "super_admin" || Boolean(access?.isActive && access.permissions.manageEmails && access.permissions.useEmailTemplates) },
     { icon: Mail, label: "Email settings", path: "/email-settings", show: canManageEmailSettings(access?.role) },
     { icon: BookOpenCheck, label: "System guide", path: "/guide", show: true },
@@ -147,7 +149,7 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
         <div className="sticky top-0 z-50"><ImpersonationBanner />
         {isMobile && <div className="relative z-40 flex h-14 min-w-0 items-center gap-3 border-b bg-white/90 px-3 backdrop-blur"><SidebarTrigger /><span className="min-w-0 truncate font-medium">{active?.label ?? "CareFlow"}</span></div>}</div>
         {!access?.isActive && <div className="m-4 break-words rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">Your account is awaiting Super Admin approval. CRM data is not available yet.</div>}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
+        <main className="flex-1 p-4 sm:p-6 lg:p-8"><MeasureTrackingProvider canMeasure={Boolean(access?.isLeader && !user?.impersonation)} workspace={user?.role === "user" && user.loginMethod === "local" && access?.isActive ? `${user.id}:${user.impersonation?.actor.id ?? 0}` : null}>{children}</MeasureTrackingProvider></main>
       </SidebarInset>
       {access?.role === "super_admin" && <ChangeSuperAdminPasswordDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen} />}
     </>

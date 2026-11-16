@@ -109,6 +109,8 @@ export async function createLoginSession(res: Response, req: Request, userId: nu
   const expiresAt = Date.now() + SESSION_TTL_MS;
   await db.createAuthSession({ tokenHash: hashToken(token), userId, expiresAt });
   setSessionCookie(res, req, token);
+  const { recordLoginActivity } = await import("./measureTracking");
+  await recordLoginActivity(userId, token);
 }
 
 export async function createSystemAdminLoginSession(res: Response, req: Request) {

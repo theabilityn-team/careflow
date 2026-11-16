@@ -17,7 +17,14 @@ const auditIdentityMiddleware = t.middleware(async opts => {
     targetId: impersonation.target.id,
     targetName: impersonation.target.name,
   } : undefined;
-  return runWithAuditIdentity(identity, () => next());
+  return runWithAuditIdentity(identity, async () => {
+    const result = await next();
+    if (result.ok && opts.type === "mutation" && ctx.user?.role === "user" && ctx.req.headers.cookie) {
+      const { recordSuccessfulMutation } = await import("../measureTracking");
+      await recordSuccessfulMutation(ctx, opts.path);
+    }
+    return result;
+  });
 });
 
 function assertWorkspaceSignature(ctx: TrpcContext) {

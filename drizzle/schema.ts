@@ -349,6 +349,7 @@ export const communications = mysqlTable("communications", {
 export const outboundEmails = mysqlTable("outbound_emails", {
   id: int("id").autoincrement().primaryKey(),
   senderUserId: int("senderUserId").notNull(),
+  impersonatedById: int("impersonatedById"),
   leadId: int("leadId"),
   recipientEmail: varchar("recipientEmail", { length: 320 }).notNull(),
   ccEmails: text("ccEmails"),
@@ -455,3 +456,26 @@ export const salesOrders = mysqlTable("sales_orders", {
   ownerDate: index("sales_orders_owner_date_idx").on(table.ownerUserId, table.orderedAt),
   statusDate: index("sales_orders_status_date_idx").on(table.status, table.orderedAt),
 }));
+
+/** Measure instrumentation stores only whitelisted event categories and server time. */
+export const staffActivityEvents = mysqlTable("staff_activity_events", {
+  id: int("id").autoincrement().primaryKey(),
+  eventKey: varchar("eventKey", { length: 64 }).notNull(),
+  userId: int("userId").notNull(),
+  sessionKey: varchar("sessionKey", { length: 64 }).notNull(),
+  impersonatedById: int("impersonatedById"),
+  kind: varchar("kind", { length: 32 }).notNull(),
+  page: varchar("page", { length: 40 }),
+  leadId: int("leadId"),
+  occurredAt: bigint("occurredAt", { mode: "number" }).notNull(),
+}, table => ({
+  eventUnique: uniqueIndex("staff_activity_event_key_unique").on(table.eventKey),
+  staffTime: index("staff_activity_user_time_idx").on(table.userId, table.occurredAt),
+}));
+export const measureSettings = mysqlTable("measure_settings", {
+  id: int("id").primaryKey(),
+  inactivityMinutes: int("inactivityMinutes").default(40).notNull(),
+  trackingSince: bigint("trackingSince", { mode: "number" }).notNull(),
+  updatedBy: int("updatedBy"),
+  updatedAt: bigint("updatedAt", { mode: "number" }).notNull(),
+});

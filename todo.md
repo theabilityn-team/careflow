@@ -422,3 +422,13 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] 331 tests across 65 files, TypeScript, production build, diff and preview HTTP 200 pass. Actual fake-transport 320/360/390/1280px checks cover cancel/no mutation, exact pair, error/retry/double click, scoped Leader controls and cached revocation.
 - [x] Disposable live integration verified direct/group revokes, other access paths, ownership/assignment, stale recipients, inactive Leader denial, impersonation audit and membership preservation. Four QA users, two leads/two groups and all related fixtures removed; exact fingerprints of fifteen real CRM tables unchanged. No real email, lead edit or sharing change.
 - [ ] Publish this tested checkpoint before expecting the new controls on the live site.
+
+## Completed update: Measure staff activity — 2026-11-16
+- [x] Add active Leader/Super Admin-only Measure navigation and route; deny team Measure during impersonation.
+- [x] Add indexed staff activity logs and global Super Admin inactivity setting (default 40 minutes, validated 1–240).
+- [x] Capture real staff login/logout, successful writes, permitted lead opens and sampled interactions; never count passive polling or phone copy/dial as completed calls.
+- [x] Reuse canonical changed statuses, manually recorded contacts, successful outbound history and entered/credited orders without failed/test/reminder sends or automated imports.
+- [x] Add Eastern day/Monday-week/month charts, staff/date filters, manual Refresh and complete-snapshot update notice.
+- [x] Show bounded estimated active/idle intervals, status-required completed lead-work samples, historical limitations and separate impersonation activity; keep credited currencies separate.
+- [x] Pass 368 tests, TypeScript, production build, 320/360/390/1280px interactive fake-transport UI and targeted no-send real-DB proof; remove all disposable records and artifacts.
+- [ ] Publish the Measure checkpoint to enable new instrumentation on the live application. Existing historical counts remain available; old unlogged navigation/session timing cannot be reconstructed.
