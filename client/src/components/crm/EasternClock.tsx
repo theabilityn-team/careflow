@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CAREFLOW_TIME_ZONE } from "@shared/time";
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", { timeZone: CAREFLOW_TIME_ZONE, month: "short", day: "numeric", year: "numeric" });
-const timeFormatter = new Intl.DateTimeFormat("en-US", { timeZone: CAREFLOW_TIME_ZONE, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true, timeZoneName: "short" });
+const timeFormatter = new Intl.DateTimeFormat("en-US", { timeZone: CAREFLOW_TIME_ZONE, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZoneName: "short" });
 export function easternClockValue(timestamp: number) {
   const date = new Date(timestamp);
   return { date: dateFormatter.format(date), time: timeFormatter.format(date), iso: date.toISOString() };

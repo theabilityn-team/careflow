@@ -465,3 +465,7 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Isolate updates to the clock, refresh after tab focus/resume and clean interval/listeners on collapse/unmount. Preserve brand/menu behavior, auto-size expanded header and hide clock in collapsed icon-only mode.
 - [x] Validate393tests/73files, TypeScript, production build and actual320/360/390px mobile plus224/272px desktop-sidebar QA: Tokyo-local timezone isolation, one-second refresh, Eastern midnight/focus update, timer cleanup and non-overflow. No API writes, staff-activity events, DB changes or real email; exact QA artifacts cleaned.
 - [ ] Publish the logo-clock checkpoint, then reload the app.
+
+## Completed adjustment: 24-hour logo clock — 2026-11-17
+- [x] Show HH:mm:ss (00–23) with no AM/PM; retain Eastern date and EST/EDT. Explicit h23 avoids a 24:00 midnight display.
+- [x] Validate394tests/73files, TypeScript/build, 18:00/06:00/noon/midnight/DST assertions and actual no-write browser rendering. No clock lifecycle, layout, data or Measure change.
