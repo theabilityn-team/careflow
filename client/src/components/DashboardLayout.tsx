@@ -2,6 +2,7 @@ import { accessFingerprint, refreshPermissionQueries, STAFF_ACCESS_UPDATED_EVENT
 import { useQueryClient } from "@tanstack/react-query";
 import { ImpersonationBanner } from "@/components/crm/Impersonation";
 import { MeasureTrackingProvider } from "@/components/crm/MeasureActivityTracker";
+import EasternClock from "@/components/crm/EasternClock";
 import { ACCOUNT_SWITCH_EVENT, impersonationInfo } from "@/lib/impersonation";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -122,10 +123,10 @@ function DashboardShell({ children, setSidebarWidth }: { children: React.ReactNo
     <>
       <div ref={sidebarRef} className="relative">
         <Sidebar collapsible="icon" className="border-r border-slate-200/80 bg-white" disableTransition={isResizing}>
-          <SidebarHeader className="h-[76px] justify-center border-b border-slate-100 px-3">
+          <SidebarHeader className={`${isCollapsed ? "h-[76px]" : "min-h-[104px] py-3"} justify-center border-b border-slate-100 px-3`}>
             <div className="flex w-full items-center gap-3">
               <button onClick={toggleSidebar} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-teal-700 text-white transition-transform active:scale-[.97]" aria-label="Toggle navigation"><PanelLeft className="h-4 w-4" /></button>
-              {!isCollapsed && <div className="min-w-0"><div className="font-semibold tracking-tight">CareFlow</div><div className="text-[11px] font-medium uppercase tracking-[.16em] text-slate-400">Customer intelligence</div></div>}
+              {!isCollapsed && <div className="min-w-0 flex-1"><div className="font-semibold tracking-tight">CareFlow</div><div className="text-[10px] font-medium uppercase tracking-[.12em] text-slate-400">Customer intelligence</div><EasternClock /></div>}
             </div>
           </SidebarHeader>
           <SidebarContent className="px-2 py-4">

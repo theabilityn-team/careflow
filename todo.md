@@ -459,3 +459,9 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Preserve original activity-driven idle/lead-work logic and all source records. Verify 23/25-hour DST axes with unique keys/EDT–EST labels, exact hourly boundaries, partial current-hour clipping and full-axis count/time reconciliation.
 - [x] Pass389tests/72files, TypeScript, production build and diff check; actual fake-transport320/360/390/1280px four-period/Custom/zero-seven-lines/Refresh/invalid-date/no-overflow QA plus Eastern midnight rollover; read-only five-real-staff hourly axes/totals proof. No real mutation/mail/OCR or migration; QA artifacts removed.
 - [ ] Publish this period-preset and line-chart checkpoint, then reload the app.
+
+## Completed update: Eastern date/time under the CareFlow logo — 2026-11-17
+- [x] Add current English Eastern date and live seconds clock beneath the sidebar logo; use America/New_York with seasonal EST/EDT, independent of the user's local timezone.
+- [x] Isolate updates to the clock, refresh after tab focus/resume and clean interval/listeners on collapse/unmount. Preserve brand/menu behavior, auto-size expanded header and hide clock in collapsed icon-only mode.
+- [x] Validate393tests/73files, TypeScript, production build and actual320/360/390px mobile plus224/272px desktop-sidebar QA: Tokyo-local timezone isolation, one-second refresh, Eastern midnight/focus update, timer cleanup and non-overflow. No API writes, staff-activity events, DB changes or real email; exact QA artifacts cleaned.
+- [ ] Publish the logo-clock checkpoint, then reload the app.
