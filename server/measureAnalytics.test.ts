@@ -3,9 +3,23 @@ import { calculateMeasureReport, validateMeasureRange } from "./measureAnalytics
 import type { MeasureEvent } from "../shared/measure";
 
 const staff = { id: 7, name: "Leader", email: "leader@example.invalid", isActive: true };
-const event = (id: string, at: number, type: MeasureEvent["type"], extra: Partial<MeasureEvent> = {}): MeasureEvent => ({ id, at, type, source: "tracking", sessionKey: "session-a", ...extra });
+const event = (id: string, at: number, type: MeasureEvent["type"], extra: Partial<MeasureEvent> = {}): MeasureEvent => ({
+  id,
+  at,
+  type,
+  source: "tracking",
+  sessionKey: "session-a",
+  ...extra,
+});
 
-function report(events: MeasureEvent[], from: number, to: number, bucket: "day" | "week" | "month" = "day", trackingSince: number | null = from) {
+function report(
+  events: MeasureEvent[],
+  from: number,
+  to: number,
+  bucket: "day" | "week" | "month" = "day",
+  reportingSince: number | undefined = from,
+  orders: Array<{ id: number; at: number; ownerUserId: number; quantity: number; unitPriceCents: number; currency: string; status: string }> = [],
+) {
   return calculateMeasureReport({
     staff,
     from,
@@ -13,98 +27,194 @@ function report(events: MeasureEvent[], from: number, to: number, bucket: "day" 
     bucket,
     inactivityMinutes: 40,
     updatedThrough: to,
-    data: { events, orders: [], trackingSince },
+    data: { events, orders, trackingSince: null, reportingSince },
   });
 }
 
-describe("Measure analytics", () => {
-  it("uses the exact inactivity boundary and caps the observed tail", () => {
-    const from = Date.UTC(2025, 0, 1, 12);
+const minute = 60_000;
+
+describe("activity-based measure analytics", () => {
+  it("uses one staff-wide activity timeline and caps each action at 40 minutes", () => {
+    const start = Date.UTC(2026, 10, 15, 14);
     const result = report([
-      event("a", from, "interaction"),
-    ], from, from + 41 * 60_000);
-    expect(result.totals.activeMinutes).toBe(40);
-    expect(result.totals.inactiveMinutes).toBe(1);
+      event("a", start, "interaction", { sessionKey: "one" }),
+      event("b", start + 45 * minute, "navigation", { sessionKey: "two" }),
+    ], start, start + 46 * minute);
+    expect(result.totals.activeMinutes).toBe(41);
+    expect(result.totals.inactiveMinutes).toBe(5);
+    expect(result.timingBasis).toBe("activity_gaps");
   });
 
-  it("merges concurrent tabs but does not bridge impersonation sessions", () => {
-    const from = Date.UTC(2025, 0, 1, 12);
+  it("does not seed, stop, or reset timing from login, logout, expiry, or session keys", () => {
+    const start = Date.UTC(2026, 10, 15, 14);
     const result = report([
-      event("a", from, "interaction", { sessionKey: "one" }),
-      event("b", from + 10 * 60_000, "interaction", { sessionKey: "two" }),
-      event("c", from + 20 * 60_000, "interaction", { sessionKey: "one", impersonatedById: 99 }),
-    ], from, from + 30 * 60_000);
-    expect(result.totals.activeMinutes).toBe(30);
+      event("login", start, "login", { source: "session", sessionKey: "one", sessionExpiresAt: start + 5 * minute }),
+      event("a", start + 10 * minute, "interaction", { sessionKey: "one" }),
+      event("logout", start + 15 * minute, "logout", { source: "session", sessionKey: "one" }),
+      event("b", start + 20 * minute, "interaction", { sessionKey: "two" }),
+    ], start, start + 100 * minute);
+    expect(result.totals.activeMinutes).toBe(50);
+    expect(result.totals.inactiveMinutes).toBe(40);
+    expect(result.totals.firstActivityAt).toBe(start + 10 * minute);
+    expect(result.totals.lastActivityAt).toBe(start + 20 * minute);
   });
 
-  it("closes timing at explicit logout", () => {
-    const from = Date.UTC(2025, 0, 1, 12);
-    const result = report([
-      event("a", from, "interaction"),
-      event("l", from + 5 * 60_000, "logout"),
-    ], from, from + 100 * 60_000);
-    expect(result.totals.activeMinutes).toBe(5);
+  it("does not fabricate time from login-only data", () => {
+    const start = Date.UTC(2026, 10, 15, 14);
+    const result = report([event("login", start, "login", { source: "session" })], start, start + 90 * minute);
+    expect(result.totals.activeMinutes).toBe(0);
     expect(result.totals.inactiveMinutes).toBe(0);
+    expect(result.timingAvailable).toBe(false);
+    expect(result.points).toHaveLength(0);
   });
 
-  it("requires a status change on the current lead and a different next lead for averages", () => {
-    const from = Date.UTC(2025, 0, 1, 12);
+  it("times audit and mail activity without a session key and carries a gap across day boundaries", () => {
+    const start = Date.UTC(2026, 10, 16, 4, 55);
+    const next = start + 45 * minute;
     const result = report([
-      event("a", from, "lead_open", { leadId: 1 }),
-      event("b", from + 10 * 60_000, "status_change", { leadId: 1 }),
-      event("c", from + 15 * 60_000, "lead_open", { leadId: 1 }),
-      event("d", from + 20 * 60_000, "lead_open", { leadId: 2 }),
-    ], from, from + 30 * 60_000);
-    expect(result.totals.leadWorkSamples).toBe(1);
-    expect(result.totals.averageLeadMinutes).toBe(20);
-  });
-
-  it("keeps stats deduplicated by event id and treats other_action as timing only", () => {
-    const from = Date.UTC(2025, 0, 1, 12);
-    const duplicate = event("same", from, "contact", { source: "audit", sessionKey: null });
-    const result = report([duplicate, duplicate, event("other", from + 1, "other_action")], from, from + 10);
-    expect(result.totals.contactsLogged).toBe(1);
-    expect(result.totals.interactions).toBe(0);
-  });
-
-  it("creates DST-safe Monday weekly points", () => {
-    const from = Date.UTC(2025, 2, 9, 15); // March 9, 2025 is the spring-forward Sunday.
-    const result = report([event("a", from, "interaction")], from, from + 2 * 86_400_000, "week");
-    expect(result.points[0]?.label).toBe("2025-03-03");
+      event("audit", start, "status_change", { source: "audit", sessionKey: null }),
+      event("mail", next, "email_sent", { source: "mail", sessionKey: null }),
+    ], start, next + 5 * minute);
+    expect(result.totals.activeMinutes).toBe(45);
+    expect(result.totals.inactiveMinutes).toBe(5);
+    expect(result.historicalEvents).toBe(2);
     expect(result.points).toHaveLength(2);
-    expect(result.points[1]?.label).toBe("2025-03-10");
+    expect(result.points[0].from).toBeGreaterThan(result.points[1].from);
   });
 
-  it("validates inclusive Eastern ranges and server-clock cutoff", () => {
-    const now = Date.UTC(2025, 0, 3, 17);
-    const range = validateMeasureRange("2025-01-01", "2025-01-03", now);
-    expect(range.to).toBe(now);
-    expect(() => validateMeasureRange("2025-01-01", "2026-01-02", now)).toThrow(/366/);
-    expect(() => validateMeasureRange("2025-01-04", "2025-01-04", now)).toThrow(/future/);
+  it("applies the fixed reporting cutoff, ignores old counts, and retains a prior-action idle point", () => {
+    const cutoff = Date.UTC(2026, 10, 15, 0);
+    const old = cutoff - minute;
+    const action = cutoff + 5 * minute;
+    const result = report([
+      event("old", old, "interaction"),
+      event("new", action, "interaction"),
+    ], old, cutoff + 90 * minute, "day", cutoff);
+    expect(result.from).toBe(cutoff);
+    expect(result.totals.interactions).toBe(1);
+    expect(result.totals.firstActivityAt).toBe(action);
+    expect(result.totals.activeMinutes).toBe(40);
+    expect(result.totals.inactiveMinutes).toBe(45);
+    expect(result.points.length).toBe(1);
+    expect(result.reportingSince).toBe(cutoff);
+  });
+
+  it("does not create empty dates or impersonation-only points, while showing impersonation separately", () => {
+    const start = Date.UTC(2026, 10, 15, 14);
+    const result = report([
+      event("imp", start, "lead_open", { leadId: 1, impersonatedById: 99 }),
+      event("own", start + 2 * 86_400_000, "interaction"),
+    ], start, start + 2 * 86_400_000 + minute);
+    expect(result.impersonation.leadOpens).toBe(1);
+    expect(result.totals.leadOpens).toBe(0);
+    expect(result.points).toHaveLength(1);
+    expect(result.points[0].hasActivity).toBe(true);
+  });
+
+  it("keeps other_action-only points even though interaction count remains zero", () => {
+    const start = Date.UTC(2026, 10, 15, 14);
+    const result = report([event("other", start, "other_action")], start, start + minute);
+    expect(result.totals.interactions).toBe(0);
+    expect(result.points).toHaveLength(1);
+    expect(result.points[0].hasActivity).toBe(true);
+  });
+
+  it("requires meaningful work and a different next lead; reopening does not reset, direct email without lead does not attribute", () => {
+    const start = Date.UTC(2026, 10, 15, 14);
+    const result = report([
+      event("open-1", start, "lead_open", { leadId: 1 }),
+      event("reopen-1", start + 5 * minute, "lead_open", { leadId: 1 }),
+      event("email-direct", start + 10 * minute, "email_sent", { leadId: null }),
+      event("contact-1", start + 15 * minute, "contact", { leadId: 1 }),
+      event("open-2", start + 90 * minute, "lead_open", { leadId: 2 }),
+    ], start, start + 100 * minute);
+    expect(result.totals.leadWorkSamples).toBe(1);
+    expect(result.totals.averageLeadMinutes).toBe(55);
+  });
+
+  it("excludes unfinished lead work and subtracts idle from completed samples", () => {
+    const start = Date.UTC(2026, 10, 15, 14);
+    const result = report([
+      event("open", start, "lead_open", { leadId: 1 }),
+      event("status", start + minute, "status_change", { leadId: 1 }),
+      event("next", start + 81 * minute, "lead_open", { leadId: 2 }),
+    ], start, start + 100 * minute);
+    expect(result.totals.leadWorkSamples).toBe(1);
+    expect(result.totals.averageLeadMinutes).toBe(41);
+  });
+
+  it("preserves order counts and credited currency logic without requiring events", () => {
+    const start = Date.UTC(2026, 10, 15, 14);
+    const result = report([], start, start + minute, "day", start, [
+      { id: 1, at: start, ownerUserId: 7, quantity: 2, unitPriceCents: 12345, currency: "USD", status: "completed" },
+      { id: 2, at: start, ownerUserId: 7, quantity: 1, unitPriceCents: 999, currency: "EUR", status: "pending" },
+      { id: 3, at: start, ownerUserId: 7, quantity: 1, unitPriceCents: 333, currency: "USD", status: "refunded" },
+    ]);
+    expect(result.totals.ordersCredited).toBe(3);
+    expect(result.totals.creditedValueByCurrency).toEqual({ USD: 24690, EUR: 999 });
+    expect(result.points).toHaveLength(1);
+  });
+
+  it("keeps daily, weekly, and monthly sums consistent across DST", () => {
+    const from = parseDate("2026-03-08");
+    const to = from + 2 * 86_400_000;
+    const events = [event("a", from, "interaction"), event("b", from + 45 * minute, "interaction")];
+    const reports = [report(events, from, to, "day"), report(events, from, to, "week"), report(events, from, to, "month")];
+    for (const result of reports) {
+      expect(result.points.reduce((sum, point) => sum + point.metrics.activeMinutes, 0)).toBe(result.totals.activeMinutes);
+      expect(result.points.reduce((sum, point) => sum + point.metrics.inactiveMinutes, 0)).toBe(result.totals.inactiveMinutes);
+    }
+  });
+
+  it("validates inclusive Eastern ranges and rejects nonexistent calendar dates", () => {
+    const now = Date.UTC(2026, 10, 20, 17);
+    const range = validateMeasureRange("2026-11-15", "2026-11-16", now);
+    expect(new Date(range.to).toISOString()).toBe("2026-11-17T04:59:59.999Z");
+    expect(() => validateMeasureRange("2026-02-30", "2026-03-01", now)).toThrow();
   });
 });
 
-describe("Measure timing boundaries and honest history",()=>{
- const start=Date.UTC(2025,0,1,12); const min=60_000;
- it("resets inactivity on an actual event at exactly 40 minutes",()=>{const r=report([event("a",start,"interaction"),event("b",start+40*min,"navigation")],start,start+41*min);expect(r.totals.activeMinutes).toBe(41);expect(r.totals.inactiveMinutes).toBe(0);});
- it("records login-only idle after the grace period but no work",()=>{const r=report([event("login",start,"login")],start,start+90*min);expect(r.totals.logins).toBe(1);expect(r.totals.activeMinutes).toBe(0);expect(r.totals.inactiveMinutes).toBe(50);expect(r.totals.firstActivityAt).toBeNull();expect(r.timingBasis).toBe("tracked_sessions");});
- it("subtracts other-tab activity from idle and keeps periods consistent with totals",()=>{const r=report([event("a",start,"interaction",{sessionKey:"one"}),event("b",start+60*min,"interaction",{sessionKey:"two"})],start,start+130*min);expect(r.totals.activeMinutes).toBe(80);expect(r.totals.inactiveMinutes).toBe(50);expect(r.inactivePeriods.map(p=>p.minutes)).toEqual([20,30]);expect(r.inactivePeriods[0].endedByActivity).toBe(true);expect(r.inactivePeriods[1].endedByActivity).toBe(false);});
- it("never bridges logged-out gaps between sessions",()=>{const r=report([event("a",start,"interaction",{sessionKey:"one"}),event("logout",start+10*min,"logout",{sessionKey:"one"}),event("b",start+80*min,"interaction",{sessionKey:"two"})],start,start+90*min);expect(r.totals.activeMinutes).toBe(20);expect(r.totals.inactiveMinutes).toBe(0);expect(r.inactivePeriods).toHaveLength(0);});
- it("honors a real session expiry boundary",()=>{const r=report([event("login",start,"login",{sessionExpiresAt:start+100*min})],start,start+200*min);expect(r.totals.activeMinutes).toBe(0);expect(r.totals.inactiveMinutes).toBe(60);});
- it("does not fabricate historical login/navigation/timing from business audits",()=>{const r=report([event("audit",start,"status_change",{source:"audit",sessionKey:null})],start,start+60*min);expect(r.totals.statusChanges).toBe(1);expect(r.totals.activeMinutes).toBe(0);expect(r.totals.logins).toBe(0);expect(r.timingAvailable).toBe(false);expect(r.historicalEvents).toBe(1);});
- it("excludes impersonated actions and time from personal metrics",()=>{const r=report([event("a",start,"lead_open",{leadId:1,impersonatedById:99}),event("b",start+min,"status_change",{leadId:1,impersonatedById:99}),event("mail",start+2*min,"email_sent",{impersonatedById:99})],start,start+30*min);expect(r.totals.leadOpens).toBe(0);expect(r.totals.statusChanges).toBe(0);expect(r.totals.emailsSent).toBe(0);expect(r.totals.activeMinutes).toBe(0);expect(r.impersonation).toMatchObject({leadOpens:1,statusChanges:1,emailsSent:1});});
- it("uses all active resets, not a single 40-minute cap, for completed lead work",()=>{const r=report([event("open",start,"lead_open",{leadId:1}),event("status",start+30*min,"status_change",{leadId:1}),event("click",start+60*min,"interaction"),event("next",start+90*min,"lead_open",{leadId:2})],start,start+100*min);expect(r.totals.averageLeadMinutes).toBe(90);expect(r.totals.leadWorkSamples).toBe(1);});
- it("subtracts idle from lead-work average and does not create unfinished samples",()=>{const r=report([event("open",start,"lead_open",{leadId:1}),event("status",start+min,"status_change",{leadId:1}),event("next",start+80*min,"lead_open",{leadId:2})],start,start+100*min);expect(r.totals.averageLeadMinutes).toBe(41);expect(r.totals.leadWorkSamples).toBe(1);});
- it("splits both 23-hour and 25-hour Eastern DST days correctly",()=>{for(const [key,hours] of [["2025-03-09",23],["2025-11-02",25]] as const){const range=validateMeasureRange(key,key,Date.UTC(2026,0,1));const r=report([],range.from,range.to);expect(r.points).toHaveLength(1);expect(r.points[0].to-r.points[0].from+1).toBe(hours*60*min);}});
- it("keeps Monday weeks valid across month/year boundaries",()=>{const range=validateMeasureRange("2025-01-01","2025-01-01",Date.UTC(2026,0,1));expect(report([],range.from,range.to,"week").points[0].key).toBe("2024-12-30");});
- it("keeps per-currency credits and cancelled/refunded order counts separate from value",()=>{const r=calculateMeasureReport({staff,from:start,to:start+min,bucket:"day",inactivityMinutes:40,updatedThrough:start+min,data:{events:[],trackingSince:start,orders:[{id:1,at:start,ownerUserId:7,quantity:2,unitPriceCents:12345,currency:"USD",status:"completed"},{id:2,at:start,ownerUserId:7,quantity:1,unitPriceCents:999,currency:"EUR",status:"pending"},{id:3,at:start,ownerUserId:7,quantity:1,unitPriceCents:333,currency:"USD",status:"cancelled"}]}});expect(r.totals.ordersCredited).toBe(3);expect(r.totals.creditedValueByCurrency).toEqual({USD:24690,EUR:999});});
- it("rejects non-existent Eastern calendar dates",()=>{expect(()=>validateMeasureRange("2025-02-30","2025-03-01",Date.UTC(2026,0,1))).toThrow();});
+function parseDate(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  return Date.UTC(year, month - 1, day, 5);
+}
 
-	 it("retains historical audit and mail counts but never estimates their timing",()=>{const r=report([event("h1",start,"status_change",{source:"audit",sessionKey:null}),event("h2",start+100*min,"email_sent",{source:"mail",sessionKey:null})],start,start+100*min);expect(r.totals.statusChanges).toBe(1);expect(r.totals.emailsSent).toBe(1);expect(r.totals.activeMinutes).toBe(0);expect(r.totals.inactiveMinutes).toBe(0);expect(r.timingBasis).toBe("not_available");expect(r.timingAvailable).toBe(false);expect(r.historicalEvents).toBe(2);});
-	 it("discards pre-cutoff tracked clicks from timing and lead-work samples",()=>{const cutoff=start+60*min;const r=report([event("open-old",start,"lead_open",{leadId:1}),event("status-old",start+10*min,"status_change",{leadId:1}),event("click-old",start+20*min,"interaction"),event("next-old",start+30*min,"lead_open",{leadId:2}),event("post",cutoff,"interaction")],start,start+100*min,"day",cutoff);expect(r.totals.leadOpens).toBe(2);expect(r.totals.interactions).toBe(2);expect(r.totals.activeMinutes).toBe(40);expect(r.totals.inactiveMinutes).toBe(0);expect(r.totals.leadWorkSamples).toBe(0);});
-	 it("seeds an overlapping retained login at the cutoff without backdated work",()=>{const cutoff=start+60*min;const r=report([event("login-old",start,"login",{sessionStartedAt:start,sessionExpiresAt:start+180*min}),event("old-click",start+20*min,"interaction",{sessionStartedAt:start,sessionExpiresAt:start+180*min})],start,start+120*min,"day",cutoff);expect(r.totals.logins).toBe(1);expect(r.totals.activeMinutes).toBe(0);expect(r.totals.inactiveMinutes).toBe(20);expect(r.inactivePeriods[0]?.from).toBe(cutoff+40*min);});
-	 it("does not time a retained session whose true expiry is before the cutoff",()=>{const cutoff=start+60*min;const r=report([event("login-old",start,"login",{sessionStartedAt:start,sessionExpiresAt:start+30*min}),event("old-click",start+20*min,"interaction",{sessionStartedAt:start,sessionExpiresAt:start+30*min}),event("post-click",cutoff+10*min,"interaction",{sessionStartedAt:start,sessionExpiresAt:start+30*min})],start,start+120*min,"day",cutoff);expect(r.totals.interactions).toBe(2);expect(r.totals.activeMinutes).toBe(0);expect(r.totals.inactiveMinutes).toBe(0);expect(r.timingAvailable).toBe(false);});
-	 it("makes all timing unavailable when trackingSince is null while retaining counts",()=>{const r=report([event("login",start,"login"),event("action",start+10*min,"interaction")],start,start+90*min,"day",null);expect(r.totals.logins).toBe(1);expect(r.totals.interactions).toBe(1);expect(r.totals.activeMinutes).toBe(0);expect(r.totals.inactiveMinutes).toBe(0);expect(r.totals.leadWorkSamples).toBe(0);expect(r.timingBasis).toBe("not_available");expect(r.timingAvailable).toBe(false);});
-	 it("counts post-cutoff active and idle minutes and requires post-cutoff lead-work evidence",()=>{const cutoff=start;const r=report([event("open",cutoff,"lead_open",{leadId:1}),event("status",cutoff,"status_change",{leadId:1}),event("next",cutoff+45*min-1,"lead_open",{leadId:2})],cutoff,cutoff+45*min,"day",cutoff);expect(r.totals.activeMinutes).toBe(40);expect(r.totals.inactiveMinutes).toBe(5);expect(r.totals.leadWorkSamples).toBe(1);expect(r.totals.averageLeadMinutes).toBe(40);expect(r.inactivePeriods.reduce((sum,p)=>sum+p.minutes,0)).toBe(r.totals.inactiveMinutes);});
-	 it("keeps daily, weekly, and monthly post-cutoff timing sums consistent",()=>{const day1=start;const day2=start+24*60*min;const cutoff=day1;const events=[event("a",day1,"interaction"),event("b",day1+45*min,"interaction"),event("c",day2,"interaction"),event("d",day2+45*min,"interaction")];const daily=report(events,day1,day2+45*min,"day",cutoff);const weekly=report(events,day1,day2+45*min,"week",cutoff);const monthly=report(events,day1,day2+45*min,"month",cutoff);for(const r of [daily,weekly,monthly]){expect(r.points.reduce((sum,p)=>sum+p.metrics.activeMinutes,0)).toBe(r.totals.activeMinutes);expect(r.points.reduce((sum,p)=>sum+p.metrics.inactiveMinutes,0)).toBe(r.totals.inactiveMinutes);}});
+describe("User examples and filtered days", () => {
+  it("shows exactly 40 active and 5 idle after 45 minutes without a new action", () => {
+    const start = Date.UTC(2026, 10, 15, 14);
+    const result = report([event("open", start, "lead_open", { leadId: 1, sessionKey: null })], start, start + 45 * minute);
+    expect(result.totals.activeMinutes).toBe(40);
+    expect(result.totals.inactiveMinutes).toBe(5);
+    expect(result.inactivePeriods[0].from).toBe(start + 40 * minute);
+  });
+  it("keeps today as idle with no new action after yesterday's real activity", () => {
+    const cutoff = Date.parse("2026-11-15T05:00:00Z");
+    const today = Date.parse("2026-11-16T05:00:00Z");
+    const result = report([event("yesterday", today - 2 * 60 * minute, "interaction", { sessionKey: null })], today, today + 60 * minute, "day", cutoff);
+    expect(result.totals.activeMinutes).toBe(0);
+    expect(result.totals.inactiveMinutes).toBe(60);
+    expect(result.timingAvailable).toBe(true);
+    expect(result.points).toHaveLength(1);
+    expect(result.points[0].hasActivity).toBe(false);
+    expect(result.points[0].label).toBe("2026-11-16");
+  });
+  it("keeps the full worked lead duration when the next lead is opened after the selected start", () => {
+    const cutoff = Date.parse("2026-11-15T05:00:00Z");
+    const start = cutoff + 60 * minute;
+    const result = report([
+      event("open", start, "lead_open", { leadId: 1, sessionKey: null }),
+      event("email", start + 5 * minute, "email_sent", { leadId: 1, source: "mail", sessionKey: null }),
+      event("next", start + 20 * minute, "lead_open", { leadId: 2, sessionKey: "different" }),
+    ], start + 10 * minute, start + 30 * minute, "day", cutoff);
+    expect(result.totals.leadWorkSamples).toBe(1);
+    expect(result.totals.averageLeadMinutes).toBe(20);
+    expect(result.totals.activeMinutes).toBe(20);
+  });
+  it("sorts inactive gaps newest first and does not turn empty history into time", () => {
+    const start = Date.UTC(2026, 10, 15, 14);
+    const result = report([event("a", start, "interaction"), event("b", start + 100 * minute, "interaction")], start, start + 200 * minute);
+    expect(result.inactivePeriods).toHaveLength(2);
+    expect(result.inactivePeriods[0].from).toBeGreaterThan(result.inactivePeriods[1].from);
+    expect(report([], start, start + 48 * 60 * minute).points).toEqual([]);
+  });
 });

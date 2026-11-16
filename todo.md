@@ -440,3 +440,13 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Show the measurement start date, Not available for missing/pre-start timing and <1 min for genuinely short activity; hide unsupported time-chart values rather than plotting historical zeroes.
 - [x] Validate 384 tests/71 files, TypeScript, production build, real HTTP capture and logout, 40 active/5 idle at 45 minutes, actual 320/360/390/1280px Refresh/unavailable UI and real-data cutoff proof. Clean the exact disposable session/account and all temporary QA artifacts.
 - [ ] Publish this correction checkpoint; staff with an old cached app should reload the app after publication.
+
+## Completed correction: Activity-only Measure and populated dates — 2026-11-16
+- [x] Supersede login/session-based timing: real lead opens, status changes, successful emails, logged contacts, orders and actual app actions start/reset staff activity. Login/logout/expiry do not control time; preserve authentication and existing source logs.
+- [x] Set a fixed reporting baseline of November 15, 2026, America/New_York. Exclude earlier report counts/dates without deleting stored records; retain a prior real action for carried idle into a selected day.
+- [x] After a real action, active extends to the next action or the configured threshold; excess gap is idle to the next action or snapshot. With no real action ever recorded, show No activity and zero measured duration rather than fabricated hours.
+- [x] Require meaningful work followed by a different opened lead for a completed sample; include status/email/contact work, exclude idle, preserve full sample when completion occurs in a later filtered period.
+- [x] Hide genuinely empty dates. Keep idle-only dates with No activity; newest dates/gaps first. Charts use the same populated periods, chronologically left-to-right.
+- [x] Simplify UI to nine relevant metrics: lead opens, completed lead work, status changes, logged contacts, successful emails, entered orders, active, idle and average lead work. Remove login, credited-value, historical-warning and impersonation panels; retain backend impersonation exclusion.
+- [x] Pass 372 tests/70 files, TypeScript, build, 320/360/390/1280px actual fake-transport Refresh/date/order/empty-state QA and bounded live-DB audit/mail-only 40 active / 5 idle, completed-lead sample and carried idle proof. Exact disposable fixture cleanup completed; original trackingSince unchanged. No schema migration or real SMTP/OCR.
+- [ ] Publish the activity-only Measure checkpoint, then reload cached staff tabs to load the revised app instrumentation.

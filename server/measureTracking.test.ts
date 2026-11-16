@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 const mocks=vi.hoisted(()=>({access:{isActive:true,isLeader:false,permissions:{viewLeads:true,manageEmails:true,scanDocuments:true,viewClinical:true,useEmailTemplates:true}},canAccess:vi.fn(),authSession:vi.fn(),last:undefined as any,events:[] as any[],settings:[] as any[]}));
 vi.mock("./permissions",()=>({getUserAccess:vi.fn(async()=>mocks.access)}));
 vi.mock("./db",()=>({canAccessLead:(...a:any[])=>mocks.canAccess(...a),getAuthSession:(...a:any[])=>mocks.authSession(...a),getUserById:vi.fn(),getDb:async()=>({select:()=>({from:()=>({where:()=>({orderBy:()=>({limit:async()=>mocks.last?[mocks.last]:[]})})})}),insert:(table:any)=>({values:(value:any)=>({onDuplicateKeyUpdate:async()=>{if(value.kind)mocks.events.push(value);else mocks.settings.push(value);}})})})}));
-import { activitySessionKey, clientActivityInput, recordClientActivity, recordSuccessfulMutation, recordLogoutActivity } from "./measureTracking";
+import { activitySessionKey, clientActivityInput, recordClientActivity, recordSuccessfulMutation } from "./measureTracking";
 const ctx=()=>({user:{id:777,role:"user",loginMethod:"local"},req:{headers:{cookie:"app_session_id=PRIVATE_COOKIE_CANARY"}},res:{}} as any);
 const input=()=>({eventId:"2903c4de-fcf6-4f38-a92d-48c75d680098",kind:"lead_open",page:"lead",leadId:888} as const);
 beforeEach(()=>{mocks.events=[];mocks.settings=[];mocks.last=undefined;mocks.access.isActive=true;mocks.access.isLeader=false;mocks.access.permissions.manageEmails=true;vi.clearAllMocks();mocks.canAccess.mockResolvedValue(true);mocks.authSession.mockResolvedValue(undefined);});

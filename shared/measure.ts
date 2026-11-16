@@ -1,3 +1,7 @@
+/** Fixed reporting baseline requested on 2026-11-16; not a rolling yesterday. */
+export const MEASURE_REPORTING_START_DATE = "2026-11-15";
+export const MEASURE_REPORTING_START_MS = Date.parse("2026-11-15T05:00:00Z");
+
 export type MeasureBucket = "day" | "week" | "month";
 export type MeasureEventType = "login" | "logout" | "navigation" | "interaction" | "lead_open" | "status_change" | "contact" | "phone_contact" | "email_sent" | "order_entered" | "other_action";
 /** No credentials, medical text, email subjects/recipients or arbitrary clicked text. */
@@ -14,7 +18,7 @@ export type MeasureMetrics = {
   activeMinutes: number; inactiveMinutes: number; leadWorkSamples: number; averageLeadMinutes: number | null;
   firstLoginAt: number | null; firstActivityAt: number | null; lastActivityAt: number | null;
 };
-export type MeasurePoint = { key: string; label: string; from: number; to: number; metrics: MeasureMetrics };
+export type MeasurePoint = { key: string; label: string; from: number; to: number; metrics: MeasureMetrics; hasActivity?: boolean };
 export type MeasureInactivePeriod = { from: number; to: number; minutes: number; endedByActivity: boolean };
 export type MeasureReport = {
   staff: { id: number; name: string; email: string | null; isActive: boolean };
@@ -23,7 +27,7 @@ export type MeasureReport = {
   impersonation: { events: number; leadOpens: number; statusChanges: number; emailsSent: number; ordersEntered: number };
   inactivePeriods: MeasureInactivePeriod[]; inactivePeriodsTotal: number;
   trackingSince: number | null; timingAvailable: boolean; historicalEvents: number;
-  timingBasis: "tracked_sessions" | "not_available";
+  reportingSince: number; timingBasis: "activity_gaps" | "not_available";
   limitations: string[];
 };
 export type MeasureSettings = { inactivityMinutes: number; trackingSince: number | null };

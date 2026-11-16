@@ -19,10 +19,12 @@ export type MeasureOrder = {
 export type MeasureReportData = {
   events: MeasureEvent[];
   orders: MeasureOrder[];
+  /** Legacy setting retained for the report shape; it is not a timing boundary. */
   trackingSince: number | null;
+  /** Fixed reporting baseline supplied by the database. */
+  reportingSince?: number;
 };
 
-export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 export const MAX_INACTIVE_PERIODS = 100;
 
 export function emptyMetrics(): MeasureMetrics {
@@ -57,6 +59,15 @@ function eventInRange(event: MeasureEvent, from: number, to: number) {
   return event.at >= from && event.at <= to;
 }
 
+/** Login/logout records are retained for counts, but never constitute activity. */
+function isRealActivity(event: MeasureEvent) {
+  return event.source !== "session" && event.type !== "login" && event.type !== "logout";
+}
+
+function isOwnRealActivity(event: MeasureEvent) {
+  return event.impersonatedById == null && isRealActivity(event);
+}
+
 function addEventMetric(metrics: MeasureMetrics, event: MeasureEvent) {
   if (event.type === "login") metrics.logins += 1;
   if (event.type === "navigation") metrics.navigation += 1;
@@ -80,8 +91,8 @@ function eventMetrics(events: MeasureEvent[], orders: MeasureOrder[], from: numb
     addEventMetric(result, event);
     if (event.type === "lead_open" && event.leadId != null) opened.add(event.leadId);
     if (event.type === "login" && (result.firstLoginAt === null || event.at < result.firstLoginAt)) result.firstLoginAt = event.at;
-    if (event.type !== "login" && event.type !== "logout" && (result.firstActivityAt === null || event.at < result.firstActivityAt)) result.firstActivityAt = event.at;
-    if (event.type !== "login" && event.type !== "logout" && (result.lastActivityAt === null || event.at > result.lastActivityAt)) result.lastActivityAt = event.at;
+    if (isRealActivity(event) && (result.firstActivityAt === null || event.at < result.firstActivityAt)) result.firstActivityAt = event.at;
+    if (isRealActivity(event) && (result.lastActivityAt === null || event.at > result.lastActivityAt)) result.lastActivityAt = event.at;
   }
   result.uniqueLeadsOpened = opened.size;
   for (const order of orders) {
@@ -100,110 +111,49 @@ type InactiveCandidate = { from: number; to: number; endedByActivity: boolean };
 type TimingAnalysis = {
   active: ActivityInterval[];
   inactive: InactiveCandidate[];
-  trackedUsable: boolean;
+  hasActivity: boolean;
 };
 
-function isTrackedTimingEvent(event: MeasureEvent) {
-  // A canonical audit/mail event can share only a uniquely evidenced runtime
-  // session key. Session metadata may stand alone as a real login boundary.
-  return event.impersonatedById == null && (event.source === "session" || event.sessionKey != null);
-}
-
-function finiteBoundary(value: number | undefined) {
-  return value != null && Number.isFinite(value) ? value : null;
-}
-
-function sessionGroupKey(event: MeasureEvent) {
-  if (event.sessionKey != null) return `key:${event.sessionKey}`;
-  const started = finiteBoundary(event.sessionStartedAt);
-  if (started != null) return `started:${started}`;
-  return `event:${event.id}`;
-}
-
-function splitSessionIntervals(events: MeasureEvent[], inactivityMs: number, updatedThrough: number) {
+/**
+ * Build one timeline for the staff member. Sessions, session keys, login, logout,
+ * expiry and impersonated actions are deliberately absent from this calculation.
+ */
+function buildTiming(events: MeasureEvent[], inactivityMinutes: number, from: number, to: number, cutoff: number) {
+  const threshold = Math.max(0, inactivityMinutes * 60_000);
+  const reportEnd = to + 1;
+  const activities = events
+    .filter(isOwnRealActivity)
+    .filter(event => event.at >= cutoff && event.at <= to)
+    .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
   const active: ActivityInterval[] = [];
   const inactive: InactiveCandidate[] = [];
-  const sorted = [...events]
-    .filter(isTrackedTimingEvent)
-    .filter(event => event.at <= updatedThrough)
-    .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
-  const groups = new Map<string, MeasureEvent[]>();
-  for (const event of sorted) {
-    const list = groups.get(sessionGroupKey(event)) ?? [];
-    list.push(event);
-    groups.set(sessionGroupKey(event), list);
-  }
 
-  for (const group of Array.from(groups.values())) {
-    let segment: MeasureEvent[] = [];
-    const flush = () => {
-      if (segment.length === 0) return;
-      addSessionSegment(segment, inactivityMs, updatedThrough, active, inactive);
-      segment = [];
-    };
-    for (const event of group) {
-      // Re-authentication on a reused key is a new boundary, and a logout always
-      // closes the current segment so no logged-out gap can be bridged.
-      if (event.type === "login" && segment.some(item => item.type === "login" || item.type !== "logout")) flush();
-      segment.push(event);
-      if (event.type === "logout") flush();
+  for (let index = 0; index < activities.length; index += 1) {
+    const current = activities[index];
+    const nextAt = activities[index + 1]?.at ?? reportEnd;
+    const activeEnd = Math.min(nextAt, current.at + threshold, reportEnd);
+    if (activeEnd > current.at) {
+      const clippedFrom = Math.max(current.at, from);
+      const clippedTo = Math.min(activeEnd, reportEnd);
+      if (clippedTo > clippedFrom) active.push({ from: clippedFrom, to: clippedTo });
     }
-    flush();
-  }
-  return { active, inactive };
-}
 
-function addSessionSegment(
-  orderedInput: MeasureEvent[],
-  inactivityMs: number,
-  updatedThrough: number,
-  active: ActivityInterval[],
-  inactive: InactiveCandidate[],
-) {
-  const ordered = [...orderedInput].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
-  const login = ordered.find(event => event.type === "login");
-  const actions = ordered.filter(event => event.type !== "login" && event.type !== "logout");
-  const explicitStart = ordered
-    .map(event => finiteBoundary(event.sessionStartedAt))
-    .filter((value): value is number => value != null)
-    .sort((a, b) => a - b)[0];
-  const start = explicitStart ?? login?.at ?? actions[0]?.at;
-  if (start == null || start > updatedThrough) return;
-
-  const explicitExpiry = ordered
-    .map(event => finiteBoundary(event.sessionExpiresAt))
-    .filter((value): value is number => value != null && value > start)
-    .sort((a, b) => a - b)[0];
-  const logoutAt = ordered.find(event => event.type === "logout" && event.at >= start)?.at;
-  const sessionEnd = Math.min(updatedThrough, explicitExpiry ?? start + SESSION_TTL_MS, logoutAt ?? Number.POSITIVE_INFINITY);
-  if (sessionEnd <= start) return;
-
-  const usableActions = actions.filter(event => event.at >= start && event.at < sessionEnd);
-  const first = usableActions[0];
-  if (first && first.at > start) {
-    const idleFrom = Math.min(sessionEnd, start + inactivityMs);
-    if (first.at > idleFrom) inactive.push({ from: idleFrom, to: first.at, endedByActivity: true });
+    const idleStart = current.at + threshold;
+    const idleEnd = Math.min(nextAt, reportEnd);
+    if (idleEnd > idleStart) {
+      const clippedFrom = Math.max(idleStart, from);
+      const clippedTo = Math.min(idleEnd, reportEnd);
+      if (clippedTo > clippedFrom) {
+        inactive.push({ from: clippedFrom, to: clippedTo, endedByActivity: nextAt < reportEnd });
+      }
+    }
   }
 
-  for (let index = 0; index < usableActions.length; index += 1) {
-    const current = usableActions[index];
-    const next = usableActions[index + 1];
-    const end = Math.min(next?.at ?? sessionEnd, sessionEnd);
-    const activeEnd = Math.min(end, current.at + inactivityMs);
-    if (activeEnd > current.at) active.push({ from: current.at, to: activeEnd });
-    if (end > activeEnd) inactive.push({
-      from: activeEnd,
-      to: end,
-      endedByActivity: Boolean(next && next.at <= sessionEnd),
-    });
-  }
-
-  // A login-only retained session is not active work. It still supplies idle
-  // evidence after the grace period, ending at logout, expiry, or the snapshot.
-  if (!first && login) {
-    const idleFrom = Math.min(sessionEnd, start + inactivityMs);
-    if (sessionEnd > idleFrom) inactive.push({ from: idleFrom, to: sessionEnd, endedByActivity: false });
-  }
+  return {
+    active: mergeIntervals(active),
+    inactive: mergeInactive(inactive),
+    hasActivity: activities.some(event => event.at >= from && event.at <= to),
+  } satisfies TimingAnalysis;
 }
 
 function mergeIntervals(intervals: ActivityInterval[]) {
@@ -217,96 +167,17 @@ function mergeIntervals(intervals: ActivityInterval[]) {
   return merged;
 }
 
-/** Idle in one tab/source is not inactivity while another authenticated source is active. */
-function subtractActive(idleCandidates: InactiveCandidate[], active: ActivityInterval[]) {
-  const idle: InactiveCandidate[] = [];
-  for (const gap of idleCandidates) {
-    let fragments: InactiveCandidate[] = [{ ...gap }];
-    for (const occupied of active) {
-      const next: InactiveCandidate[] = [];
-      for (const part of fragments) {
-        if (occupied.to <= part.from || occupied.from >= part.to) {
-          next.push(part);
-          continue;
-        }
-        if (occupied.from > part.from) next.push({ from: part.from, to: occupied.from, endedByActivity: true });
-        if (occupied.to < part.to) next.push({ from: occupied.to, to: part.to, endedByActivity: part.endedByActivity });
-      }
-      fragments = next;
-    }
-    idle.push(...fragments);
+function mergeInactive(periods: InactiveCandidate[]) {
+  const sorted = [...periods].filter(period => period.to > period.from).sort((a, b) => a.from - b.from || a.to - b.to);
+  const merged: InactiveCandidate[] = [];
+  for (const period of sorted) {
+    const previous = merged[merged.length - 1];
+    if (previous && period.from <= previous.to) {
+      previous.to = Math.max(previous.to, period.to);
+      previous.endedByActivity ||= period.endedByActivity;
+    } else merged.push({ ...period });
   }
-  const inactive: InactiveCandidate[] = [];
-  for (const gap of idle.sort((a, b) => a.from - b.from || a.to - b.to)) {
-    const last = inactive[inactive.length - 1];
-    if (last && gap.from <= last.to) {
-      if (gap.to > last.to) {
-        last.to = gap.to;
-        last.endedByActivity = gap.endedByActivity;
-      } else if (gap.to === last.to) {
-        last.endedByActivity ||= gap.endedByActivity;
-      }
-    } else inactive.push({ ...gap });
-  }
-  return inactive;
-}
-
-function buildTiming(events: MeasureEvent[], inactivityMinutes: number, through: number): TimingAnalysis {
-  const inactivityMs = inactivityMinutes * 60_000;
-  const tracked = splitSessionIntervals(events, inactivityMs, through);
-  const active = mergeIntervals(tracked.active);
-  const inactive = subtractActive(tracked.inactive, active);
-  return {
-    active,
-    inactive,
-    trackedUsable: events.some(isTrackedTimingEvent),
-  };
-}
-
-function timingEventsFromCutoff(events: MeasureEvent[], trackingSince: number | null, through: number) {
-  if (trackingSince == null || !Number.isFinite(trackingSince)) return [];
-  const cutoff = trackingSince;
-  const timingEvents: MeasureEvent[] = [];
-  const retainedSessions = new Map<string, { event: MeasureEvent; expiresAt: number }>();
-  const postCutoffLogins = new Set<string>();
-
-  for (const event of events) {
-    if (!isTrackedTimingEvent(event) || event.impersonatedById != null) continue;
-    const startedAt = finiteBoundary(event.sessionStartedAt);
-    const expiresAt = finiteBoundary(event.sessionExpiresAt);
-    const groupKey = sessionGroupKey(event);
-
-    if (event.at < cutoff) {
-      // Pre-cutoff actions never become timing evidence. A retained real session
-      // can only seed the cutoff boundary when its true expiry is still open.
-      if (startedAt != null && startedAt <= cutoff && expiresAt != null && expiresAt > cutoff) {
-        const previous = retainedSessions.get(groupKey);
-        if (!previous || expiresAt > previous.expiresAt) retainedSessions.set(groupKey, { event, expiresAt });
-      }
-      continue;
-    }
-    if (event.at > through || (expiresAt != null && expiresAt <= cutoff)) continue;
-
-    const copy: MeasureEvent = { ...event };
-    if (startedAt != null) copy.sessionStartedAt = Math.max(startedAt, cutoff);
-    timingEvents.push(copy);
-    if (event.type === "login") postCutoffLogins.add(groupKey);
-  }
-
-  for (const [groupKey, retained] of Array.from(retainedSessions.entries())) {
-    if (postCutoffLogins.has(groupKey)) continue;
-    timingEvents.push({
-      ...retained.event,
-      id: `${retained.event.id}:tracking-boundary`,
-      at: cutoff,
-      type: "login",
-      source: "session",
-      sessionStartedAt: cutoff,
-      sessionExpiresAt: retained.expiresAt,
-    });
-  }
-
-  return timingEvents;
+  return merged;
 }
 
 function durationMetrics(timing: TimingAnalysis, from: number, to: number) {
@@ -318,50 +189,50 @@ function durationMetrics(timing: TimingAnalysis, from: number, to: number) {
   return result;
 }
 
-function durationMetricsWithPeriods(timing: TimingAnalysis, from: number, to: number) {
-  const periods = timing.inactive;
-  const clipped = periods
-    .map(period => ({ ...period, from: Math.max(period.from, from), to: Math.min(period.to, to + 1) }))
-    .filter(period => period.to > period.from)
-    .sort((a, b) => a.from - b.from || a.to - b.to);
-  return { periods: clipped, total: clipped.length };
+function overlaps(interval: ActivityInterval | InactiveCandidate, from: number, to: number) {
+  return Math.min(interval.to, to + 1) > Math.max(interval.from, from);
 }
 
-function leadWorkMetrics(events: MeasureEvent[], from: number, to: number, inactivityMinutes: number) {
+function durationMetricsWithPeriods(timing: TimingAnalysis, from: number, to: number) {
+  const periods = timing.inactive
+    .map(period => ({ ...period, from: Math.max(period.from, from), to: Math.min(period.to, to + 1) }))
+    .filter(period => period.to > period.from);
+  return { periods, total: periods.length };
+}
+
+function leadWorkMetrics(events: MeasureEvent[], from: number, to: number, cutoff: number, timing: TimingAnalysis) {
+  const ordered = events
+    .filter(event => isOwnRealActivity(event) && event.at >= cutoff && event.at <= to)
+    .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
   const samples: number[] = [];
-  const sessions = new Map<string, MeasureEvent[]>();
-  for (const event of events.filter(item => item.at <= to && item.at >= from - SESSION_TTL_MS && isTrackedTimingEvent(item) && item.sessionKey)) {
-    const key = itemSessionKey(event);
-    const group = sessions.get(key) ?? [];
-    group.push(event);
-    sessions.set(key, group);
-  }
-  for (const group of Array.from(sessions.values())) {
-    const ordered = group.sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
-    const timing = buildTiming(ordered, inactivityMinutes, to);
-    let opened: { id: number; at: number; statusChanged: boolean } | null = null;
-    for (const event of ordered) {
-      if (event.type === "logout" || event.type === "login") {
-        opened = null;
-        continue;
-      }
-      if (event.type === "lead_open" && event.leadId != null) {
-        if (opened && opened.id === event.leadId) continue;
-        if (opened && opened.statusChanged && event.at >= from && event.at - opened.at <= SESSION_TTL_MS) {
-          const start = opened.at;
-          const end = event.at;
-          const ms = timing.active.reduce((sum, interval) => sum + Math.max(0, Math.min(interval.to, end) - Math.max(interval.from, start)), 0);
-          samples.push(ms / 60_000);
+  type LeadState = { id: number; at: number; meaningful: boolean };
+  let opened: LeadState | null = null;
+
+  for (const event of ordered) {
+    if (event.type === "lead_open" && event.leadId != null) {
+      const previous = opened as LeadState | null;
+      if (previous !== null && (previous as LeadState).id !== event.leadId) {
+        if (previous.meaningful && event.at > previous.at && event.at >= from) {
+          const minutes = timing.active.reduce((sum, interval) => sum + Math.max(0, Math.min(interval.to, event.at) - Math.max(interval.from, previous.at)), 0) / 60_000;
+          samples.push(minutes);
         }
-        opened = { id: event.leadId, at: event.at, statusChanged: false };
-      } else if (event.type === "status_change" && opened && event.leadId === opened.id) opened.statusChanged = true;
+        opened = { id: event.leadId, at: event.at, meaningful: false };
+      } else if (!previous) {
+        opened = { id: event.leadId, at: event.at, meaningful: false };
+      }
+      continue;
+    }
+
+    if (!opened || event.leadId !== opened.id) continue;
+    if (event.type === "status_change" || event.type === "email_sent" || event.type === "contact" || event.type === "phone_contact" || (event.type === "other_action" && event.leadId === opened.id)) {
+      opened.meaningful = true;
     }
   }
-  return { count: samples.length, average: samples.length ? roundMinutes(samples.reduce((sum, value) => sum + value, 0) / samples.length) : null };
-}
 
-function itemSessionKey(event: MeasureEvent) {
-  return event.sessionKey!;
+  return {
+    count: samples.length,
+    average: samples.length ? roundMinutes(samples.reduce((sum, value) => sum + value, 0) / samples.length) : null,
+  };
 }
 
 function dateKeyFromParts(parts: { year: number; month: number; day: number }) {
@@ -400,8 +271,8 @@ function makePoints(from: number, to: number, bucket: MeasureBucket) {
   return points;
 }
 
-function addLeadTiming(metrics: MeasureMetrics, events: MeasureEvent[], from: number, to: number, inactivityMinutes: number) {
-  const sample = leadWorkMetrics(events, from, to, inactivityMinutes);
+function addLeadTiming(metrics: MeasureMetrics, events: MeasureEvent[], from: number, to: number, cutoff: number, timing: TimingAnalysis) {
+  const sample = leadWorkMetrics(events, from, to, cutoff, timing);
   metrics.leadWorkSamples = sample.count;
   metrics.averageLeadMinutes = sample.average;
 }
@@ -415,43 +286,56 @@ export function calculateMeasureReport(input: {
   updatedThrough: number;
   data: MeasureReportData;
 }) {
-  const from = input.from;
+  const cutoff = Number.isFinite(input.data.reportingSince) ? input.data.reportingSince! : input.from;
+  const from = Math.max(input.from, cutoff);
   const to = Math.min(input.to, input.updatedThrough);
   const uniqueEvents = new Map<string, MeasureEvent>();
   for (const event of input.data.events) uniqueEvents.set(event.id, event);
   const allEvents = Array.from(uniqueEvents.values());
-  const events = allEvents.filter(event => eventInRange(event, from, to));
-  // Counts use the requested range. Timing starts only at the implementation
-  // cutoff; retained sessions may seed that boundary without backdating work.
-  const timingEvents = timingEventsFromCutoff(allEvents, input.data.trackingSince, to);
-  const orders = input.data.orders.filter(order => order.at >= from && order.at <= to);
+  const events = from <= to ? allEvents.filter(event => eventInRange(event, from, to)) : [];
   const ownEvents = events.filter(event => event.impersonatedById == null);
-  const ownTimingEvents = timingEvents.filter(event => event.impersonatedById == null);
+  const orders = input.data.orders.filter(order => order.at >= from && order.at <= to);
   const totals = eventMetrics(ownEvents, orders, from, to);
-  const timing = buildTiming(ownTimingEvents, input.inactivityMinutes, to);
+  // Retain the full actual-activity timeline for a lead completed in this range;
+  // calendar totals clip separately, so earlier work and carried idle are not lost.
+  const timing = from <= to ? buildTiming(allEvents, input.inactivityMinutes, cutoff, to, cutoff) : { active: [], inactive: [], hasActivity: false };
   const duration = durationMetrics(timing, from, to);
   totals.activeMinutes = duration.activeMinutes;
   totals.inactiveMinutes = duration.inactiveMinutes;
-  addLeadTiming(totals, ownTimingEvents.filter(isTrackedTimingEvent), from, to, input.inactivityMinutes);
+  addLeadTiming(totals, allEvents, from, to, cutoff, timing);
 
-  const points: MeasurePoint[] = makePoints(from, to, input.bucket).map(point => {
-    const metrics = eventMetrics(ownEvents, orders, point.from, point.to);
-    const pointDuration = durationMetrics(timing, point.from, point.to);
-    metrics.activeMinutes = pointDuration.activeMinutes;
-    metrics.inactiveMinutes = pointDuration.inactiveMinutes;
-    addLeadTiming(metrics, ownTimingEvents.filter(isTrackedTimingEvent), point.from, point.to, input.inactivityMinutes);
-    return { key: point.label, label: point.label, from: point.from, to: point.to, metrics };
-  });
-
+  const pointDefinitions = from <= to ? makePoints(from, to, input.bucket) : [];
   const impersonated = events.filter(event => event.impersonatedById != null);
+  type PointWithActivity = MeasurePoint & { hasActivity: boolean };
+  const points: PointWithActivity[] = pointDefinitions
+    .map(point => {
+      const pointEvents = ownEvents.filter(event => eventInRange(event, point.from, point.to));
+      const pointOrders = orders.filter(order => order.at >= point.from && order.at <= point.to);
+      const metrics = eventMetrics(pointEvents, pointOrders, point.from, point.to);
+      const pointDuration = durationMetrics(timing, point.from, point.to);
+      metrics.activeMinutes = pointDuration.activeMinutes;
+      metrics.inactiveMinutes = pointDuration.inactiveMinutes;
+      addLeadTiming(metrics, allEvents, point.from, point.to, cutoff, timing);
+      const hasActivity = pointEvents.some(isRealActivity);
+      const hasTiming = timing.active.some(interval => overlaps(interval, point.from, point.to)) || timing.inactive.some(interval => overlaps(interval, point.from, point.to));
+      const hasData = hasActivity || pointOrders.length > 0 || hasTiming;
+      return hasData ? { key: point.label, label: point.label, from: point.from, to: point.to, metrics, hasActivity } : null;
+    })
+    .filter((point): point is PointWithActivity => point !== null)
+    .sort((a, b) => b.from - a.from);
+
   const inactiveCandidates = durationMetricsWithPeriods(timing, from, to);
-  const inactivePeriods = inactiveCandidates.periods.slice(0, MAX_INACTIVE_PERIODS).map(period => ({
-    from: period.from,
-    to: period.to,
-    minutes: roundMinutes((period.to - period.from) / 60_000),
-    endedByActivity: period.endedByActivity,
-  }));
-  const timingBasis: "tracked_sessions" | "not_available" = timing.trackedUsable ? "tracked_sessions" : "not_available";
+  const inactivePeriods = [...inactiveCandidates.periods]
+    .sort((a, b) => b.from - a.from)
+    .slice(0, MAX_INACTIVE_PERIODS)
+    .map(period => ({
+      from: period.from,
+      to: period.to,
+      minutes: roundMinutes((period.to - period.from) / 60_000),
+      endedByActivity: period.endedByActivity,
+    }));
+  const timingBasis = timing.hasActivity ? "activity_gaps" as const : "not_available" as const;
+
   return {
     staff: input.staff,
     from,
@@ -474,16 +358,16 @@ export function calculateMeasureReport(input: {
     trackingSince: input.data.trackingSince,
     timingAvailable: timingBasis !== "not_available",
     timingBasis,
+    reportingSince: cutoff,
     historicalEvents: events.filter(event => event.source === "audit" || event.source === "mail").length,
     limitations: [
-      "Timing is available only from the implemented tracking start. Historical audit and mail events remain visible in counts but do not create retrospective active or idle time without proven session evidence.",
-      "A login or session boundary is not work. Login-only periods contribute idle only after the inactivity threshold, through the snapshot, logout, or real session expiry.",
+      "Timing is based only on observed real activity, not login, authentication sessions, session keys, logout, expiry, or impersonation.",
+      "Each real action is active until the next real action or the inactivity threshold; a longer gap is idle until the next action or report snapshot.",
       "Credited value excludes cancelled and refunded orders; credited order counts include them.",
-      "Legacy sent emails without impersonation provenance cannot be reliably separated from impersonated sends.",
+      "Impersonated activity is excluded from personal counts and time and is shown separately.",
       "Interactions are sampled (at most once per 10 seconds in the browser); passive polling does not count as activity.",
-      "Estimated time is evidence-based and is not attendance. Tracked active windows are bounded by the inactivity threshold and explicit session boundaries.",
-      "Average lead work requires a status change followed by opening a different lead in the same session. Idle time is excluded; unfinished lead work is not a completed sample.",
-      "Changing the global threshold recalculates tracked timing on Refresh; it does not alter the raw activity logs.",
+      "Average lead work requires meaningful work on a lead followed by opening a different lead. Reopening the same lead does not reset it; idle time is excluded and unfinished work is not sampled.",
+      "The reporting baseline is fixed by the report data when supplied; legacy trackingSince does not control measurement timing.",
     ],
   };
 }

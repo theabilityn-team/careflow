@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import type { MeasureReportInput } from "../../shared/measure";
+import { MEASURE_REPORTING_START_DATE, MEASURE_REPORTING_START_MS, type MeasureReportInput } from "../../shared/measure";
 import type { AuthenticatedPrincipal } from "../impersonation";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getUserAccess } from "../permissions";
@@ -72,6 +72,8 @@ export const measureRouter = router({
       try {
         await assertMeasureViewer(ctx.user);
         const range = validateMeasureRange(input.fromDate, input.toDate);
+        if (range.to < MEASURE_REPORTING_START_MS) throw new RangeError(`Measure reporting starts on ${MEASURE_REPORTING_START_DATE} Eastern.`);
+        range.from = Math.max(range.from, MEASURE_REPORTING_START_MS);
         const staff = await measureDb.getMeasureStaff(input.staffId);
         if (!staff) throw new TRPCError({ code: "NOT_FOUND", message: "Staff member not found." });
         const settings = await measureDb.getMeasureSettings();

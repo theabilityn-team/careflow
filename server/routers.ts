@@ -17,7 +17,6 @@ import { staffRouter } from "./routers/staff";
 import { impersonationRouter } from "./routers/impersonation";
 import { superAdminPasswordSchema } from "./passwordSecurity";
 import { measureRouter } from "./routers/measure";
-import { recordLogoutActivity } from "./measureTracking";
 
 export const appRouter = router({
   system: systemRouter,
@@ -43,7 +42,6 @@ export const appRouter = router({
         return { success: true } as const;
       }),
     logout: publicProcedure.mutation(async ({ ctx }) => {
-      await recordLogoutActivity(ctx);
       await destroyLoginSession(ctx.req, ctx.res);
       return { success: true } as const;
     }),

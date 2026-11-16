@@ -74,3 +74,29 @@ describe("Measure screen access and transport safeguards", () => {
     expect(reportOptions).toMatchObject({ refetchInterval: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
   });
 });
+
+describe("Simplified activity-based Measure", () => {
+  it("defaults to the fixed reporting baseline and shows only activity measures", () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-16T18:00:00Z"));
+    try {
+      Object.assign(mocks.access, { role: "super_admin", isLeader: true });
+      mocks.staffQuery.mockReturnValue({ data: [{ id: 7, name: "QA Staff", email: "qa@example.invalid", isActive: true }], isLoading: false, isFetching: false, error: null, refetch: vi.fn() } as any);
+      const html = renderToStaticMarkup(React.createElement(Measure));
+      expect(html).toContain('min="2026-11-15"');
+      expect(mocks.reportQuery).toHaveBeenCalledWith(expect.objectContaining({ fromDate: "2026-11-15", toDate: "2026-11-16" }), expect.anything());
+      expect(html).toContain("Login is not activity");
+      expect(html).not.toContain("Global inactivity threshold");
+    } finally { vi.useRealTimers(); }
+  });
+  it("renders no-activity zero durations without login, credit or impersonation panels", () => {
+    Object.assign(mocks.access, { role: "super_admin", isLeader: true });
+    mocks.staffQuery.mockReturnValue({ data: [{ id: 7, name: "QA Staff", email: "qa@example.invalid", isActive: true }], isLoading: false, isFetching: false, error: null, refetch: vi.fn() } as any);
+    const totals = { leadOpens: 0, leadWorkSamples: 0, statusChanges: 0, contactsLogged: 0, emailsSent: 0, ordersEntered: 0, activeMinutes: 0, inactiveMinutes: 0, averageLeadMinutes: null };
+    mocks.reportQuery.mockReturnValue({ data: { totals, points: [], inactivePeriods: [], inactivePeriodsTotal: 0, updatedThrough: Date.now(), inactivityMinutes: 40 }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() } as any);
+    const html = renderToStaticMarkup(React.createElement(Measure));
+    for (const label of ["No activity", "Completed lead work", "Successful emails", "Orders entered", "Average lead work"]) expect(html).toContain(label);
+    for (const label of ["First login", "First activity", "Last activity", "Orders credited", "Impersonation activity", "How to read Measure"]) expect(html).not.toContain(label);
+    expect(html).not.toContain("<table");
+    expect(html.match(/>0 min</g)).toHaveLength(2);
+  });
+});
