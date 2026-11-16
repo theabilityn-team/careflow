@@ -432,3 +432,11 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Show bounded estimated active/idle intervals, status-required completed lead-work samples, historical limitations and separate impersonation activity; keep credited currencies separate.
 - [x] Pass 368 tests, TypeScript, production build, 320/360/390/1280px interactive fake-transport UI and targeted no-send real-DB proof; remove all disposable records and artifacts.
 - [ ] Publish the Measure checkpoint to enable new instrumentation on the live application. Existing historical counts remain available; old unlogged navigation/session timing cannot be reconstructed.
+
+## Completed correction: Measure active/idle time — 2026-11-16
+- [x] Recover the actual original login boundary for a retained authenticated staff session when the first post-release activity is recorded; keep logout, expiry and impersonation separation.
+- [x] Record login-only idle after the configured threshold without counting a login as active work; do not let passive polling reset activity.
+- [x] Apply the original implementation trackingSince as the earliest timing boundary. Exclude older active, idle and lead-work estimates; preserve all existing business/audit logs and historical counts. No retrospective gap reconstruction or source deletion.
+- [x] Show the measurement start date, Not available for missing/pre-start timing and <1 min for genuinely short activity; hide unsupported time-chart values rather than plotting historical zeroes.
+- [x] Validate 384 tests/71 files, TypeScript, production build, real HTTP capture and logout, 40 active/5 idle at 45 minutes, actual 320/360/390/1280px Refresh/unavailable UI and real-data cutoff proof. Clean the exact disposable session/account and all temporary QA artifacts.
+- [ ] Publish this correction checkpoint; staff with an old cached app should reload the app after publication.

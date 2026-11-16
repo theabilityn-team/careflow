@@ -4,7 +4,8 @@ export type MeasureEventType = "login" | "logout" | "navigation" | "interaction"
 export type MeasureEvent = {
   id: string; at: number; type: MeasureEventType; leadId?: number | null;
   sessionKey?: string | null; impersonatedById?: number | null;
-  source: "tracking" | "audit" | "mail"; amountCents?: number; currency?: string;
+  source: "tracking" | "audit" | "mail" | "session"; amountCents?: number; currency?: string;
+  sessionStartedAt?: number; sessionExpiresAt?: number;
 };
 export type MeasureMetrics = {
   logins: number; navigation: number; interactions: number; leadOpens: number; uniqueLeadsOpened: number;
@@ -22,6 +23,7 @@ export type MeasureReport = {
   impersonation: { events: number; leadOpens: number; statusChanges: number; emailsSent: number; ordersEntered: number };
   inactivePeriods: MeasureInactivePeriod[]; inactivePeriodsTotal: number;
   trackingSince: number | null; timingAvailable: boolean; historicalEvents: number;
+  timingBasis: "tracked_sessions" | "not_available";
   limitations: string[];
 };
 export type MeasureSettings = { inactivityMinutes: number; trackingSince: number | null };

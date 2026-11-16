@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import {
   auditEvents,
+  authSessions,
   localCredentials,
   measureSettings,
   outboundEmails,
@@ -172,11 +173,13 @@ async function readBounded<T>(query: Promise<T[]>, source: string) {
 export async function getMeasureReportData(input: { staffId: number; from: number; to: number; updatedThrough: number }): Promise<MeasureReportData> {
   const db = requireDatabase(await getDb());
   const timingFrom = Math.max(0, input.from - 12 * 60 * 60 * 1000);
-  const [trackingRows, auditRows, emailRows, orderRows, settings] = await Promise.all([
+  const [trackingRows, auditRows, emailRows, orderRows, sessionRows, settings] = await Promise.all([
     readBounded(db.select().from(staffActivityEvents).where(and(eq(staffActivityEvents.userId, input.staffId), gte(staffActivityEvents.occurredAt, timingFrom), lte(staffActivityEvents.occurredAt, input.to))).orderBy(asc(staffActivityEvents.occurredAt), asc(staffActivityEvents.id)).limit(MEASURE_QUERY_LIMIT), "activity events"),
     readBounded(db.select({ id: auditEvents.id, actorId: auditEvents.actorId, impersonatedById: auditEvents.impersonatedById, action: auditEvents.action, source: auditEvents.source, detail: auditEvents.detail, changes: auditEvents.changes, leadId: auditEvents.leadId, occurredAt: auditEvents.occurredAt }).from(auditEvents).where(and(eq(auditEvents.actorId, input.staffId), gte(auditEvents.occurredAt, timingFrom), lte(auditEvents.occurredAt, input.to))).orderBy(asc(auditEvents.occurredAt), asc(auditEvents.id)).limit(MEASURE_QUERY_LIMIT), "audit events"),
     readBounded(db.select({ id: outboundEmails.id, senderUserId: outboundEmails.senderUserId, impersonatedById: outboundEmails.impersonatedById, status: outboundEmails.status, leadId: outboundEmails.leadId, sentAt: outboundEmails.sentAt }).from(outboundEmails).where(and(eq(outboundEmails.senderUserId, input.staffId), eq(outboundEmails.status, "sent"), gte(outboundEmails.sentAt, input.from), lte(outboundEmails.sentAt, input.to))).orderBy(asc(outboundEmails.sentAt), asc(outboundEmails.id)).limit(MEASURE_QUERY_LIMIT), "outbound emails"),
     readBounded(db.select({ id: salesOrders.id, ownerUserId: salesOrders.ownerUserId, quantity: salesOrders.quantity, unitPriceCents: salesOrders.unitPriceCents, currency: salesOrders.currency, status: salesOrders.status, orderedAt: salesOrders.orderedAt }).from(salesOrders).where(and(eq(salesOrders.ownerUserId, input.staffId), gte(salesOrders.orderedAt, input.from), lte(salesOrders.orderedAt, input.to))).orderBy(asc(salesOrders.orderedAt), asc(salesOrders.id)).limit(MEASURE_QUERY_LIMIT), "credited orders"),
+    // Read only non-secret retained auth metadata. Deleted sessions are not reconstructed.
+    readBounded(db.select({ id: authSessions.id, startedAt: authSessions.createdAt, expiresAt: authSessions.expiresAt }).from(authSessions).where(and(eq(authSessions.userId, input.staffId), gte(authSessions.expiresAt, input.from), sql`${authSessions.createdAt} <= ${new Date(input.to)}`)).orderBy(asc(authSessions.createdAt), asc(authSessions.id)).limit(MEASURE_QUERY_LIMIT), "session boundaries"),
     getMeasureSettings(),
   ]);
   const events: MeasureEvent[] = [];
@@ -196,6 +199,22 @@ export async function getMeasureReportData(input: { staffId: number; from: numbe
     const candidates = trackingRows.filter(row => row.kind === "other_action" && row.impersonatedById === (event.impersonatedById ?? null) && row.occurredAt >= event.at && row.occurredAt - event.at <= 5_000);
     const sessions = Array.from(new Set(candidates.map(row => row.sessionKey)));
     if (sessions.length === 1) event.sessionKey = sessions[0];
+  }
+  for (const session of sessionRows) {
+    const startedAt = new Date(session.startedAt).getTime();
+    if (!Number.isFinite(startedAt) || session.expiresAt <= startedAt) continue;
+    // New captures persist the exact auth start. Legacy login capture could be delayed
+    // by a few seconds; only a unique evidenced match can share its timing key.
+    const loginCandidates = trackingRows.filter(row => row.kind === "login" && row.impersonatedById == null && Math.abs(row.occurredAt - startedAt) <= 30_000);
+    const keys = Array.from(new Set(loginCandidates.map(row => row.sessionKey)));
+    if (keys.length === 1) {
+      for (const event of events) if (event.sessionKey === keys[0]) {
+        event.sessionStartedAt = startedAt;
+        event.sessionExpiresAt = session.expiresAt;
+      }
+    } else if (keys.length === 0) {
+      events.push({ id: `session:${session.id}`, type: "login", at: startedAt, source: "session", sessionKey: `retained-session:${session.id}`, sessionStartedAt: startedAt, sessionExpiresAt: session.expiresAt });
+    }
   }
   const unique = new Map<string, MeasureEvent>();
   for (const event of events) unique.set(event.id, event);
