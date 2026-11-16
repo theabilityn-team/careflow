@@ -17,3 +17,33 @@ describe("Measure API roles and error boundaries",()=>{
  it("allows ordinary staff recording via the separate validated tracking helper, never viewer access",async()=>{state.access.isLeader=false;await caller().record({eventId:"2903c4de-fcf6-4f38-a92d-48c75d680098",kind:"navigation",page:"dashboard"});expect(state.record).toHaveBeenCalledOnce();await expect(caller().settings()).rejects.toMatchObject({code:"FORBIDDEN"});});
  it("rejects forged event fields and invalid setting thresholds",async()=>{await expect(caller().record({eventId:"2903c4de-fcf6-4f38-a92d-48c75d680098",kind:"navigation",page:"dashboard",userId:55} as any)).rejects.toMatchObject({code:"BAD_REQUEST"});for(const n of [0,241,1.5])await expect(caller("admin").saveSettings({inactivityMinutes:n})).rejects.toMatchObject({code:"BAD_REQUEST"});expect(state.record).not.toHaveBeenCalled();expect(state.save).not.toHaveBeenCalled();});
 });
+
+describe("Measure server period selection", () => {
+ it("resolves Day to current Eastern today regardless of supplied old dates", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-16T18:30:00Z"));
+  try {
+   const r = await caller("admin").report({ ...input, period: "day", fromDate: "2026-11-15", toDate: "2026-11-30" });
+   expect(r.from).toBe(Date.parse("2026-11-16T05:00:00Z"));
+   expect(r.to).toBe(Date.parse("2026-11-16T18:30:00Z"));
+   expect(r.bucket).toBe("hour"); expect(r.chartPoints).toHaveLength(24);
+   expect(r.chartPoints.filter(p => p.observed).length).toBe(14);
+  } finally { vi.useRealTimers(); }
+ });
+ it("uses current calendar week/month daily slots without counting future time", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-16T18:30:00Z"));
+  try {
+   const week = await caller("admin").report({ ...input, period: "week" });
+   expect(week.bucket).toBe("day"); expect(week.chartPoints).toHaveLength(7);
+   expect(week.chartPoints.filter(p => p.observed)).toHaveLength(1);
+   const month = await caller("admin").report({ ...input, period: "month" });
+   expect(month.from).toBe(Date.parse("2026-11-15T05:00:00Z"));
+   expect(month.chartPoints).toHaveLength(16);
+   expect(month.chartPoints.filter(p => p.observed)).toHaveLength(2);
+   expect(month.totals.activeMinutes).toBe(0); expect(month.totals.inactiveMinutes).toBe(0);
+  } finally { vi.useRealTimers(); }
+ });
+ it("rejects multi-day hourly charts before reading staff data", async () => {
+  await expect(caller("admin").report({ ...input, period: "custom", bucket: "hour" })).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Hourly Measure charts require a single Eastern calendar day." });
+  expect(state.target).not.toHaveBeenCalled(); expect(state.data).not.toHaveBeenCalled();
+ });
+});

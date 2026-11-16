@@ -76,14 +76,16 @@ describe("Measure screen access and transport safeguards", () => {
 });
 
 describe("Simplified activity-based Measure", () => {
-  it("defaults to the fixed reporting baseline and shows only activity measures", () => {
+  it("defaults to Today with hourly charts and no manual preset dates", () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-16T18:00:00Z"));
     try {
       Object.assign(mocks.access, { role: "super_admin", isLeader: true });
       mocks.staffQuery.mockReturnValue({ data: [{ id: 7, name: "QA Staff", email: "qa@example.invalid", isActive: true }], isLoading: false, isFetching: false, error: null, refetch: vi.fn() } as any);
       const html = renderToStaticMarkup(React.createElement(Measure));
-      expect(html).toContain('min="2026-11-15"');
-      expect(mocks.reportQuery).toHaveBeenCalledWith(expect.objectContaining({ fromDate: "2026-11-15", toDate: "2026-11-16" }), expect.anything());
+      expect(html).toContain("Today · Nov 16, 2026");
+      expect(html).not.toContain('id="measure-from"');
+      expect(html).toContain("Custom");
+      expect(mocks.reportQuery).toHaveBeenCalledWith(expect.objectContaining({ fromDate: "2026-11-16", toDate: "2026-11-16", bucket: "hour", period: "day" }), expect.anything());
       expect(html).toContain("Login is not activity");
       expect(html).not.toContain("Global inactivity threshold");
     } finally { vi.useRealTimers(); }
@@ -97,6 +99,9 @@ describe("Simplified activity-based Measure", () => {
     for (const label of ["No activity", "Completed lead work", "Successful emails", "Orders entered", "Average lead work"]) expect(html).toContain(label);
     for (const label of ["First login", "First activity", "Last activity", "Orders credited", "Impersonation activity", "How to read Measure"]) expect(html).not.toContain(label);
     expect(html).not.toContain("<table");
+    expect(html).toContain("Measure line charts");
+    expect(html).toContain("Active and idle minutes by hour");
+    expect(html).toContain("Lead opens, status changes, contacts, emails and orders by hour");
     expect(html.match(/>0 min</g)).toHaveLength(2);
   });
 });

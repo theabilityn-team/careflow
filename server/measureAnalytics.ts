@@ -240,6 +240,10 @@ function dateKeyFromParts(parts: { year: number; month: number; day: number }) {
 }
 
 function bucketStart(value: number, bucket: MeasureBucket) {
+  if (bucket === "hour") {
+    const dayStart = easternStartOfDay(value);
+    return dayStart + Math.floor((value - dayStart) / 3_600_000) * 3_600_000;
+  }
   const parts = easternParts(value);
   if (bucket === "day") return easternStartOfDay(dateKeyFromParts(parts));
   if (bucket === "month") return easternStartOfDay(`${parts.year}-${String(parts.month).padStart(2, "0")}-01`);
@@ -250,6 +254,7 @@ function bucketStart(value: number, bucket: MeasureBucket) {
 }
 
 function nextBucketStart(value: number, bucket: MeasureBucket) {
+  if (bucket === "hour") return value + 3_600_000;
   if (bucket === "day") return addEasternDays(value, 1);
   if (bucket === "week") return addEasternDays(value, 7);
   const parts = easternParts(value);
@@ -258,17 +263,65 @@ function nextBucketStart(value: number, bucket: MeasureBucket) {
     : easternStartOfDay(`${parts.year}-${String(parts.month + 1).padStart(2, "0")}-01`);
 }
 
-function makePoints(from: number, to: number, bucket: MeasureBucket) {
-  const points: Array<{ from: number; to: number; label: string }> = [];
+const hourlyClockFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "America/New_York",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+const hourlyZoneFormatter = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", timeZoneName: "short" });
+
+function pointLabel(value: number, bucket: MeasureBucket) {
+  if (bucket !== "hour") return easternDayKey(value);
+  const clock = hourlyClockFormatter.format(new Date(value));
+  const zone = hourlyZoneFormatter.formatToParts(new Date(value)).find(part => part.type === "timeZoneName")?.value ?? "ET";
+  return `${clock} ${zone}`;
+}
+
+type PointDefinition = { key: string; label: string; from: number; to: number; bucketStart: number };
+
+function makePoints(from: number, to: number, bucket: MeasureBucket, fullBucketEnd = false): PointDefinition[] {
+  const points: PointDefinition[] = [];
+  if (from > to) return points;
+  if (bucket === "hour") {
+    let dayCursor = easternStartOfDay(from);
+    while (dayCursor <= to) {
+      const dayEnd = addEasternDays(dayCursor, 1);
+      let cursor = dayCursor;
+      while (cursor < dayEnd && cursor <= to) {
+        const next = Math.min(cursor + 3_600_000, dayEnd);
+        const pointFrom = Math.max(from, cursor);
+        const pointTo = fullBucketEnd ? next - 1 : Math.min(to, next - 1);
+        if (pointTo >= from && pointFrom <= to) {
+          points.push({ key: String(cursor), from: pointFrom, to: pointTo, label: pointLabel(cursor, bucket), bucketStart: cursor });
+        }
+        cursor = next;
+      }
+      dayCursor = dayEnd;
+    }
+    return points;
+  }
   let cursor = bucketStart(from, bucket);
   while (cursor <= to) {
     const next = nextBucketStart(cursor, bucket);
     const pointFrom = Math.max(from, cursor);
-    const pointTo = Math.min(to, next - 1);
-    if (pointTo >= pointFrom) points.push({ from: pointFrom, to: pointTo, label: easternDayKey(cursor) });
+    // Keep the bucket's full end on the chart axis. Measurement is clipped
+    // separately to the observed snapshot, which is important for today and
+    // for a final custom-range bucket that is only partially elapsed.
+    const pointTo = fullBucketEnd ? next - 1 : Math.min(to, next - 1);
+    if (pointTo >= from && pointFrom <= to) {
+      points.push({ key: String(cursor), from: pointFrom, to: pointTo, label: pointLabel(cursor, bucket), bucketStart: cursor });
+    }
     cursor = next;
   }
   return points;
+}
+
+function hasTimingForPoint(timing: TimingAnalysis, point: PointDefinition, measurementTo: number) {
+  if (measurementTo < point.from) return false;
+  const pointTo = Math.min(point.to, measurementTo);
+  return timing.active.some(interval => overlaps(interval, point.from, pointTo))
+    || timing.inactive.some(interval => overlaps(interval, point.from, pointTo));
 }
 
 function addLeadTiming(metrics: MeasureMetrics, events: MeasureEvent[], from: number, to: number, cutoff: number, timing: TimingAnalysis) {
@@ -284,11 +337,13 @@ export function calculateMeasureReport(input: {
   bucket: MeasureBucket;
   inactivityMinutes: number;
   updatedThrough: number;
+  chartTo?: number;
   data: MeasureReportData;
 }) {
   const cutoff = Number.isFinite(input.data.reportingSince) ? input.data.reportingSince! : input.from;
   const from = Math.max(input.from, cutoff);
   const to = Math.min(input.to, input.updatedThrough);
+  const chartThrough = input.chartTo ?? input.to;
   const uniqueEvents = new Map<string, MeasureEvent>();
   for (const event of input.data.events) uniqueEvents.set(event.id, event);
   const allEvents = Array.from(uniqueEvents.values());
@@ -307,22 +362,38 @@ export function calculateMeasureReport(input: {
   const pointDefinitions = from <= to ? makePoints(from, to, input.bucket) : [];
   const impersonated = events.filter(event => event.impersonatedById != null);
   type PointWithActivity = MeasurePoint & { hasActivity: boolean };
+  const evaluatePoint = (point: PointDefinition, observed?: boolean): PointWithActivity => {
+    const measurementTo = observed ? Math.min(point.to, to) : point.from - 1;
+    const pointEvents = measurementTo >= point.from
+      ? ownEvents.filter(event => eventInRange(event, point.from, measurementTo))
+      : [];
+    const pointOrders = measurementTo >= point.from
+      ? orders.filter(order => order.at >= point.from && order.at <= measurementTo)
+      : [];
+    const metrics = measurementTo >= point.from
+      ? eventMetrics(pointEvents, pointOrders, point.from, measurementTo)
+      : emptyMetrics();
+    const pointDuration = measurementTo >= point.from ? durationMetrics(timing, point.from, measurementTo) : emptyMetrics();
+    metrics.activeMinutes = pointDuration.activeMinutes;
+    metrics.inactiveMinutes = pointDuration.inactiveMinutes;
+    if (measurementTo >= point.from) addLeadTiming(metrics, allEvents, point.from, measurementTo, cutoff, timing);
+    const hasActivity = pointEvents.some(isRealActivity);
+    return { key: point.key, label: point.label, from: point.from, to: point.to, metrics, hasActivity, ...(observed === undefined ? {} : { observed }) } as PointWithActivity;
+  };
+
   const points: PointWithActivity[] = pointDefinitions
     .map(point => {
-      const pointEvents = ownEvents.filter(event => eventInRange(event, point.from, point.to));
-      const pointOrders = orders.filter(order => order.at >= point.from && order.at <= point.to);
-      const metrics = eventMetrics(pointEvents, pointOrders, point.from, point.to);
-      const pointDuration = durationMetrics(timing, point.from, point.to);
-      metrics.activeMinutes = pointDuration.activeMinutes;
-      metrics.inactiveMinutes = pointDuration.inactiveMinutes;
-      addLeadTiming(metrics, allEvents, point.from, point.to, cutoff, timing);
-      const hasActivity = pointEvents.some(isRealActivity);
-      const hasTiming = timing.active.some(interval => overlaps(interval, point.from, point.to)) || timing.inactive.some(interval => overlaps(interval, point.from, point.to));
-      const hasData = hasActivity || pointOrders.length > 0 || hasTiming;
-      return hasData ? { key: point.label, label: point.label, from: point.from, to: point.to, metrics, hasActivity } : null;
+      const evaluated = evaluatePoint(point, true);
+      const pointEvents = ownEvents.filter(event => eventInRange(event, point.from, Math.min(point.to, to)));
+      const pointOrders = orders.filter(order => order.at >= point.from && order.at <= Math.min(point.to, to));
+      const hasData = pointEvents.some(isRealActivity) || pointOrders.length > 0 || hasTimingForPoint(timing, point, to);
+      return hasData ? evaluated : null;
     })
     .filter((point): point is PointWithActivity => point !== null)
     .sort((a, b) => b.from - a.from);
+
+  const chartDefinitions = makePoints(from, chartThrough, input.bucket, true);
+  const chartPoints = chartDefinitions.map(point => evaluatePoint(point, point.from <= to));
 
   const inactiveCandidates = durationMetricsWithPeriods(timing, from, to);
   const inactivePeriods = [...inactiveCandidates.periods]
@@ -346,6 +417,8 @@ export function calculateMeasureReport(input: {
     inactivityMinutes: input.inactivityMinutes,
     totals,
     points,
+    chartPoints,
+    chartThrough,
     impersonation: {
       events: impersonated.length,
       leadOpens: impersonated.filter(event => event.type === "lead_open").length,
@@ -380,5 +453,5 @@ export function validateMeasureRange(fromDate: string, toDate: string, now = Dat
   const calendarDays = Math.floor((Date.UTC(Number(toDate.slice(0, 4)), Number(toDate.slice(5, 7)) - 1, Number(toDate.slice(8, 10))) - Date.UTC(Number(fromDate.slice(0, 4)), Number(fromDate.slice(5, 7)) - 1, Number(fromDate.slice(8, 10)))) / 86_400_000) + 1;
   if (calendarDays > 366) throw new RangeError("Measure date range cannot exceed 366 days.");
   if (from > now) throw new RangeError("Measure date range cannot start in the future.");
-  return { from, to: Math.min(requestedTo, now), now };
+  return { from, to: Math.min(requestedTo, now), requestedTo, now };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculateMeasureReport, validateMeasureRange } from "./measureAnalytics";
 import type { MeasureEvent } from "../shared/measure";
+import { addEasternDays, parseEasternDateTimeInput } from "../shared/time";
 
 const staff = { id: 7, name: "Leader", email: "leader@example.invalid", isActive: true };
 const event = (id: string, at: number, type: MeasureEvent["type"], extra: Partial<MeasureEvent> = {}): MeasureEvent => ({
@@ -16,9 +17,10 @@ function report(
   events: MeasureEvent[],
   from: number,
   to: number,
-  bucket: "day" | "week" | "month" = "day",
+  bucket: "hour" | "day" | "week" | "month" = "day",
   reportingSince: number | undefined = from,
   orders: Array<{ id: number; at: number; ownerUserId: number; quantity: number; unitPriceCents: number; currency: string; status: string }> = [],
+  chartTo?: number,
 ) {
   return calculateMeasureReport({
     staff,
@@ -27,6 +29,7 @@ function report(
     bucket,
     inactivityMinutes: 40,
     updatedThrough: to,
+    chartTo,
     data: { events, orders, trackingSince: null, reportingSince },
   });
 }
@@ -216,5 +219,84 @@ describe("User examples and filtered days", () => {
     expect(result.inactivePeriods).toHaveLength(2);
     expect(result.inactivePeriods[0].from).toBeGreaterThan(result.inactivePeriods[1].from);
     expect(report([], start, start + 48 * 60 * minute).points).toEqual([]);
+  });
+});
+
+describe("complete chart axes", () => {
+  it("renders all day hours through a partial snapshot, with measured minutes only in observed slots", () => {
+    const start = parseDate("2026-11-16");
+    const snapshot = start + 3 * 60 * minute + 30 * minute;
+    const result = report([event("a", start + 2 * 60 * minute + 45 * minute, "interaction")], start, snapshot, "hour", start, [], start + 24 * 60 * minute - 1);
+
+    expect(result.chartPoints).toHaveLength(24);
+    expect(result.chartPoints.slice(0, 4).every(point => point.observed)).toBe(true);
+    expect(result.chartPoints.slice(4).every(point => point.observed === false)).toBe(true);
+    expect(result.chartPoints[2].metrics.interactions).toBe(1);
+    expect(result.chartPoints[3].to - result.chartPoints[3].from + 1).toBe(60 * minute);
+    expect(result.chartPoints[3].metrics.activeMinutes).toBe(25);
+    expect(result.chartPoints.slice(4).every(point => point.metrics.activeMinutes === 0 && point.metrics.interactions === 0)).toBe(true);
+  });
+
+  it("assigns exact hourly boundaries to the right slot and clips the current hour", () => {
+    const start = parseDate("2026-11-16");
+    const boundary = start + 3 * 60 * minute;
+    const result = report([
+      event("boundary", boundary, "interaction"),
+      event("current", boundary + 20 * minute, "navigation"),
+    ], start, boundary + 25 * minute, "hour", start, [], start + 24 * 60 * minute - 1);
+
+    expect(result.chartPoints[2].metrics.interactions).toBe(0);
+    expect(result.chartPoints[3].metrics.interactions).toBe(1);
+    expect(result.chartPoints[3].metrics.navigation).toBe(1);
+    expect(result.chartPoints[3].to - result.chartPoints[3].from + 1).toBe(60 * minute);
+    expect(result.totals.interactions).toBe(1);
+    expect(result.totals.navigation).toBe(1);
+  });
+
+  it("uses unique absolute hourly keys and distinct EDT/EST labels on DST transitions", () => {
+    const spring = parseDate("2026-03-08");
+    const springEnd = addEasternDays(spring, 1) - 1;
+    const springResult = report([], spring, springEnd, "hour", spring, [], springEnd);
+    expect(springResult.chartPoints).toHaveLength(23);
+    expect(new Set(springResult.chartPoints.map(point => point.key)).size).toBe(23);
+    expect(springResult.chartPoints.map(point => point.label)).not.toContain("02:00 EST");
+
+    const fall = parseEasternDateTimeInput("2026-11-01T00:00");
+    const fallEnd = addEasternDays(fall, 1) - 1;
+    const fallResult = report([], fall, fallEnd, "hour", fall, [], fallEnd);
+    expect(fallResult.chartPoints).toHaveLength(25);
+    expect(new Set(fallResult.chartPoints.map(point => point.key)).size).toBe(25);
+    expect(fallResult.chartPoints.filter(point => point.label.startsWith("01:00")).map(point => point.label)).toHaveLength(2);
+    expect(new Set(fallResult.chartPoints.filter(point => point.label.startsWith("01:00")).map(point => point.label)).size).toBe(2);
+  });
+
+  it("keeps empty observed history as zeroes without inventing future activity or idle", () => {
+    const start = parseDate("2026-11-16");
+    const snapshot = start + 3 * 60 * minute;
+    const result = report([], start, snapshot, "hour", start, [], start + 24 * 60 * minute - 1);
+
+    expect(result.timingAvailable).toBe(false);
+    expect(result.points).toEqual([]);
+    expect(result.chartPoints.slice(0, 3).every(point => point.observed === true && point.metrics.activeMinutes === 0 && point.metrics.inactiveMinutes === 0)).toBe(true);
+    expect(result.chartPoints.slice(4).every(point => point.observed === false && point.metrics.activeMinutes === 0 && point.metrics.inactiveMinutes === 0)).toBe(true);
+  });
+
+  it("reconciles full month/day chart axes and preserves zero days", () => {
+    const from = parseEasternDateTimeInput("2026-04-01T00:00");
+    const to = addEasternDays(parseEasternDateTimeInput("2026-05-01T00:00"), 0) - 1;
+    const events = [
+      event("day-1", from + 10 * minute, "interaction"),
+      event("day-30", parseEasternDateTimeInput("2026-04-30T00:10"), "navigation"),
+    ];
+    const dayResult = report(events, from, to, "day", from, [], to);
+    const monthResult = report(events, from, to, "month", from, [], to);
+
+    expect(dayResult.chartPoints).toHaveLength(30);
+    expect(dayResult.chartPoints.filter(point => point.metrics.interactions || point.metrics.navigation)).toHaveLength(2);
+    expect(monthResult.chartPoints).toHaveLength(1);
+    expect(monthResult.chartPoints[0].metrics.interactions).toBe(dayResult.totals.interactions);
+    expect(monthResult.chartPoints[0].metrics.navigation).toBe(dayResult.totals.navigation);
+    expect(dayResult.chartPoints.reduce((sum, point) => sum + point.metrics.interactions, 0)).toBe(dayResult.totals.interactions);
+    expect(dayResult.chartPoints.reduce((sum, point) => sum + point.metrics.navigation, 0)).toBe(dayResult.totals.navigation);
   });
 });

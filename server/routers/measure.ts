@@ -1,21 +1,21 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { MEASURE_REPORTING_START_DATE, MEASURE_REPORTING_START_MS, type MeasureReportInput } from "../../shared/measure";
+import { measurePeriodRange } from "../../shared/measurePeriods";
 import type { AuthenticatedPrincipal } from "../impersonation";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getUserAccess } from "../permissions";
 import * as measureDb from "../measureDb";
 import { calculateMeasureReport, validateMeasureRange } from "../measureAnalytics";
 import { clientActivityInput, recordClientActivity } from "../measureTracking";
-
-const bucket = z.enum(["day", "week", "month"]);
+const bucket = z.enum(["hour", "day", "week", "month"]);
 const reportInput = z.object({
   staffId: z.number().int().positive(),
   fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   bucket,
+  period: z.enum(["day", "week", "month", "custom"]).optional(),
 }) satisfies z.ZodType<MeasureReportInput>;
-
 async function assertMeasureViewer(user: AuthenticatedPrincipal, options: { write?: boolean } = {}) {
   const access = await getUserAccess(user);
   const localStaff = user.role === "user" && user.loginMethod === "local";
@@ -71,14 +71,16 @@ export const measureRouter = router({
     .query(async ({ ctx, input }) => {
       try {
         await assertMeasureViewer(ctx.user);
-        const range = validateMeasureRange(input.fromDate, input.toDate);
+        const resolved = input.period && input.period !== "custom" ? measurePeriodRange(input.period) : input;
+        if (resolved.bucket === "hour" && resolved.fromDate !== resolved.toDate) throw new RangeError("Hourly Measure charts require a single Eastern calendar day.");
+        const range = validateMeasureRange(resolved.fromDate, resolved.toDate);
         if (range.to < MEASURE_REPORTING_START_MS) throw new RangeError(`Measure reporting starts on ${MEASURE_REPORTING_START_DATE} Eastern.`);
         range.from = Math.max(range.from, MEASURE_REPORTING_START_MS);
         const staff = await measureDb.getMeasureStaff(input.staffId);
         if (!staff) throw new TRPCError({ code: "NOT_FOUND", message: "Staff member not found." });
         const settings = await measureDb.getMeasureSettings();
         const data = await measureDb.getMeasureReportData({ staffId: input.staffId, from: range.from, to: range.to, updatedThrough: range.now });
-        return calculateMeasureReport({ staff, from: range.from, to: range.to, bucket: input.bucket, inactivityMinutes: settings.inactivityMinutes, updatedThrough: range.now, data });
+        return calculateMeasureReport({ staff, from: range.from, to: range.to, chartTo: range.requestedTo, bucket: resolved.bucket, inactivityMinutes: settings.inactivityMinutes, updatedThrough: range.now, data });
       } catch (error) { return mapMeasureError(error); }
     }),
 });

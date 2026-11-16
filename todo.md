@@ -449,4 +449,13 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 - [x] Hide genuinely empty dates. Keep idle-only dates with No activity; newest dates/gaps first. Charts use the same populated periods, chronologically left-to-right.
 - [x] Simplify UI to nine relevant metrics: lead opens, completed lead work, status changes, logged contacts, successful emails, entered orders, active, idle and average lead work. Remove login, credited-value, historical-warning and impersonation panels; retain backend impersonation exclusion.
 - [x] Pass 372 tests/70 files, TypeScript, build, 320/360/390/1280px actual fake-transport Refresh/date/order/empty-state QA and bounded live-DB audit/mail-only 40 active / 5 idle, completed-lead sample and carried idle proof. Exact disposable fixture cleanup completed; original trackingSince unchanged. No schema migration or real SMTP/OCR.
-- [ ] Publish the activity-only Measure checkpoint, then reload cached staff tabs to load the revised app instrumentation.
+- [x] Activity-only Measure checkpoint published; superseded period grouping/hidden empty graphs by the subsequent period-preset correction.
+
+## Completed correction: Measure period presets and full timeline charts — 2026-11-16
+- [x] Replace grouping-only tabs with Day (today), Week (current Monday–Sunday), Month (current calendar month), and Custom dates. Default to Day and show a visible Eastern date/period label; show editable dates only for Custom and preserve its last range.
+- [x] Resolve current presets on the server as well as the client, re-evaluate Eastern dates on Refresh/tab return, and verify Day rollover after Eastern midnight. No periodic report polling.
+- [x] Use hours for a single-day range and days for longer ranges. Preserve the fixed November 15 baseline and sparse newest-first history, while adding separate complete chronological chartPoints.
+- [x] Always render two line charts, including a zero-activity day: Active/Idle minutes; separate Lead opens/Status changes/Contacts/Emails/Orders count lines. Label units clearly, preserve future slots as missing values, and show a single observed-hour marker.
+- [x] Preserve original activity-driven idle/lead-work logic and all source records. Verify 23/25-hour DST axes with unique keys/EDT–EST labels, exact hourly boundaries, partial current-hour clipping and full-axis count/time reconciliation.
+- [x] Pass389tests/72files, TypeScript, production build and diff check; actual fake-transport320/360/390/1280px four-period/Custom/zero-seven-lines/Refresh/invalid-date/no-overflow QA plus Eastern midnight rollover; read-only five-real-staff hourly axes/totals proof. No real mutation/mail/OCR or migration; QA artifacts removed.
+- [ ] Publish this period-preset and line-chart checkpoint, then reload the app.
