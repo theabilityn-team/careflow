@@ -469,3 +469,10 @@ Staff no longer see Email settings in navigation or SMTP setup/test controls on 
 ## Completed adjustment: 24-hour logo clock — 2026-11-17
 - [x] Show HH:mm:ss (00–23) with no AM/PM; retain Eastern date and EST/EDT. Explicit h23 avoids a 24:00 midnight display.
 - [x] Validate394tests/73files, TypeScript/build, 18:00/06:00/noon/midnight/DST assertions and actual no-write browser rendering. No clock lifecycle, layout, data or Measure change.
+
+## Completed update: Measure duration display units — 2026-11-18
+- [x] Add Time display: Minutes, Hours or Days for active Leaders and Super Admins; keep ordinary staff/impersonation gates unchanged.
+- [x] Convert active/idle totals, average lead work, period history, idle-gap badges and time-chart values/labels/tooltips immediately. Keep counts, report range, canonical minutes and inactivity threshold unchanged; 1 duration day = 24 hours.
+- [x] Remember selection per viewer account/browser, preserve it across Refresh and period changes, isolate another viewer's preference and tolerate unavailable storage. Default remains Minutes.
+- [x] Validate404tests/74files, TypeScript, production build/diff and actual fake-transport320/360/390/1280px Leader/Super Admin interactions: all units, no report requery, fixed threshold, unchanged count curves, newest history, reload persistence/account isolation and no page overflow. No actual API write, business record, email/OCR or schema change; exact QA artifacts cleaned.
+- [ ] Publish the duration-unit checkpoint and reload Measure.

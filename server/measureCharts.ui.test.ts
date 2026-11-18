@@ -16,4 +16,22 @@ describe("Measure chart series", () => {
     const data = measureChartData([point(1, false)]);
     for (const key of ["active", "idle", "leadOpens", "statuses", "contacts", "emails", "orders"] as const) expect(data[0][key]).toBeNull();
   });
+  it("converts only active and idle minutes to the selected unit", () => {
+    const data = measureChartData([point(1)], "hours");
+    expect(data[0]).toMatchObject({ active: 10 / 60, idle: 5 / 60, leadOpens: 2, statuses: 3, contacts: 4, emails: 5, orders: 6 });
+
+    const dailyData = measureChartData([point(1)], "days");
+    expect(dailyData[0]).toMatchObject({ active: 10 / 1440, idle: 5 / 1440, leadOpens: 2, statuses: 3, contacts: 4, emails: 5, orders: 6 });
+  });
+  it("does not mutate source points or their metric values", () => {
+    const points = [point(2), point(1, false)];
+    const before = structuredClone(points);
+    measureChartData(points, "days");
+    expect(points).toEqual(before);
+  });
+  it("preserves observed zeroes and future nulls after conversion", () => {
+    const data = measureChartData([{ ...point(1), metrics: emptyMetrics() }, point(2, false)], "hours");
+    expect(data[0]).toMatchObject({ active: 0, idle: 0, leadOpens: 0, statuses: 0, contacts: 0, emails: 0, orders: 0 });
+    for (const key of ["active", "idle", "leadOpens", "statuses", "contacts", "emails", "orders"] as const) expect(data[1][key]).toBeNull();
+  });
 });

@@ -42,6 +42,7 @@ describe("Measure screen access and transport safeguards", () => {
     const html = renderToStaticMarkup(React.createElement(Measure));
     expect(html).toContain("Measure is unavailable");
     expect(html).toContain("only to active Leaders and Super Admins");
+    expect(html).not.toContain('id="measure-duration-unit"');
     expect(mocks.staffQuery).toHaveBeenCalledWith(undefined, expect.objectContaining({ enabled: false, refetchInterval: false }));
     expect(mocks.settingsQuery).toHaveBeenCalledWith(undefined, expect.objectContaining({ enabled: false, refetchOnWindowFocus: false, refetchOnReconnect: false }));
     expect(mocks.reportQuery).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ enabled: false, refetchInterval: false }));
@@ -67,6 +68,9 @@ describe("Measure screen access and transport safeguards", () => {
     expect(html).toContain("Day");
     expect(html).toContain("Week");
     expect(html).toContain("Month");
+    expect(html).toContain('id="measure-duration-unit"');
+    expect(html).toContain("Time display");
+    expect(html).toContain("1 day = 24 hours");
     expect(html).toContain("Reports cover up to 366 Eastern calendar days");
     expect(html).toContain("Read-only");
     expect(html).not.toContain('id="measure-threshold" type="number"');
@@ -85,6 +89,7 @@ describe("Simplified activity-based Measure", () => {
       expect(html).toContain("Today · Nov 16, 2026");
       expect(html).not.toContain('id="measure-from"');
       expect(html).toContain("Custom");
+      expect(html).toContain('id="measure-duration-unit"');
       expect(mocks.reportQuery).toHaveBeenCalledWith(expect.objectContaining({ fromDate: "2026-11-16", toDate: "2026-11-16", bucket: "hour", period: "day" }), expect.anything());
       expect(html).toContain("Login is not activity");
       expect(html).not.toContain("Global inactivity threshold");
