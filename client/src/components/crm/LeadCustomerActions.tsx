@@ -1,4 +1,5 @@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { canEditLeadField } from "@shared/leadFieldPermissions";
 import { Button } from "@/components/ui/button";
 import { salesTrpc, errorMessage, salesAccessAllowed, salesReadAccessAllowed } from "@/lib/sales";
 import { CheckCircle2, Loader2, UserRoundPlus } from "lucide-react";
@@ -20,7 +21,7 @@ export function LeadCustomerActions({ lead }: LeadCustomerActionsProps) {
   if (!canRead) return null;
   if (isLoading) return <Button variant="outline" className="min-h-11 min-w-0 whitespace-normal px-3" disabled><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading…</Button>;
   if (customer) return <Button variant="outline" className="min-h-11 min-w-0 whitespace-normal px-3" onClick={() => navigate(`/customers/${customer.id}`)}><CheckCircle2 className="mr-2 h-4 w-4 text-emerald-600" />View customer</Button>;
-  if (!allowed) return null;
+  if (!allowed || !canEditLeadField(access, "status")) return null;
   async function confirmPromotion() {
     try {
       const result = await promote.mutateAsync({ leadId: lead.id });

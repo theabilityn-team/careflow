@@ -72,7 +72,7 @@ describe("manual mail recipients", () => {
   });
 
   it("keeps BCC private in global and lead histories/details while sender and Super Admin retain it", async () => {
-    const permissionLookup = vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue(permissions);
+    const permissionLookup = vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...permissions, permissions: JSON.stringify({ manageEmails: true, useEmailTemplates: true, viewLeads: true, viewClinical: true }) });
     vi.spyOn(db, "canAccessLead").mockResolvedValue(true);
     const record = { id: 99, senderUserId: 17, senderName: "Staff Member", leadId: 42, recipientEmail: "to@example.com", recipientName: "Recipient", fromEmail: "staff@example.com", productId: null, messageTemplateId: null, productName: null, templateName: null, subject: "Subject", bodyHtml: "<p>Body</p>", status: "sent" as const, providerMessageId: null, error: null, trackingToken: "private-token", trackingEnabled: true, firstOpenedAt: null, lastOpenedAt: null, openCount: 0, firstClickedAt: null, lastClickedAt: null, clickCount: 0, sentAt: 123, createdAt: now, ccEmails: ["copy@example.com"], bccEmails: ["private@example.com"] };
     vi.spyOn(db, "listOutboundEmails").mockResolvedValue([record]);
@@ -81,7 +81,7 @@ describe("manual mail recipients", () => {
     vi.spyOn(db, "getLeadOutboundEmail").mockResolvedValue(record);
     const own = appRouter.createCaller(context());
     expect((await own.mail.message({ id: 99 })).bccEmails).toEqual(["private@example.com"]);
-    permissionLookup.mockResolvedValue({ ...permissions, userId: 18, permissions: JSON.stringify({ viewLeads: true, manageEmails: true, manageSales: true }) });
+    permissionLookup.mockResolvedValue({ ...permissions, userId: 18, permissions: JSON.stringify({ viewLeads: true, viewClinical: true, manageEmails: true, manageSales: true }) });
     const other = appRouter.createCaller({ ...context(), user: { ...staff, id: 18 } });
     const restricted = [await other.mail.history(), await other.mail.message({ id: 99 }), await other.mail.leadHistory({ leadId: 42 }), await other.mail.leadMessage({ leadId: 42, id: 99 })];
     expect(JSON.stringify(restricted)).not.toContain("private@example.com");

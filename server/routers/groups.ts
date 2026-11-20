@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "../db";
 import { assertPermission, hasGlobalLeadAccess } from "../permissions";
+import { redactLeadFields } from "../leadFieldAccess";
 import { protectedProcedure, router } from "../_core/trpc";
 
 const id = z.number().int().positive();
@@ -59,8 +60,7 @@ export const groupsRouter = router({
     const canManageSharing = await db.canManageLeadGroupSharing(input.id, ctx.user.id, globalSharingAccess(access));
     const canManageMembershipValue = Boolean(access.permissions.editLeads && (canManageSharing || group.group.ownerId === ctx.user.id));
     const result = { ...group, canManage, canManageSharing, canManageMembership: canManageMembershipValue };
-    if (access.permissions.viewClinical) return result;
-    return { ...result, members: group.members.map(item => ({ ...item, lead: { ...item.lead, diagnosis: null, clinicalNotes: null, additionalInformation: null } })) };
+    return { ...result, members: group.members.map(item => ({ ...item, lead: redactLeadFields(item.lead, access) })) };
   }),
 
   create: protectedProcedure.input(z.object({ name: z.string().trim().min(2).max(160), description: z.string().trim().max(2000).optional().nullable() })).mutation(async ({ ctx, input }) => {

@@ -59,9 +59,9 @@ const eastern = (value: Date | number | null) => value ? formatEasternDate(value
 
 export function exportRowValues(row: ExportLeadRow) {
   return [
-    row.id, row.firstName, row.lastName, row.preferredLanguage === "es" ? "Spanish" : "English", row.email ?? "", row.phone ?? "", row.address ?? "",
+    row.id, row.firstName, row.lastName, row.preferredLanguage ? row.preferredLanguage === "es" ? "Spanish" : "English" : "", row.email ?? "", row.phone ?? "", row.address ?? "",
     row.city ?? "", row.stateCode ?? "", row.stateProvince ?? "", row.postalCode ?? "", row.country ?? "",
-    LEAD_STATUS_LABELS[row.status], INTEREST_LABELS[row.interestLevel], row.assignedStaff ?? "Unassigned",
+    LEAD_STATUS_LABELS[row.status] ?? "", INTEREST_LABELS[row.interestLevel] ?? "", row.assignedStaff ?? "Unassigned",
     eastern(row.nextFollowUpAt), eastern(row.createdAt), eastern(row.updatedAt),
   ];
 }
@@ -163,8 +163,8 @@ export async function createPdf(rows: ExportLeadRow[], selectedStatuses: string[
     const y = doc.y;
     if (rowIndex % 2 === 1) doc.rect(startX, y, tableWidth, 24).fill("#f3f7f6");
     const values = [
-      row.id, `${row.firstName} ${row.lastName}`, row.email, row.phone, row.preferredLanguage === "es" ? "Spanish" : "English",
-      LEAD_STATUS_LABELS[row.status], INTEREST_LABELS[row.interestLevel],
+      row.id, `${row.firstName} ${row.lastName}`, row.email, row.phone, row.preferredLanguage ? row.preferredLanguage === "es" ? "Spanish" : "English" : "",
+      LEAD_STATUS_LABELS[row.status] ?? "", INTEREST_LABELS[row.interestLevel] ?? "",
       row.assignedStaff ?? "Unassigned", [row.city, row.stateCode || row.stateProvince].filter(Boolean).join(", "),
       row.nextFollowUpAt ? formatEasternDate(row.nextFollowUpAt) : "—",
       formatEasternDate(row.createdAt),

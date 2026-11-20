@@ -1,8 +1,9 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { normalizePermissions } from "@shared/permissions";
+import { normalizeLeadFields } from "@shared/leadFieldPermissions";
 export const STAFF_ACCESS_UPDATED_EVENT = "careflow:staff-access-updated";
-export function accessFingerprint(access: { role?: string; isActive?: boolean; permissions?: unknown } | null | undefined): string {
-  return access ? JSON.stringify([access.role, access.isActive, normalizePermissions(access.permissions)]) : "";
+export function accessFingerprint(access: { role?: string; isActive?: boolean; permissions?: unknown; leadFields?: unknown } | null | undefined): string {
+  return access ? JSON.stringify([access.role, access.isActive, normalizePermissions(access.permissions), normalizeLeadFields(access.leadFields)]) : "";
 }
 function keepsAccessIdentity(key: QueryKey) {
   const path = key[0];

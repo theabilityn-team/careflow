@@ -128,7 +128,7 @@ describe("email access controls", () => {
   });
 
   it("allows a mail-only staff member to send a plain manual email but not templates or HTML", async () => {
-    grant({ manageEmails: true });
+    grant({ manageEmails: true, viewLeads: true });
     vi.spyOn(db, "getEmailRecipient").mockResolvedValue(recipient);
     vi.spyOn(db, "getStaffSmtpSettings").mockResolvedValue(smtpSettings);
     vi.spyOn(db, "getEmailTemplate").mockResolvedValue(undefined);
@@ -157,7 +157,7 @@ describe("email access controls", () => {
   });
 
   it("allows both permissions to read the active library and send an active selected template", async () => {
-    grant({ manageEmails: true, useEmailTemplates: true });
+    grant({ manageEmails: true, useEmailTemplates: true, viewLeads: true });
     vi.spyOn(db, "listEmailProducts").mockResolvedValue([activeProduct]);
     vi.spyOn(db, "listEmailMessageTemplates").mockResolvedValue([activeTemplate]);
     const library = await appRouter.createCaller(context()).emailLibrary.library();
@@ -176,7 +176,7 @@ describe("email access controls", () => {
   });
 
   it("rejects inactive or unavailable templates before SMTP delivery", async () => {
-    grant({ manageEmails: true, useEmailTemplates: true });
+    grant({ manageEmails: true, useEmailTemplates: true, viewLeads: true });
     vi.spyOn(db, "getEmailRecipient").mockResolvedValue(recipient);
     vi.spyOn(db, "getSelectableEmailMessageTemplate").mockResolvedValue(undefined);
     const send = vi.spyOn(smtp, "sendStaffSmtpEmail");
@@ -258,8 +258,8 @@ describe("email access controls", () => {
     } as never);
 
     const result = await appRouter.createCaller(context()).leads.get({ id: 42 });
-    expect(result.communications[0]).toMatchObject({ method: "email", outcome: "Email communication", notes: null });
-    expect(result.communications[1]).toMatchObject({ method: "phone", outcome: "Left voicemail", notes: "Call notes remain visible" });
+    expect(result.communications[0]).toMatchObject({ method: "email", outcome: "Communication recorded", notes: null });
+    expect(result.communications[1]).toMatchObject({ method: "phone", outcome: "Communication recorded", notes: null });
     expect(JSON.stringify(result)).not.toContain("private subject");
     expect(JSON.stringify(result)).not.toContain("Private email value");
     expect(result.auditEvents[0]?.changes).toEqual([{ field: "phone", before: null, after: "+1 555 0100" }]);
@@ -282,7 +282,7 @@ describe("email access controls", () => {
 
     const result = await appRouter.createCaller(context()).dashboard.followUpArchive({ page: 1, pageSize: 20 });
     expect(result.items[0]).toMatchObject({ method: "email", outcome: "Email communication", notes: null });
-    expect(result.items[1]).toMatchObject({ method: "phone", outcome: "Left voicemail", notes: "Call notes remain visible" });
+    expect(result.items[1]).toMatchObject({ method: "phone", outcome: "Communication recorded", notes: null });
     expect(JSON.stringify(result)).not.toContain("private subject");
     expect(JSON.stringify(result)).not.toContain("Private email body");
   });

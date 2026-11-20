@@ -33,7 +33,7 @@ const leaderPermissions = {
   userId: leader.id,
   jobTitle: "Leader",
   isActive: true,
-  permissions: JSON.stringify({ manageSales: true }),
+  permissions: JSON.stringify({ manageSales: true, changeStatus: true }),
 };
 const ordinaryPermissions = {
   ...leaderPermissions,
@@ -84,6 +84,13 @@ describe("customer promotion", () => {
     vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue(leaderPermissions);
     const promote = vi.spyOn(salesDb, "promoteLeadToCustomer");
     await expect(customersRouter.createCaller(context(leader)).promote({ leadId: 12, customerSince: 0 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(promote).not.toHaveBeenCalled();
+  });
+
+  it("rejects promotion when status is view-only despite sales access", async () => {
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...leaderPermissions, permissions: JSON.stringify({ manageSales: true, changeStatus: false }) });
+    const promote = vi.spyOn(salesDb, "promoteLeadToCustomer");
+    await expect(customersRouter.createCaller(context(leader)).promote({ leadId: 12, customerSince: 1_725_000_000_000 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(promote).not.toHaveBeenCalled();
   });
 });

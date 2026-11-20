@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as db from "./db";
 import { buildFollowUpMessages, processDueFollowUpReminders } from "./followUpReminders";
 import * as smtp from "./smtp";
+import * as permissions from "./permissions";
 
 const delivery = {
   id: 7,
@@ -51,6 +52,8 @@ describe("follow-up reminders", () => {
 
   it("records failed delivery without consuming retries when assigned staff SMTP is not configured", async () => {
     vi.spyOn(db, "getDueFollowUpReminderDeliveries").mockResolvedValue([{ ...delivery, smtpEnabled: false, smtpPassword: "", smtpVerifiedAt: null }]);
+    vi.spyOn(db, "getUserById").mockResolvedValue({ id: 3, role: "user" } as never);
+    vi.spyOn(permissions, "getUserAccess").mockResolvedValue({ role: "technical_staff", isActive: true, permissions: { viewLeads: true, viewClinical: true, viewDocuments: true, manageContacts: true }, leadFields: undefined });
     const update = vi.spyOn(db, "updateFollowUpDelivery").mockResolvedValue();
     const result = await processDueFollowUpReminders();
     expect(result).toMatchObject({ configured: false, due: 1, configuredRows: 0, sent: 0, failed: 2 });
@@ -64,6 +67,8 @@ describe("follow-up reminders", () => {
 
   it("sends both messages from the assigned staff SMTP account", async () => {
     vi.spyOn(db, "getDueFollowUpReminderDeliveries").mockResolvedValue([delivery]);
+    vi.spyOn(db, "getUserById").mockResolvedValue({ id: 3, role: "user" } as never);
+    vi.spyOn(permissions, "getUserAccess").mockResolvedValue({ role: "technical_staff", isActive: true, permissions: { viewLeads: true, viewClinical: true, viewDocuments: true, manageContacts: true }, leadFields: undefined });
     const update = vi.spyOn(db, "updateFollowUpDelivery").mockResolvedValue();
     const addHistory = vi.spyOn(db, "addOutboundEmail").mockResolvedValue(12);
     const send = vi.spyOn(smtp, "sendStaffSmtpEmail").mockResolvedValue({ configured: true, sent: true, error: null, messageId: "email-id" });

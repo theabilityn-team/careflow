@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import type { User } from "../drizzle/schema";
 import { getStaffPermissionRecord } from "./db";
 import { normalizePermissions, PERMISSION_KEYS, type Permissions } from "../shared/permissions";
+import { normalizeLeadFields } from "@shared/leadFieldPermissions";
 export { DEFAULT_TECHNICAL_PERMISSIONS, normalizePermissions, PERMISSION_KEYS } from "../shared/permissions";
 export type { PermissionKey, Permissions } from "../shared/permissions";
 import type { PermissionKey } from "../shared/permissions";
@@ -15,10 +16,15 @@ export async function getUserAccess(user: User) {
     isActive: true,
     isLeader: true,
     permissions: ALL_PERMISSIONS,
+    leadFields: normalizeLeadFields(undefined),
   };
   const record = await getStaffPermissionRecord(user.id);
   let saved: unknown = {};
-  try { saved = record?.permissions ? JSON.parse(record.permissions) : {}; } catch { /* Invalid stored permissions deny access. */ }
+  let storedSettingsValid = true;
+  try { saved = record?.permissions ? JSON.parse(record.permissions) : {}; } catch {
+    storedSettingsValid = false;
+    saved = {};
+  }
   const permissions = normalizePermissions(saved);
   const isActive = record?.isActive ?? false;
   const isLeader = Boolean(isActive && permissions.manageSales);
@@ -29,6 +35,9 @@ export async function getUserAccess(user: User) {
     isActive,
     isLeader,
     permissions,
+    leadFields: storedSettingsValid && saved && typeof saved === "object" && !Array.isArray(saved)
+      ? normalizeLeadFields((saved as Record<string, unknown>).leadFields)
+      : normalizeLeadFields(null),
   };
 }
 

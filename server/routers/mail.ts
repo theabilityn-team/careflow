@@ -6,6 +6,8 @@ import * as db from "../db";
 import { createEmailTrackingToken, instrumentEmailHtml } from "../emailTracking";
 import { composeEmailFramePreview, composeEmailHtml, composeRichEmailHtml, DEFAULT_EMAIL_FOOTER_HTML, DEFAULT_EMAIL_HEADER_HTML, htmlToPlainText, renderTextTokens, sanitizeTemplateHtml } from "../mailContent";
 import { assertPermission, hasGlobalLeadAccess } from "../permissions";
+import { canViewLeadField, hasHiddenLeadFields } from "../../shared/leadFieldPermissions";
+import { redactRelatedLead, requireSearchableLeadFields } from "../leadFieldRelatedAccess";
 import { isSmtpConfigured, safeSmtpError, sendStaffSmtpEmail } from "../smtp";
 import { normalizeMailRecipients } from "../../shared/emailRecipients";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -43,13 +45,25 @@ function recipientArray(value: unknown): string[] {
   return readStoredEmailAddresses(value);
 }
 
-function serializeMessage<T extends { bccEmails?: unknown; ccEmails?: unknown; senderUserId?: number }>(message: T, viewer: { id: number; role: "user" | "admin" }, access: { role: string }): Omit<T, "ccEmails" | "bccEmails"> & { ccEmails: string[]; bccEmails: string[] } {
+function serializeMessage<T extends { bccEmails?: unknown; ccEmails?: unknown; senderUserId?: number; recipientEmail?: unknown; recipientName?: unknown; subject?: unknown; bodyHtml?: unknown; bodyText?: unknown; trackedLinks?: unknown; trackingLinks?: unknown }>(message: T, viewer: { id: number; role: "user" | "admin" }, access: { role: string; permissions?: Record<string, boolean>; leadFields?: unknown }): Omit<T, "ccEmails" | "bccEmails"> & { ccEmails: string[]; bccEmails: string[] } {
   const canSeeBcc = access.role === "super_admin" || (typeof message.senderUserId === "number" && message.senderUserId === senderId(viewer));
-  return {
+  const safe = {
     ...message,
     ccEmails: recipientArray(message.ccEmails),
     bccEmails: canSeeBcc ? recipientArray(message.bccEmails) : [],
-  };
+  } as T & Record<string, unknown>;
+  if (hasHiddenLeadFields(access)) {
+    if ("recipientEmail" in safe && !canViewLeadField(access, "email")) safe.recipientEmail = null;
+    if ("recipientName" in safe && (!canViewLeadField(access, "firstName") || !canViewLeadField(access, "lastName"))) safe.recipientName = null;
+    if ("subject" in safe) safe.subject = "Protected message";
+    if ("bodyHtml" in safe) safe.bodyHtml = "";
+    if ("bodyText" in safe) safe.bodyText = "";
+    if ("trackedLinks" in safe) safe.trackedLinks = [];
+    if ("trackingLinks" in safe) safe.trackingLinks = [];
+    safe.ccEmails = [];
+    safe.bccEmails = [];
+  }
+  return safe as Omit<T, "ccEmails" | "bccEmails"> & { ccEmails: string[]; bccEmails: string[] };
 }
 
 function safeDeliveryError(error: string | null | undefined, password: string, addresses: string[]) {
@@ -59,7 +73,8 @@ function safeDeliveryError(error: string | null | undefined, password: string, a
 export const mailRouter = router({
   recipients: protectedProcedure.input(z.object({ search: z.string().trim().max(120).optional() })).query(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "manageEmails");
-    return db.listEmailRecipients({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) }, input.search);
+    if (input.search) requireSearchableLeadFields(access, ["firstName", "lastName", "email"]);
+    return redactRelatedLead(await db.listEmailRecipients({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) }, input.search), access);
   }),
 
   template: protectedProcedure.query(async ({ ctx }) => {
@@ -116,6 +131,7 @@ export const mailRouter = router({
     if (!await db.canAccessLead(input.leadId, ctx.user.id, hasGlobalLeadAccess(access))) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     }
+    if (!canViewLeadField(access, "email")) throw new TRPCError({ code: "NOT_FOUND", message: "Email not found." });
     const history = await db.listLeadOutboundEmails(input.leadId);
     return access.role === "super_admin" ? {
       ...history,
@@ -135,6 +151,7 @@ export const mailRouter = router({
     if (!await db.canAccessLead(input.leadId, ctx.user.id, hasGlobalLeadAccess(access))) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     }
+    if (!canViewLeadField(access, "email")) throw new TRPCError({ code: "NOT_FOUND", message: "Email not found." });
     const message = await db.getLeadOutboundEmail(input.id, input.leadId);
     if (!message) throw new TRPCError({ code: "NOT_FOUND", message: "Email not found." });
     const { trackingToken: _trackingToken, ...withoutTracking } = message;
@@ -152,6 +169,7 @@ export const mailRouter = router({
     const viewer = { userId: ctx.user.id, isSuperAdmin: access.role === "super_admin" };
     const recipient = hasLead ? await db.getEmailRecipient(input.leadId!, viewer) : undefined;
     if (hasLead && !recipient) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
+    if (hasLead && !canViewLeadField(access, "email")) throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found." });
     if (hasLead && !recipient!.email?.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "This lead does not have an email address." });
 
     let normalizedRecipients: ReturnType<typeof normalizeMailRecipients>;
@@ -188,8 +206,8 @@ export const mailRouter = router({
     const directName = input.recipientName?.trim() || normalizedRecipients.to;
     const directFirstName = input.recipientName?.trim().split(/\s+/)[0] || "there";
     const variables = {
-      leadFirstName: hasLead ? recipient!.firstName : directFirstName,
-      leadFullName: hasLead ? `${recipient!.firstName} ${recipient!.lastName}`.trim() : directName,
+      leadFirstName: hasLead ? (canViewLeadField(access, "firstName") ? recipient!.firstName : "there") : directFirstName,
+      leadFullName: hasLead ? (canViewLeadField(access, "firstName") && canViewLeadField(access, "lastName") ? `${recipient!.firstName} ${recipient!.lastName}`.trim() : "Lead") : directName,
       senderName: settings.fromName || ctx.user.name || "CareFlow",
       senderEmail: settings.fromEmail,
     };

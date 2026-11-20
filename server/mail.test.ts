@@ -140,7 +140,7 @@ describe("manual lead email", () => {
   });
 
   it("shows one lead's email history across all staff senders to every authorized lead viewer", async () => {
-    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...permissions, permissions: JSON.stringify({ viewLeads: true, manageEmails: true }) });
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...permissions, permissions: JSON.stringify({ viewLeads: true, viewClinical: true, manageEmails: true }) });
     vi.spyOn(db, "canAccessLead").mockResolvedValue(true);
     vi.spyOn(db, "listLeadOutboundEmails").mockResolvedValue({
       total: 2,
@@ -174,7 +174,7 @@ describe("manual lead email", () => {
   });
 
   it("allows an authorized lead viewer to open an email sent by another staff member", async () => {
-    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...permissions, permissions: JSON.stringify({ viewLeads: true, manageEmails: true }) });
+    vi.spyOn(db, "getStaffPermissionRecord").mockResolvedValue({ ...permissions, permissions: JSON.stringify({ viewLeads: true, viewClinical: true, manageEmails: true }) });
     vi.spyOn(db, "canAccessLead").mockResolvedValue(true);
     vi.spyOn(db, "getLeadOutboundEmail").mockResolvedValue({
       id: 91,

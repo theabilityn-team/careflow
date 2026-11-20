@@ -42,6 +42,8 @@ import { buildLeadIdentityKeys, identityMatchLabels, type LeadIdentityInput } fr
 import { normalizeLeadPagination } from "./leadList";
 import { mergeLeadPatch } from "./leadWorkflow";
 import { isPasswordResetUsable } from "./passwordSecurity";
+import { assertLeadPatchEditable, mergeAdditionalInformation, type LeadFieldAccess } from "./leadFieldAccess";
+import { LEAD_FIELD_KEYS, LEAD_FIELD_MODES } from "@shared/leadFieldPermissions";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -1000,13 +1002,20 @@ export async function updateStaffAccess(input: {
     const account = await getLockedLocalStaffAccount(tx, input.userId);
     if (!account) return false;
     const existing = (await tx.select().from(staffPermissions).where(eq(staffPermissions.userId, input.userId)).limit(1).for("update"))[0];
-    let beforePermissions = normalizePermissions({});
-    try { beforePermissions = normalizePermissions(JSON.parse(existing?.permissions || "{}")); } catch { /* Invalid saved values fail closed. */ }
-    const afterPermissions = normalizePermissions(JSON.parse(input.permissions));
+    let savedSettings: Record<string, unknown> = {};
+    try {
+      const parsed: unknown = JSON.parse(existing?.permissions || "{}");
+      savedSettings = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : { leadFields: Object.fromEntries(LEAD_FIELD_KEYS.map(key => [key, "hide"])) };
+    } catch { savedSettings = { leadFields: Object.fromEntries(LEAD_FIELD_KEYS.map(key => [key, "hide"])) }; }
+    const beforePermissions = normalizePermissions(savedSettings);
+    const requestedPermissions = normalizePermissions(JSON.parse(input.permissions));
+    const afterSettings = { ...savedSettings, ...requestedPermissions };
+    const afterPermissions = normalizePermissions(afterSettings);
+    const afterPermissionsJson = JSON.stringify(afterSettings);
     if (!existing) {
-      await tx.insert(staffPermissions).values({ userId: input.userId, jobTitle: input.jobTitle, isActive: input.isActive, permissions: input.permissions });
+      await tx.insert(staffPermissions).values({ userId: input.userId, jobTitle: input.jobTitle, isActive: input.isActive, permissions: afterPermissionsJson });
     } else {
-      await tx.update(staffPermissions).set({ jobTitle: input.jobTitle, isActive: input.isActive, permissions: input.permissions }).where(eq(staffPermissions.userId, input.userId));
+      await tx.update(staffPermissions).set({ jobTitle: input.jobTitle, isActive: input.isActive, permissions: afterPermissionsJson }).where(eq(staffPermissions.userId, input.userId));
     }
     if (existing?.isActive && (!input.isActive || beforePermissions.manageSales && !afterPermissions.manageSales)) await tx.delete(authSessions).where(eq(authSessions.userId, input.userId));
     await tx.insert(auditEvents).values(enrichAuditValues({
@@ -1021,6 +1030,76 @@ export async function updateStaffAccess(input: {
       occurredAt: Date.now(),
     }));
     return true;
+  });
+}
+
+export async function listLeadFieldStaff() {
+  const db = await requireDb();
+  return db.select({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+    role: users.role,
+    lastSignedIn: users.lastSignedIn,
+    jobTitle: staffPermissions.jobTitle,
+    isActive: staffPermissions.isActive,
+    permissions: staffPermissions.permissions,
+  }).from(users)
+    .innerJoin(localCredentials, eq(users.id, localCredentials.userId))
+    .leftJoin(staffPermissions, eq(users.id, staffPermissions.userId))
+    .where(and(eq(users.role, "user"), isNull(staffPermissions.deletedAt)))
+    .orderBy(desc(users.lastSignedIn));
+}
+
+export async function updateStaffLeadFields(input: {
+  userId: number;
+  leadFields: Record<string, string>;
+  actorId: number;
+  actorIsSuperAdmin: boolean;
+}) {
+  const db = await requireDb();
+  return db.transaction(async tx => {
+    const actor = (await tx.select({
+      id: users.id, role: users.role, loginMethod: users.loginMethod,
+      permissions: staffPermissions.permissions, isActive: staffPermissions.isActive, deletedAt: staffPermissions.deletedAt,
+    }).from(users).leftJoin(staffPermissions, eq(staffPermissions.userId, users.id))
+      .where(eq(users.id, input.actorId)).limit(1).for("update"))[0];
+    const target = (await tx.select({
+      id: users.id, role: users.role, loginMethod: users.loginMethod, name: users.name, email: users.email,
+      jobTitle: staffPermissions.jobTitle, isActive: staffPermissions.isActive, permissions: staffPermissions.permissions,
+      deletedAt: staffPermissions.deletedAt,
+    }).from(users).innerJoin(localCredentials, eq(users.id, localCredentials.userId))
+      .leftJoin(staffPermissions, eq(staffPermissions.userId, users.id)).where(eq(users.id, input.userId)).limit(1).for("update"))[0];
+    if (!target || target.role !== "user" || target.loginMethod !== "local" || target.deletedAt != null) return { kind: "not_found" as const };
+    const actorIsLeader = Boolean(actor?.role === "user" && actor.loginMethod === "local" && actor.isActive && actor.deletedAt == null && actor.permissions && (() => {
+      try { return normalizePermissions(JSON.parse(actor.permissions)).manageSales; } catch { return false; }
+    })());
+    if (!input.actorIsSuperAdmin && (!actorIsLeader || input.actorId === input.userId)) return { kind: "forbidden" as const };
+    const targetIsLeader = (() => {
+      try { return normalizePermissions(JSON.parse(target.permissions || "{}")).manageSales; } catch { return true; }
+    })();
+    if (!input.actorIsSuperAdmin && targetIsLeader) return { kind: "forbidden" as const };
+    let settings: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(target.permissions || "{}");
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { kind: "conflict" as const };
+      settings = parsed as Record<string, unknown>;
+    } catch { return { kind: "conflict" as const }; }
+    if (Object.hasOwn(settings, "leadFields") && (!settings.leadFields || typeof settings.leadFields !== "object" || Array.isArray(settings.leadFields))) return { kind: "conflict" as const };
+    const existingFields = settings.leadFields && typeof settings.leadFields === "object" && !Array.isArray(settings.leadFields)
+      ? settings.leadFields as Record<string, unknown> : {};
+    if (Object.keys(existingFields).some(key => !LEAD_FIELD_KEYS.includes(key) || !LEAD_FIELD_MODES.includes(existingFields[key] as typeof LEAD_FIELD_MODES[number]))) return { kind: "conflict" as const };
+    const mergedLeadFields = { ...existingFields, ...input.leadFields };
+    const afterSettings = { ...settings, leadFields: mergedLeadFields };
+    await tx.update(staffPermissions).set({ permissions: JSON.stringify(afterSettings) }).where(eq(staffPermissions.userId, input.userId));
+    await tx.insert(auditEvents).values(enrichAuditValues({
+      leadId: null, actorId: input.actorId, action: "staff.lead_fields_updated", source: "staff",
+      detail: `Updated lead field access for technical staff account ${input.userId}.`,
+      changes: serializeAudit({ userId: input.userId, leadFields: input.leadFields }),
+      snapshotBefore: serializeAudit({ userId: input.userId, leadFields: settings.leadFields ?? null }),
+      snapshotAfter: serializeAudit({ userId: input.userId, leadFields: afterSettings.leadFields }), occurredAt: Date.now(),
+    }));
+    return { kind: "updated" as const, target, leadFields: mergedLeadFields };
   });
 }
 
@@ -1985,12 +2064,17 @@ export async function updateLeadWithAudit(
   leadId: number,
   values: Partial<InsertLead>,
   audit: { actorId: number; action: string; source: string; detail: string },
+  access?: LeadFieldAccess,
 ) {
   const db = await requireDb();
   return db.transaction(async tx => {
     const before = (await tx.select().from(leads).where(eq(leads.id, leadId)).limit(1).for("update"))[0];
     if (!before) return null;
-    const after = mergeLeadPatch(before, values as Partial<Lead>);
+    if (access) assertLeadPatchEditable(values as Record<string, unknown>, access);
+    const guardedValues = access && Object.hasOwn(values, "additionalInformation")
+      ? { ...values, additionalInformation: mergeAdditionalInformation(before.additionalInformation, values.additionalInformation as string | null | undefined, access) }
+      : values;
+    const after = mergeLeadPatch(before, guardedValues as Partial<Lead>);
     const changes = leadChanges(before, after);
     if (!changes.length) return { lead: before, changes };
     const keys = buildLeadIdentityKeys(after);
@@ -1998,7 +2082,7 @@ export async function updateLeadWithAudit(
       const duplicate = await tx.select({ leadId: leadIdentityKeys.leadId }).from(leadIdentityKeys).where(and(inArray(leadIdentityKeys.keyHash, keys.map(key => key.keyHash)), ne(leadIdentityKeys.leadId, leadId))).limit(1);
       if (duplicate[0]) throw Object.assign(new Error("Duplicate lead"), { code: "LEAD_DUPLICATE", leadId: duplicate[0].leadId });
     }
-    await tx.update(leads).set(values).where(eq(leads.id, leadId));
+    await tx.update(leads).set(guardedValues).where(eq(leads.id, leadId));
     await replaceLeadIdentityKeys(tx, leadId, after);
     await tx.insert(auditEvents).values(enrichAuditValues({
       leadId,

@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "../salesDb";
 import { assertSalesAccess, assertSalesReadAccess, hasGlobalLeadAccess } from "../permissions";
+import { redactRelatedLead, requireSearchableLeadFields } from "../leadFieldRelatedAccess";
 import { getOrderDateRange } from "../../shared/orderDates";
 import { protectedProcedure, router } from "../_core/trpc";
 
@@ -81,7 +82,8 @@ export const ordersRouter = router({
     .input(orderListInput)
     .query(async ({ ctx, input }) => {
       const access = await assertSalesReadAccess(ctx.user);
-      return db.listOrders(input, { userId: ctx.user.id, isGlobal: hasGlobalLeadAccess(access) });
+      if (input.search) requireSearchableLeadFields(access, ["firstName", "lastName", "email"]);
+      return redactRelatedLead(await db.listOrders(input, { userId: ctx.user.id, isGlobal: hasGlobalLeadAccess(access) }), access);
     }),
 
   owners: protectedProcedure.query(async ({ ctx }) => {
@@ -153,6 +155,6 @@ export const ordersRouter = router({
       const access = await assertSalesReadAccess(ctx.user);
       const result = await db.getSalesOrder(input.id, { userId: ctx.user.id, isGlobal: hasGlobalLeadAccess(access) });
       if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Order not found." });
-      return result;
+      return redactRelatedLead(result, access);
     }),
 });

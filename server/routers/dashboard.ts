@@ -3,43 +3,37 @@ import { z } from "zod";
 import { SYSTEM_ADMIN_ACTOR_ID } from "../../shared/const";
 import * as db from "../db";
 import { assertPermission, getUserAccess, hasGlobalLeadAccess } from "../permissions";
+import { redactLeadText, redactRelatedLead, requireLeadField, requireSearchableLeadFields } from "../leadFieldRelatedAccess";
+import { canViewLeadField, hasHiddenLeadFields } from "../../shared/leadFieldPermissions";
 import { protectedProcedure, router } from "../_core/trpc";
 
 function hideEmailFollowUpText<T extends { method: string; outcome: string; notes: string | null }>(item: T) {
-  return item.method === "email"
-    ? { ...item, outcome: "Email communication", notes: null }
-    : item;
+  return item.method === "email" ? { ...item, outcome: "Email communication", notes: null } : item;
 }
 
 export const dashboardRouter = router({
   summary: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
     const summary = await db.getDashboardSummary({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
-    if (access.permissions.viewClinical) return summary;
-    return {
-      ...summary,
-      recent: summary.recent.map(lead => ({
-        ...lead,
-        diagnosis: null,
-        clinicalNotes: null,
-        additionalInformation: null,
-      })),
-    };
+    return redactRelatedLead({ ...summary, ...(!canViewLeadField(access, "status") ? { buyers: 0 } : {}), ...(!canViewLeadField(access, "interestLevel") ? { hot: 0 } : {}), ...(!canViewLeadField(access, "nextFollowUpAt") ? { followUps: 0 } : {}) }, access);
   }),
   followUps: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
-    return db.getUpcomingFollowUps({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
+    if (!canViewLeadField(access, "nextFollowUpAt")) return [];
+    return redactRelatedLead(await db.getUpcomingFollowUps({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) }), access);
   }),
   followUpCalendar: protectedProcedure
     .input(z.object({ from: z.number().int().nonnegative(), to: z.number().int().positive() }).refine(value => value.to >= value.from && value.to - value.from <= 370 * 24 * 60 * 60 * 1000, "Select a valid calendar range up to 370 days."))
     .query(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "viewLeads");
-      return db.getFollowUpCalendar({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) }, input);
+      if (!canViewLeadField(access, "nextFollowUpAt")) return [];
+      return redactRelatedLead(await db.getFollowUpCalendar({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) }, input), access);
     }),
   updateFollowUp: protectedProcedure
     .input(z.object({ id: z.number().int().positive(), scheduledFor: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "manageContacts");
+      requireLeadField(access, "nextFollowUpAt", "You do not have permission to edit follow-up dates.");
       const reminder = await db.getActiveFollowUp(input.id);
       if (!reminder || !await db.canAccessLead(reminder.leadId, ctx.user.id, hasGlobalLeadAccess(access))) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
       try {
@@ -47,7 +41,7 @@ export const dashboardRouter = router({
         if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
         return { success: true, leadId: result.leadId } as const;
       } catch (error) {
-        if (error instanceof Error && ("code" in error && error.code === "ER_DUP_ENTRY" || "cause" in error && typeof error.cause === "object" && error.cause && "code" in error.cause && error.cause.code === "ER_DUP_ENTRY")) throw new TRPCError({ code: "CONFLICT", message: "This lead already has a follow-up at that time." });
+        if (error instanceof Error && (("code" in error && error.code === "ER_DUP_ENTRY") || ("cause" in error && typeof error.cause === "object" && error.cause && "code" in error.cause && error.cause.code === "ER_DUP_ENTRY"))) throw new TRPCError({ code: "CONFLICT", message: "This lead already has a follow-up at that time." });
         throw error;
       }
     }),
@@ -55,6 +49,7 @@ export const dashboardRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "manageContacts");
+      requireLeadField(access, "nextFollowUpAt", "You do not have permission to edit follow-up dates.");
       const reminder = await db.getActiveFollowUp(input.id);
       if (!reminder || !await db.canAccessLead(reminder.leadId, ctx.user.id, hasGlobalLeadAccess(access))) throw new TRPCError({ code: "NOT_FOUND", message: "Follow-up not found." });
       const result = await db.deleteActiveFollowUp({ id: input.id, actorId: ctx.user.id });
@@ -72,43 +67,30 @@ export const dashboardRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const access = await assertPermission(ctx.user, "viewLeads");
+      if (input.search && hasHiddenLeadFields(access)) throw new TRPCError({ code: "FORBIDDEN", message: "Searching communication text is unavailable while lead information is hidden." });
+      if (input.completedFrom || input.completedTo) requireSearchableLeadFields(access, ["lastContactAt"]);
       const archive = await db.getCompletedFollowUps({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) }, input);
-      return access.role === "super_admin" || access.permissions.manageEmails
-        ? archive
-        : { ...archive, items: archive.items.map(hideEmailFollowUpText) };
+      const items = archive.items.map(item => redactLeadText(redactRelatedLead(item, access), access));
+      return access.role === "super_admin" || access.permissions.manageEmails ? { ...archive, items } : { ...archive, items: items.map(hideEmailFollowUpText) };
     }),
   notifications: protectedProcedure.query(async ({ ctx }) => {
     const access = await assertPermission(ctx.user, "viewLeads");
-    return db.listFollowUpNotifications({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) });
+    if (!canViewLeadField(access, "nextFollowUpAt")) return [];
+    return redactRelatedLead(await db.listFollowUpNotifications({ userId: ctx.user.id, isSuperAdmin: hasGlobalLeadAccess(access) }), access);
   }),
   reminderAutomationStatus: protectedProcedure.query(async ({ ctx }) => {
     const access = await getUserAccess(ctx.user);
     const job = await db.getScheduledJobByKey("follow-up-reminders");
     if (access.role === "technical_staff") {
       const settings = await db.getStaffSmtpSettings(ctx.user.id);
-      return {
-        scope: "staff" as const,
-        emailConfigured: Boolean(settings?.isEnabled && settings.smtpHost && settings.smtpUsername && settings.smtpPassword && settings.fromEmail && settings.verifiedAt),
-        configuredStaff: 0,
-        totalStaff: 0,
-        scheduleConfigured: Boolean(job),
-        timing: "Every 15 minutes; messages become due two hours before the appointment.",
-      };
+      return { scope: "staff" as const, emailConfigured: Boolean(settings?.isEnabled && settings.smtpHost && settings.smtpUsername && settings.smtpPassword && settings.fromEmail && settings.verifiedAt), configuredStaff: 0, totalStaff: 0, scheduleConfigured: Boolean(job), timing: "Every 15 minutes; messages become due two hours before the appointment." };
     }
     const staff = await db.listStaffSmtpReadiness();
     const active = staff.filter(member => member.isActive !== false);
     const configuredStaff = active.filter(member => Boolean(member.smtpEnabled && member.smtpHost && member.smtpUsername && member.smtpPasswordPresent && member.fromEmail && member.verifiedAt)).length;
     const adminSettings = await db.getStaffSmtpSettings(SYSTEM_ADMIN_ACTOR_ID);
     const adminEmailConfigured = Boolean(adminSettings?.isEnabled && adminSettings.smtpHost && adminSettings.smtpUsername && adminSettings.smtpPassword && adminSettings.fromEmail && adminSettings.verifiedAt);
-    return {
-      scope: "admin" as const,
-      emailConfigured: adminEmailConfigured && active.length > 0 && configuredStaff === active.length,
-      adminEmailConfigured,
-      configuredStaff,
-      totalStaff: active.length,
-      scheduleConfigured: Boolean(job),
-      timing: "Every 15 minutes; messages become due two hours before the appointment.",
-    };
+    return { scope: "admin" as const, emailConfigured: adminEmailConfigured && active.length > 0 && configuredStaff === active.length, adminEmailConfigured, configuredStaff, totalStaff: active.length, scheduleConfigured: Boolean(job), timing: "Every 15 minutes; messages become due two hours before the appointment." };
   }),
   markNotificationRead: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const access = await assertPermission(ctx.user, "viewLeads");

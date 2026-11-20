@@ -4,16 +4,29 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "../db";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "../_core/trpc";
-import { DEFAULT_TECHNICAL_PERMISSIONS, normalizePermissions, PERMISSION_KEYS } from "../permissions";
+import { DEFAULT_TECHNICAL_PERMISSIONS, getUserAccess, normalizePermissions, PERMISSION_KEYS } from "../permissions";
 import { createLoginSession, hashPassword } from "../auth";
 import { isPasswordResetUsable, staffPasswordSchema } from "../passwordSecurity";
 import { SUPER_ADMIN_EMAIL } from "@shared/const";
+import { LEAD_FIELD_KEYS, LEAD_FIELD_MODES, normalizeLeadFields } from "@shared/leadFieldPermissions";
 
 const permissionShape = Object.fromEntries(PERMISSION_KEYS.map(key => [key, key === "manageSales" || key === "viewDocuments" ? z.boolean().default(false) : z.boolean()])) as Record<(typeof PERMISSION_KEYS)[number], z.ZodBoolean>;
 const permissionsSchema = z.object(permissionShape);
+const leadFieldShape = Object.fromEntries(LEAD_FIELD_KEYS.map(key => [key, z.enum(LEAD_FIELD_MODES).optional()])) as z.ZodRawShape;
+const leadFieldsSchema = z.object(leadFieldShape).strict();
 const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 const normalizedEmailSchema = z.string().trim().toLowerCase().email().max(320);
 const accountNameSchema = z.string().trim().min(2).max(160);
+
+function parseStoredSettings(value: string | null | undefined): Record<string, unknown> | null {
+  if (!value) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
 
 function isDuplicateError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -30,16 +43,73 @@ function accountManagementError(error: unknown): never {
 }
 
 export const staffRouter = router({
+  leadFieldStaff: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.impersonation) throw new TRPCError({ code: "FORBIDDEN", message: "Lead field permissions cannot be managed while impersonating another workspace." });
+    const access = await getUserAccess(ctx.user);
+    if (ctx.user.role !== "admin" && (!access.isActive || !access.isLeader)) throw new TRPCError({ code: "FORBIDDEN", message: "Leader or Super Admin access is required." });
+    const rows = await db.listLeadFieldStaff();
+    return rows.filter(row => ctx.user.role === "admin" || (row.id !== ctx.user.id && (() => {
+      try { return !normalizePermissions(JSON.parse(row.permissions ?? "{}")).manageSales; } catch { return false; }
+    })())).map(row => {
+      let saved: unknown = {};
+      try { saved = row.permissions ? JSON.parse(row.permissions) : {}; } catch { saved = null; }
+      const settings = saved && typeof saved === "object" && !Array.isArray(saved) ? saved as Record<string, unknown> : null;
+      const permissions = normalizePermissions(settings);
+      return {
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        jobTitle: row.jobTitle ?? "Technical Staff",
+        isActive: row.isActive ?? false,
+        lastSignedIn: row.lastSignedIn,
+        isLeader: Boolean(row.isActive && permissions.manageSales),
+        permissions,
+        leadFields: normalizeLeadFields(settings ? settings.leadFields : null),
+      };
+    });
+  }),
+
+  updateLeadFields: protectedProcedure
+    .input(z.object({ userId: z.number().int().positive(), leadFields: leadFieldsSchema }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.impersonation) throw new TRPCError({ code: "FORBIDDEN", message: "Lead field permissions cannot be managed while impersonating another workspace." });
+      const access = await getUserAccess(ctx.user);
+      const actorIsSuperAdmin = ctx.user.role === "admin";
+      if (!actorIsSuperAdmin && (!access.isActive || !access.isLeader)) throw new TRPCError({ code: "FORBIDDEN", message: "Leader or Super Admin access is required." });
+      const leadFields = Object.fromEntries(Object.entries(input.leadFields).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+      const result = await db.updateStaffLeadFields({
+        userId: input.userId,
+        leadFields,
+        actorId: ctx.user.id,
+        actorIsSuperAdmin,
+      });
+      if (result.kind === "not_found") throw new TRPCError({ code: "NOT_FOUND", message: "Technical staff account not found." });
+      if (result.kind === "forbidden") throw new TRPCError({ code: "FORBIDDEN", message: "You cannot manage lead fields for this staff account." });
+      if (result.kind === "conflict") throw new TRPCError({ code: "CONFLICT", message: "The staff access settings are invalid. Ask the Super Admin to repair them before changing lead fields." });
+      return {
+        success: true,
+        leadFields: normalizeLeadFields(result.leadFields),
+        appliedAccess: {
+          leadFields: normalizeLeadFields(result.leadFields),
+        },
+      } as const;
+    }),
+
   list: adminProcedure.query(async () => {
     const rows = await db.listStaff();
-    return rows.map(row => ({
-      ...row,
-      accessRole: row.role === "admin" ? "super_admin" : "technical_staff",
-      jobTitle: row.role === "admin" ? "Super Administrator" : row.jobTitle ?? "Technical Staff",
-      isActive: row.role === "admin" ? true : row.isActive ?? false,
-      isLeader: Boolean(row.isActive && row.permissions && normalizePermissions(JSON.parse(row.permissions)).manageSales),
-      permissions: row.role === "admin" ? normalizePermissions(Object.fromEntries(PERMISSION_KEYS.map(key => [key, true]))) : row.permissions ? normalizePermissions(JSON.parse(row.permissions)) : normalizePermissions({}),
-    }));
+    return rows.map(row => {
+      const settings = parseStoredSettings(row.permissions);
+      const permissions = row.role === "admin" ? normalizePermissions(Object.fromEntries(PERMISSION_KEYS.map(key => [key, true]))) : normalizePermissions(settings ?? {});
+      return {
+        ...row,
+        accessRole: row.role === "admin" ? "super_admin" : "technical_staff",
+        jobTitle: row.role === "admin" ? "Super Administrator" : row.jobTitle ?? "Technical Staff",
+        isActive: row.role === "admin" ? true : row.isActive ?? false,
+        isLeader: Boolean((row.role === "admin" || row.isActive) && permissions.manageSales),
+        permissions,
+        leadFields: normalizeLeadFields(row.role === "admin" ? undefined : settings ? settings.leadFields : null),
+      };
+    });
   }),
 
   update: adminProcedure

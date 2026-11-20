@@ -3,6 +3,7 @@ import { z } from "zod";
 import * as db from "../salesDb";
 import { canAccessLead } from "../db";
 import { assertSalesAccess, assertSalesReadAccess, hasGlobalLeadAccess } from "../permissions";
+import { redactRelatedLead, requireLeadField, requireSearchableLeadFields } from "../leadFieldRelatedAccess";
 import { protectedProcedure, router } from "../_core/trpc";
 
 const positiveEpoch = z.number().int().positive().max(8_640_000_000_000);
@@ -42,21 +43,24 @@ export const customersRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const access = await requireSalesRead(ctx.user);
-      return db.listCustomers(input, { userId: ctx.user.id, isGlobal: hasGlobalLeadAccess(access) });
+      if (input.search) requireSearchableLeadFields(access, ["firstName", "lastName", "email", "phone"]);
+      if (input.stateCode) requireSearchableLeadFields(access, ["stateCode"]);
+      return redactRelatedLead(await db.listCustomers(input, { userId: ctx.user.id, isGlobal: hasGlobalLeadAccess(access) }), access);
     }),
 
   choices: protectedProcedure
     .input(z.object({ search: z.string().trim().max(120).optional() }))
     .query(async ({ ctx, input }) => {
       const access = await requireSalesRead(ctx.user);
-      return db.listCustomerChoices(input.search, { userId: ctx.user.id, isGlobal: hasGlobalLeadAccess(access) });
+      if (input.search) requireSearchableLeadFields(access, ["firstName", "lastName", "email"]);
+      return redactRelatedLead(await db.listCustomerChoices(input.search, { userId: ctx.user.id, isGlobal: hasGlobalLeadAccess(access) }), access);
     }),
 
   byLead: protectedProcedure
     .input(z.object({ leadId: customerId }))
     .query(async ({ ctx, input }) => {
       const access = await requireSalesRead(ctx.user);
-      return db.getCustomerByLead(input.leadId, { userId: ctx.user.id, isGlobal: hasGlobalLeadAccess(access) });
+      return redactRelatedLead(await db.getCustomerByLead(input.leadId, { userId: ctx.user.id, isGlobal: hasGlobalLeadAccess(access) }), access);
     }),
 
   promote: protectedProcedure
@@ -66,7 +70,8 @@ export const customersRouter = router({
       notes: z.string().max(20_000).optional().nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await requireSales(ctx.user);
+      const access = await requireSales(ctx.user);
+      requireLeadField(access, "status", "You do not have permission to promote leads to customers.");
       try {
         const result = await db.promoteLeadToCustomer({
           leadId: input.leadId,
@@ -109,6 +114,6 @@ export const customersRouter = router({
       const result = await db.getCustomer(input.id, { userId: ctx.user.id, isGlobal: hasGlobalLeadAccess(access) });
       if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Customer not found." });
       const canOpenLead = Boolean(access.permissions.viewLeads && await canAccessLead(result.customer.leadId, ctx.user.id, hasGlobalLeadAccess(access)));
-      return { ...result, canOpenLead };
+      return redactRelatedLead({ ...result, canOpenLead }, access);
     }),
 });
